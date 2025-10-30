@@ -11,6 +11,8 @@ function LandingScreen({ onComplete }) {
   const [showInputFade, setShowInputFade] = useState(true)
   const [inputShake, setInputShake] = useState(false)
   const streamingTimeoutRef = useRef(null)
+  
+  const PASSKEY = 'hopium_passphrase_entered'
 
   const streamText = (text, onComplete) => {
     // Clear any existing timeout
@@ -38,24 +40,49 @@ function LandingScreen({ onComplete }) {
     }, 200)
   }
 
-  // Stream the intro question
+  // Check if user has already entered passphrase
   useEffect(() => {
-    // Latch opens at 3s delay + 0.6s animation = 3.6s
-    const textTimer = setTimeout(() => {
-      setShowText(true)
-      // Start streaming the intro question
-      streamText('WHATS THE TICKER?', () => {
-        // After intro question is streamed, show input
-        setTimeout(() => {
-          setShowInput(true)
-        }, 300)
-      })
-    }, 3600)
+    const savedPassphrase = localStorage.getItem(PASSKEY)
+    
+    if (savedPassphrase === 'true') {
+      // User has already entered passphrase - skip input and go straight to welcome
+      // Latch opens at 3s delay + 0.6s animation = 3.6s
+      const textTimer = setTimeout(() => {
+        setShowText(true)
+        // Stream welcome message directly
+        streamText('WELCOME FREN!', () => {
+          // After welcome message streams, wait a bit then open door
+          setTimeout(() => {
+            setDoorOpen(true)
+          }, 800)
+        })
+      }, 3600)
 
-    return () => {
-      clearTimeout(textTimer)
-      if (streamingTimeoutRef.current) {
-        clearTimeout(streamingTimeoutRef.current)
+      return () => {
+        clearTimeout(textTimer)
+        if (streamingTimeoutRef.current) {
+          clearTimeout(streamingTimeoutRef.current)
+        }
+      }
+    } else {
+      // First time - show input prompt
+      // Latch opens at 3s delay + 0.6s animation = 3.6s
+      const textTimer = setTimeout(() => {
+        setShowText(true)
+        // Start streaming the intro question
+        streamText('WHATS THE TICKER?', () => {
+          // After intro question is streamed, show input
+          setTimeout(() => {
+            setShowInput(true)
+          }, 300)
+        })
+      }, 3600)
+
+      return () => {
+        clearTimeout(textTimer)
+        if (streamingTimeoutRef.current) {
+          clearTimeout(streamingTimeoutRef.current)
+        }
       }
     }
   }, [])
@@ -79,6 +106,9 @@ function LandingScreen({ onComplete }) {
     // Check if user has typed 4 characters (length of AURA)
     if (value.length === 4) {
       if (value === 'AURA') {
+        // Correct answer - save to localStorage
+        localStorage.setItem(PASSKEY, 'true')
+        
         // Correct answer - fade out input, then stream welcome message
         setShowInputFade(false)
         setIsCorrectAnswer(true)

@@ -10,43 +10,63 @@ function RobotWidget({ message, sectionId }) {
   const messagesEndRef = useRef(null)
   const streamingTimeoutRef = useRef(null)
   const previousSectionRef = useRef(null)
+  const isStreamingRef = useRef(false)
+  const currentMessageRef = useRef('')
 
   // Stream message when section changes
   useEffect(() => {
     if (!message) return
-    if (previousSectionRef.current === sectionId) return
     
-    // Clear any existing timeout
+    // Check if we're already streaming this exact message for this section
+    if (previousSectionRef.current === sectionId && currentMessageRef.current === message) return
+    
+    // Clear any existing timeout and stop current streaming
     if (streamingTimeoutRef.current) {
       clearTimeout(streamingTimeoutRef.current)
+      streamingTimeoutRef.current = null
+    }
+    
+    // If we were streaming, complete the previous message first
+    if (isStreamingRef.current && currentMessageRef.current) {
+      setMessages(prev => [...prev, currentMessageRef.current])
     }
 
+    // Update refs before starting new stream
+    previousSectionRef.current = sectionId
+    currentMessageRef.current = message
+    isStreamingRef.current = true
+    
     // Reset streaming state
     setCurrentStreaming('')
-    previousSectionRef.current = sectionId
     
     let charIndex = 0
+    let streamedText = ''
     
     const streamChars = () => {
       if (charIndex < message.length) {
-        setCurrentStreaming(prev => prev + message[charIndex])
+        streamedText += message[charIndex]
+        setCurrentStreaming(streamedText)
         charIndex++
         streamingTimeoutRef.current = setTimeout(streamChars, 30) // 30ms per character
       } else {
         // Message complete, add to history
         setMessages(prev => [...prev, message])
         setCurrentStreaming('')
+        isStreamingRef.current = false
+        streamingTimeoutRef.current = null
       }
     }
     
     // Small delay before starting to stream
-    setTimeout(() => {
+    const startTimeout = setTimeout(() => {
       streamChars()
     }, 200)
 
     return () => {
+      clearTimeout(startTimeout)
       if (streamingTimeoutRef.current) {
         clearTimeout(streamingTimeoutRef.current)
+        streamingTimeoutRef.current = null
       }
     }
   }, [message, sectionId])
@@ -72,8 +92,20 @@ function RobotWidget({ message, sectionId }) {
       </div>
       <div 
         className={`speech-bubble ${isExpanded ? 'expanded' : ''}`}
-        onClick={toggleExpand}
+        onClick={!isExpanded ? toggleExpand : undefined}
       >
+        {isExpanded && (
+          <button 
+            className="close-button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsExpanded(false)
+            }}
+            aria-label="Close chat"
+          >
+            ×
+          </button>
+        )}
         {isExpanded ? (
           <div className="message-history">
             {allMessages.map((msg, index) => (

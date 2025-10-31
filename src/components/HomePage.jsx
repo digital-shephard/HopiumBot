@@ -8,7 +8,7 @@ import RobotWidget from './RobotWidget'
 import ConnectWallet from './ConnectWallet'
 
 function HomePage() {
-  const [currentIndex, setCurrentIndex] = useState(1) // Start with PerpFarming
+  const [currentIndex, setCurrentIndex] = useState(0) // Start with PerpFarming
   const [direction, setDirection] = useState(0)
   const [slideDistance, setSlideDistance] = useState(300)
   const touchStartX = useRef(null)
@@ -26,8 +26,8 @@ function HomePage() {
   }, [])
   
   const sections = [
-    { id: 0, component: <SwapFarming />, title: 'Swap Farming', message: 'Optimizing swap routes for maximum yield extraction...' },
-    { id: 1, component: <PerpFarming />, title: 'Perp Farming', message: 'Analyzing perpetual funding rates across exchanges...' },
+    { id: 0, component: <PerpFarming />, title: 'Perp Farming', message: 'Analyzing perpetual funding rates across exchanges...' },
+    { id: 1, component: <SwapFarming />, title: 'Swap Farming', message: 'Optimizing swap routes for maximum yield extraction...' },
     { id: 2, component: <AirdropAlpha />, title: 'Airdrop Alpha', message: 'Scanning for high-value airdrop opportunities...' }
   ]
 

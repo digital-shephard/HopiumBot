@@ -95,6 +95,8 @@
   animation: zoomInFurther 2s ease-out forwards;
   animation-delay: 0.6s;
   transform-origin: center center;
+  /* Ensure transform is maintained when class is applied */
+  transform: scale(1.5);
 }
 
 @keyframes zoomInFurther {
@@ -433,23 +435,6 @@
   text-align: center;
 }
 
-.grungy-text::before {
-  content: 'WHATS THE TICKER?';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent;
-  color: rgba(255, 215, 0, 0.1);
-  clip-path: polygon(
-    0% 0%,
-    100% 0%,
-    98% 100%,
-    2% 100%
-  );
-  z-index: -1;
-}
 
 .grungy-text::after {
   content: '';

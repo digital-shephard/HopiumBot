@@ -272,3 +272,4 @@ export type ErrorHandler = (error: ErrorMessage) => void
 export type ConnectionHandler = () => void
 export type DisconnectionHandler = (event: CloseEvent) => void
 
+

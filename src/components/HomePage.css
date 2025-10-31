@@ -41,6 +41,10 @@
   bottom: 0;
 }
 
+.carousel-slide:not(.active) {
+  pointer-events: none;
+}
+
 .carousel-arrow {
   position: absolute;
   top: 50%;

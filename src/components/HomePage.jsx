@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import './HomePage.css'
 import SwapFarming from './sections/SwapFarming'
 import PerpFarming from './sections/PerpFarming'
@@ -11,6 +11,7 @@ function HomePage() {
   const [currentIndex, setCurrentIndex] = useState(0) // Start with PerpFarming
   const [direction, setDirection] = useState(0)
   const [slideDistance, setSlideDistance] = useState(300)
+  const [isInitialMount, setIsInitialMount] = useState(true)
   const touchStartX = useRef(null)
   const touchEndX = useRef(null)
 
@@ -25,25 +26,35 @@ function HomePage() {
     return () => window.removeEventListener('resize', updateSlideDistance)
   }, [])
   
+  // Create section components once and keep them mounted
+  const sectionComponents = useMemo(() => [
+    <PerpFarming key="perp" />,
+    <SwapFarming key="swap" />,
+    <AirdropAlpha key="airdrop" />
+  ], [])
+  
   const sections = [
-    { id: 0, component: <PerpFarming />, title: 'Perp Farming', message: 'Analyzing perpetual funding rates across exchanges...' },
-    { id: 1, component: <SwapFarming />, title: 'Swap Farming', message: 'Optimizing swap routes for maximum yield extraction...' },
-    { id: 2, component: <AirdropAlpha />, title: 'Airdrop Alpha', message: 'Scanning for high-value airdrop opportunities...' }
+    { id: 0, title: 'Perp Farming', message: 'Analyzing perpetual funding rates across exchanges...' },
+    { id: 1, title: 'Swap Farming', message: 'Optimizing swap routes for maximum yield extraction...' },
+    { id: 2, title: 'Airdrop Alpha', message: 'Scanning for high-value airdrop opportunities...' }
   ]
 
   const minSwipeDistance = 50
 
   const goToNext = () => {
+    setIsInitialMount(false)
     setDirection(1)
     setCurrentIndex((prev) => (prev + 1) % sections.length)
   }
 
   const goToPrevious = () => {
+    setIsInitialMount(false)
     setDirection(-1)
     setCurrentIndex((prev) => (prev - 1 + sections.length) % sections.length)
   }
 
   const goToIndex = (index) => {
+    setIsInitialMount(false)
     setDirection(index > currentIndex ? 1 : -1)
     setCurrentIndex(index)
   }
@@ -119,25 +130,33 @@ function HomePage() {
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
         >
-          <AnimatePresence mode="wait" custom={direction}>
-            <motion.div
-              key={currentIndex}
-              custom={direction}
-              className="carousel-slide"
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                type: 'spring',
-                stiffness: 300,
-                damping: 30,
-                mass: 0.8
-              }}
-            >
-              {sections[currentIndex].component}
-            </motion.div>
-          </AnimatePresence>
+          {sectionComponents.map((component, index) => {
+            const isActive = index === currentIndex
+            const slideDirection = currentIndex > index ? -1 : 1
+            
+            return (
+              <motion.div
+                key={index}
+                custom={isActive ? direction : slideDirection}
+                className={`carousel-slide ${isActive ? 'active' : ''}`}
+                variants={slideVariants}
+                initial={isActive && isInitialMount ? "center" : (isActive ? "enter" : "exit")}
+                animate={isActive ? "center" : "exit"}
+                transition={{
+                  type: 'spring',
+                  stiffness: 300,
+                  damping: 30,
+                  mass: 0.8
+                }}
+                style={{
+                  pointerEvents: isActive ? 'auto' : 'none',
+                  zIndex: isActive ? 10 : 1
+                }}
+              >
+                {component}
+              </motion.div>
+            )
+          })}
         </div>
 
         <button 

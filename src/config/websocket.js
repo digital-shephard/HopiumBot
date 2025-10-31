@@ -2,21 +2,32 @@
  * WebSocket configuration for HopiumCore API
  * 
  * Development: ws://localhost:8080/ws
- * Production: Will be configured later
+ * Production: wss://api.hopiumbot.com/ws
+ * 
+ * Uses same environment detection as API_CONFIG
  */
+
+const DEV_URL = 'ws://localhost:8080/ws';
+const PROD_URL = 'wss://api.hopiumbot.com/ws';
+
+// Check if we should use prod (via localStorage toggle or actual production hostname)
+const isActualProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+const useProdToggle = localStorage.getItem('api_use_prod') === 'true';
+const useProduction = isActualProduction || useProdToggle;
 
 export const WEBSOCKET_CONFIG = {
   // Development URL
-  DEV_URL: 'ws://localhost:8080/ws',
+  DEV_URL,
   
-  // Production URL (to be configured)
-  PROD_URL: null,
+  // Production URL
+  PROD_URL,
   
   // Current environment
   get URL() {
-    const isDev = import.meta.env.DEV || import.meta.env.MODE === 'development'
-    return isDev ? this.DEV_URL : this.PROD_URL || this.DEV_URL
+    return useProduction ? this.PROD_URL : this.DEV_URL;
   },
+  
+  isUsingProduction: useProduction,
   
   // Connection settings
   PING_INTERVAL: 54000, // ~54 seconds (server sends ping)
@@ -25,4 +36,5 @@ export const WEBSOCKET_CONFIG = {
   RECONNECT_DELAY: 3000, // 3 seconds initial reconnect delay
   MAX_RECONNECT_DELAY: 30000, // 30 seconds max reconnect delay
 }
+
 

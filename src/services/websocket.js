@@ -91,6 +91,13 @@ export class HopiumWebSocketClient {
    */
   onDisconnect = null
 
+  /**
+   * Called when a subscription is confirmed
+   * @type {Function}
+   * @param {string} symbol - The symbol that was subscribed to
+   */
+  onSubscribed = null
+
   // ============================================================================
   // Constructor
   // ============================================================================
@@ -126,9 +133,55 @@ export class HopiumWebSocketClient {
    * ```
    */
   async connect() {
-    // TODO: Implement WebSocket connection
-    // This will be implemented when connections are ready
-    throw new Error('WebSocket connection not yet implemented')
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return // Already connected
+    }
+
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('[WebSocket] Connecting to:', this.url)
+        this.ws = new WebSocket(this.url)
+
+        this.ws.onopen = () => {
+          console.log('[WebSocket] Connected successfully')
+          if (this.onConnect) {
+            this.onConnect()
+          }
+          resolve()
+        }
+
+        this.ws.onmessage = (event) => {
+          this._handleMessage(event)
+        }
+
+        this.ws.onerror = (error) => {
+          console.error('[WebSocket] Connection error:', error)
+          if (this.onError) {
+            this.onError({
+              type: 'error',
+              payload: {
+                error: 'WebSocket connection error'
+              }
+            })
+          }
+          reject(error)
+        }
+
+        this.ws.onclose = (event) => {
+          console.log('[WebSocket] Connection closed:', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean
+          })
+          this.ws = null
+          if (this.onDisconnect) {
+            this.onDisconnect(event)
+          }
+        }
+      } catch (error) {
+        reject(error)
+      }
+    })
   }
 
   /**
@@ -140,8 +193,6 @@ export class HopiumWebSocketClient {
    * ```
    */
   disconnect() {
-    // TODO: Implement WebSocket disconnection
-    // This will be implemented when connections are ready
     if (this.ws) {
       this.ws.close()
       this.ws = null
@@ -165,21 +216,24 @@ export class HopiumWebSocketClient {
    * Subscribe to receive updates for a specific trading pair
    * 
    * @param {string} symbol - Trading pair symbol (e.g., 'BTCUSDT')
+   * @param {string} [strategy='range_trading'] - Trading strategy ('range_trading' or 'momentum')
    * @throws {Error} If WebSocket is not connected
    * 
    * @example
    * ```javascript
-   * client.subscribe('BTCUSDT')
+   * client.subscribe('BTCUSDT', 'range_trading')
    * ```
    */
-  subscribe(symbol) {
+  subscribe(symbol, strategy = 'range_trading') {
     if (!this.isConnected()) {
       throw new Error('WebSocket not connected')
     }
 
-    // TODO: Implement WebSocket subscription
-    // This will be implemented when connections are ready
-    console.log(`[Staged] Would subscribe to: ${symbol}`)
+    this._sendMessage({
+      type: 'subscribe',
+      symbol: symbol,
+      strategy: strategy
+    })
   }
 
   /**
@@ -198,9 +252,10 @@ export class HopiumWebSocketClient {
       throw new Error('WebSocket not connected')
     }
 
-    // TODO: Implement WebSocket unsubscription
-    // This will be implemented when connections are ready
-    console.log(`[Staged] Would unsubscribe from: ${symbol}`)
+    this._sendMessage({
+      type: 'unsubscribe',
+      symbol: symbol
+    })
   }
 
   /**
@@ -220,9 +275,9 @@ export class HopiumWebSocketClient {
       throw new Error('WebSocket not connected')
     }
 
-    // TODO: Implement WebSocket list subscriptions
-    // This will be implemented when connections are ready
-    console.log('[Staged] Would list subscriptions')
+    this._sendMessage({
+      type: 'list_subscriptions'
+    })
     return Array.from(this.subscriptions)
   }
 
@@ -242,9 +297,9 @@ export class HopiumWebSocketClient {
       throw new Error('WebSocket not connected')
     }
 
-    // TODO: Implement WebSocket ping
-    // This will be implemented when connections are ready
-    console.log('[Staged] Would send ping')
+    this._sendMessage({
+      type: 'ping'
+    })
   }
 
   // ============================================================================
@@ -281,10 +336,19 @@ export class HopiumWebSocketClient {
    * @param {Object} message - Parsed message object
    */
   _processMessage(message) {
+    // Log all incoming WebSocket messages
+    console.log('[WebSocket] Received message:', {
+      type: message.type,
+      message: message
+    })
+
     switch (message.type) {
       case 'subscribed':
         this.subscriptions.add(message.symbol)
         console.log('Subscribed to:', message.symbol)
+        if (this.onSubscribed) {
+          this.onSubscribed(message.symbol)
+        }
         break
 
       case 'unsubscribed':
@@ -301,13 +365,13 @@ export class HopiumWebSocketClient {
 
       case 'summary':
         if (this.onSummary) {
-          this.onSummary(message.data)
+          this.onSummary(message.payload)
         }
         break
 
       case 'alert':
         if (this.onAlert) {
-          this.onAlert(message.data)
+          this.onAlert(message.payload)
         }
         break
 
@@ -343,7 +407,24 @@ export class HopiumWebSocketClient {
       id: ++this.messageId
     }
 
-    this.ws.send(JSON.stringify(messageWithId))
+    console.log('[WebSocket] Sending message:', {
+      type: message.type,
+      message: messageWithId
+    })
+
+    try {
+      this.ws.send(JSON.stringify(messageWithId))
+    } catch (error) {
+      console.error('Failed to send WebSocket message:', error)
+      if (this.onError) {
+        this.onError({
+          type: 'error',
+          payload: {
+            error: 'Failed to send message'
+          }
+        })
+      }
+    }
   }
 
   // ============================================================================
@@ -392,4 +473,5 @@ export function createWebSocketClient(customUrl = null) {
 
 // Default export
 export default HopiumWebSocketClient
+
 

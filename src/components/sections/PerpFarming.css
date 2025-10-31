@@ -10,6 +10,57 @@
   z-index: 10;
 }
 
+.section-title {
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+.section-title.fade-out {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+
+.section-description {
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+.section-description.fade-out {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+
+.trading-status {
+  font-family: 'Courier New', monospace;
+  font-size: 24px;
+  font-weight: bold;
+  color: #ffd700;
+  text-align: center;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  animation: fadeInUp 0.5s ease-out;
+  opacity: 1;
+  position: absolute;
+  top: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  pointer-events: none;
+  z-index: 11;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 .light-lines-container {
   position: fixed;
   top: 0;
@@ -39,7 +90,7 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%) rotate(var(--angle)) translateY(calc(-1 * var(--distance, 70vh)));
-  animation: suckIn var(--duration, 4s) ease-in infinite;
+  animation: suckIn calc(var(--duration, 4s) * var(--speed-multiplier, 1)) ease-in infinite;
   animation-delay: var(--delay);
   opacity: 0;
   box-shadow: 
@@ -76,6 +127,128 @@
   gap: 30px;
 }
 
+.equity-display {
+  font-family: 'Courier New', monospace;
+  color: #ffd700;
+  text-align: center;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  animation: fadeInLeft 0.5s ease-out;
+  opacity: 1;
+  position: absolute;
+  margin-left: -70%;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.equity-label {
+  font-size: 16px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.8;
+}
+
+.equity-amount {
+  font-size: 28px;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.pnl-display {
+  font-family: 'Courier New', monospace;
+  color: #ffd700;
+  text-align: center;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  animation: fadeInRight 0.5s ease-out;
+  opacity: 1;
+  position: absolute;
+  margin-right: -70%;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.pnl-label {
+  font-size: 16px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.8;
+}
+
+.pnl-amount {
+  font-size: 28px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  transition: all 0.3s ease;
+}
+
+.pnl-amount.positive {
+  color: #00ff00;
+  text-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+}
+
+.pnl-amount.negative {
+  color: #ff0000;
+  text-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+}
+
+.pnl-amount.neutral {
+  color: #ffd700;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+.pnl-amount.animate {
+  animation: numberChange 0.6s ease-out;
+}
+
+@keyframes numberChange {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
 .aster-circle {
   width: 200px;
   height: 200px;
@@ -92,6 +265,23 @@
     inset 0 0 30px rgba(255, 215, 0, 0.1);
   position: relative;
   animation: circlePulse 2s ease-in-out infinite;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.aster-circle.clickable {
+  cursor: pointer;
+}
+
+.aster-circle.clickable:hover {
+  transform: scale(1.05);
+  box-shadow: 
+    0 0 60px rgba(255, 215, 0, 0.6),
+    0 0 120px rgba(255, 215, 0, 0.3),
+    inset 0 0 40px rgba(255, 215, 0, 0.15);
+}
+
+.aster-circle.clickable:active {
+  transform: scale(0.98);
 }
 
 .aster-circle::before {
@@ -198,6 +388,24 @@
   transform: translateY(0);
 }
 
+.stop-button {
+  color: #ff4444 !important;
+  border-color: rgba(255, 68, 68, 0.8) !important;
+  background: rgba(255, 68, 68, 0.15) !important;
+  box-shadow: 
+    0 0 20px rgba(255, 68, 68, 0.5),
+    inset 0 0 10px rgba(255, 68, 68, 0.2) !important;
+}
+
+.stop-button:hover {
+  background: rgba(255, 68, 68, 0.25) !important;
+  border-color: rgba(255, 68, 68, 1) !important;
+  box-shadow: 
+    0 0 30px rgba(255, 68, 68, 0.7),
+    inset 0 0 15px rgba(255, 68, 68, 0.3) !important;
+  transform: translateY(-2px);
+}
+
 /* Risk Settings Modal Styles */
 .risk-modal-overlay {
   position: fixed;
@@ -227,17 +435,18 @@
   background: rgba(0, 0, 0, 0.95);
   border: 3px solid rgba(255, 215, 0, 0.4);
   border-radius: 24px;
-  padding: 40px;
   max-width: 600px;
   width: 90%;
   max-height: 80vh;
-  overflow-y: auto;
   position: relative;
   backdrop-filter: blur(10px);
   box-shadow: 
     0 0 60px rgba(255, 215, 0, 0.3),
     inset 0 0 40px rgba(255, 215, 0, 0.05);
   animation: modalSlideIn 0.3s ease-out;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 @keyframes modalSlideIn {
@@ -251,16 +460,25 @@
   }
 }
 
-.risk-modal::-webkit-scrollbar {
+.risk-modal-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.risk-modal-wrapper::-webkit-scrollbar {
   width: 8px;
 }
 
-.risk-modal::-webkit-scrollbar-track {
+.risk-modal-wrapper::-webkit-scrollbar-track {
   background: rgba(255, 215, 0, 0.1);
   border-radius: 4px;
 }
 
-.risk-modal::-webkit-scrollbar-thumb {
+.risk-modal-wrapper::-webkit-scrollbar-thumb {
   background: rgba(255, 215, 0, 0.3);
   border-radius: 4px;
 }
@@ -306,6 +524,7 @@
   display: flex;
   flex-direction: column;
   gap: 30px;
+  flex: 1;
 }
 
 .risk-form-group {
@@ -344,6 +563,19 @@
 
 .risk-input::placeholder {
   color: rgba(255, 215, 0, 0.4);
+}
+
+.strategy-description {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: rgba(255, 215, 0, 0.7);
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 6px;
+  padding: 10px 14px;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 
 .risk-input.shake-red {
@@ -462,6 +694,31 @@
   transform: translateY(0);
 }
 
+.risk-error-message {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #ff4444;
+  background: rgba(255, 68, 68, 0.1);
+  border: 2px solid rgba(255, 68, 68, 0.5);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 10px;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+  animation: errorFadeIn 0.3s ease-out;
+}
+
+@keyframes errorFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Mobile styles - adjust title/subtitle positioning */
 @media (max-width: 768px) {
   .perp-farming .section-content {
@@ -472,9 +729,32 @@
     margin-top: 40px;
   }
 
+  .trading-status {
+    font-size: 20px;
+  }
+
+  .equity-label {
+    font-size: 14px;
+  }
+
+  .equity-amount {
+    font-size: 22px;
+  }
+
+  .pnl-label {
+    font-size: 14px;
+  }
+
+  .pnl-amount {
+    font-size: 22px;
+  }
+
   .risk-modal {
-    padding: 30px 20px;
     max-width: 95%;
+  }
+
+  .risk-modal-wrapper {
+    padding: 30px 20px;
   }
 
   .risk-modal-title {
@@ -497,6 +777,11 @@
     padding: 12px 28px;
   }
 
+  .risk-error-message {
+    font-size: 13px;
+    padding: 10px 14px;
+  }
+
   .setup-button {
     font-size: 16px;
     padding: 10px 28px;
@@ -513,7 +798,30 @@
     margin-top: 30px;
   }
 
-  .risk-modal {
+  .trading-status {
+    font-size: 18px;
+    letter-spacing: 1px;
+  }
+
+  .equity-label {
+    font-size: 12px;
+  }
+
+  .equity-amount {
+    font-size: 18px;
+    letter-spacing: 1px;
+  }
+
+  .pnl-label {
+    font-size: 12px;
+  }
+
+  .pnl-amount {
+    font-size: 18px;
+    letter-spacing: 1px;
+  }
+
+  .risk-modal-wrapper {
     padding: 25px 15px;
   }
 
@@ -535,6 +843,11 @@
   .risk-save-button {
     font-size: 14px;
     padding: 10px 24px;
+  }
+
+  .risk-error-message {
+    font-size: 12px;
+    padding: 10px 12px;
   }
 
   .setup-button {

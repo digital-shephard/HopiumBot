@@ -1,0 +1,218 @@
+.dev-toggle-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+}
+
+.dev-toggle-button {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid rgba(255, 215, 0, 0.5);
+  color: #ffd700;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.3),
+    inset 0 0 10px rgba(255, 215, 0, 0.1);
+}
+
+.dev-toggle-button:hover {
+  background: rgba(255, 215, 0, 0.1);
+  border-color: rgba(255, 215, 0, 0.8);
+  box-shadow: 
+    0 0 30px rgba(255, 215, 0, 0.5),
+    inset 0 0 15px rgba(255, 215, 0, 0.15);
+  transform: scale(1.1) rotate(90deg);
+}
+
+.dev-toggle-panel {
+  position: absolute;
+  bottom: 60px;
+  right: 0;
+  width: 320px;
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 12px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 
+    0 0 40px rgba(255, 215, 0, 0.3),
+    inset 0 0 20px rgba(255, 215, 0, 0.05);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dev-toggle-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+}
+
+.dev-toggle-title {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.dev-toggle-close {
+  background: transparent;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  color: #ffd700;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-family: 'Courier New', monospace;
+  padding: 0;
+}
+
+.dev-toggle-close:hover {
+  background: rgba(255, 215, 0, 0.1);
+  border-color: rgba(255, 215, 0, 0.6);
+  transform: rotate(90deg);
+}
+
+.dev-toggle-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dev-toggle-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dev-toggle-label {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: rgba(255, 215, 0, 0.7);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.dev-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dev-toggle-status {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 0.5px;
+}
+
+.dev-toggle-url {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: rgba(255, 215, 0, 0.5);
+  word-break: break-all;
+}
+
+.dev-toggle-switch {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: bold;
+  color: #000;
+  background: #ffd700;
+  border: 2px solid #ffd700;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all 0.3s ease;
+  margin-top: 4px;
+}
+
+.dev-toggle-switch:hover {
+  background: rgba(255, 215, 0, 0.9);
+  box-shadow: 
+    0 0 15px rgba(255, 215, 0, 0.5),
+    inset 0 0 8px rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.dev-toggle-switch:active {
+  transform: translateY(0);
+}
+
+.dev-toggle-hint {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: rgba(255, 215, 0, 0.4);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .dev-toggle-container {
+    bottom: 15px;
+    right: 15px;
+  }
+
+  .dev-toggle-button {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+  }
+
+  .dev-toggle-panel {
+    width: calc(100vw - 80px);
+    max-width: 320px;
+    bottom: 60px;
+  }
+
+  .dev-toggle-title {
+    font-size: 14px;
+  }
+
+  .dev-toggle-status {
+    font-size: 13px;
+  }
+
+  .dev-toggle-url {
+    font-size: 10px;
+  }
+
+  .dev-toggle-switch {
+    font-size: 11px;
+    padding: 7px 14px;
+  }
+}
+

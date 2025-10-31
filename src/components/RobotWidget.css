@@ -76,15 +76,22 @@
 }
 
 .speech-bubble.expanded {
-  max-height: 400px;
+  height: calc(100vh - 60px);
+  max-height: calc(100vh - 60px);
   max-width: 500px;
   padding: 16px 24px;
-  overflow-y: auto;
+  overflow: hidden;
   cursor: default;
+  display: flex;
+  flex-direction: column;
 }
 
 .speech-bubble.expanded:hover {
   cursor: default;
+}
+
+.speech-bubble.expanded .speech-tail {
+  display: none;
 }
 
 .speech-content-collapsed {
@@ -104,7 +111,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 350px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 8px;
   padding-top: 8px; /* Add space for close button */
@@ -137,10 +145,54 @@
   text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
   padding-bottom: 8px;
   border-bottom: 1px solid rgba(255, 215, 0, 0.1);
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 .message-item:last-child {
   border-bottom: none;
+}
+
+.sentiment-button {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: bold;
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.1);
+  border: 2px solid rgba(255, 215, 0, 0.5);
+  border-radius: 8px;
+  padding: 8px 16px;
+  margin-top: 12px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 
+    0 0 15px rgba(255, 215, 0, 0.2),
+    inset 0 0 8px rgba(255, 215, 0, 0.05);
+  align-self: flex-start;
+  position: relative;
+  z-index: 10;
+}
+
+.sentiment-button:hover:not(:disabled) {
+  background: rgba(255, 215, 0, 0.2);
+  border-color: rgba(255, 215, 0, 0.8);
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.4),
+    inset 0 0 12px rgba(255, 215, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.sentiment-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.sentiment-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: rgba(255, 215, 0, 0.3);
 }
 
 .cursor {
@@ -277,7 +329,8 @@
   }
 
   .speech-bubble.expanded {
-    max-height: 350px;
+    height: calc(100vh - 40px);
+    max-height: calc(100vh - 40px);
     max-width: 420px;
   }
 
@@ -327,7 +380,8 @@
   }
 
   .speech-bubble.expanded {
-    max-height: 300px;
+    height: calc(100vh - 30px);
+    max-height: calc(100vh - 30px);
     max-width: calc(100vw - 120px);
   }
 
@@ -389,7 +443,8 @@
   }
 
   .speech-bubble.expanded {
-    max-height: 250px;
+    height: calc(100vh - 20px);
+    max-height: calc(100vh - 20px);
     max-width: calc(100vw - 100px);
   }
 

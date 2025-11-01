@@ -1041,14 +1041,14 @@ GET /api/tasks/discord/callback?state=xyz789&code=auth_code
 - `state`: OAuth state token
 - `code`: Authorization code
 
-**Response**:
-```json
-{
-  "success": true,
-  "wallet_address": "0xABC123...",
-  "message": "Discord connected successfully! Guild membership verified."
-}
-```
+**Response**: Beautiful HTML success page with:
+- ✅ Success checkmark animation
+- 🎉 Confetti celebration
+- 💰 Points earned display (500 points)
+- ⏱️ 3-second countdown
+- 🪟 Auto-close window
+
+On error, displays styled error page with specific message.
 
 **What Happens**:
 1. Backend verifies state is valid (links to wallet address)
@@ -1061,25 +1061,35 @@ GET /api/tasks/discord/callback?state=xyz789&code=auth_code
 
 **Frontend Implementation**:
 ```javascript
-// 1. User clicks "Connect Discord"
+// 1. User clicks "Connect Discord" - Open in popup for better UX
 async function connectDiscord(walletAddress) {
   const response = await fetch(`${BASE_URL}/api/tasks/discord/auth?wallet_address=${walletAddress}`);
   const data = await response.json();
   
-  // 2. Redirect to Discord
-  window.location.href = data.auth_url;
+  // 2. Open Discord OAuth in popup window
+  const popup = window.open(
+    data.auth_url,
+    'Discord OAuth',
+    'width=500,height=700,scrollbars=yes'
+  );
+  
+  // 3. Poll to check when popup closes (user completed OAuth)
+  const checkClosed = setInterval(() => {
+    if (popup.closed) {
+      clearInterval(checkClosed);
+      // Refresh user profile to get updated points
+      refreshUserProfile(walletAddress);
+    }
+  }, 1000);
 }
 
-// 3. Discord redirects back to your frontend with state/code
-// Your frontend should redirect to the callback endpoint OR handle it server-side
-
-// 4. Check user profile to see if task completed
-async function checkDiscordConnected(walletAddress) {
+// 4. Refresh user profile after OAuth completes
+async function refreshUserProfile(walletAddress) {
   const response = await fetch(`${BASE_URL}/api/tasks/user/${walletAddress}`);
   const profile = await response.json();
   
-  const discordTask = profile.completed_tasks.find(t => t.task_type === 'JOIN_DISCORD');
-  return discordTask !== undefined;
+  // Update UI with new points and completed tasks
+  updateUI(profile);
 }
 ```
 

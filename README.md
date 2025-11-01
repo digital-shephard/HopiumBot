@@ -11,41 +11,48 @@ HopiumBot/
 ├── vite.config.js         # Vite configuration
 ├── README.md              # Project documentation
 └── src/
-    ├── main.jsx           # React entry point
-    ├── App.jsx            # Main app component
-    ├── index.css          # Global styles
-    ├── config/
-    │   ├── walletConnect.js  # WalletConnect configuration
-    │   ├── websocket.js      # WebSocket configuration
-    │   └── api.js            # API configuration for HopiumCore API (includes Tasks endpoints)
-    ├── types/
-    │   └── websocket.d.ts    # TypeScript type definitions for WebSocket API
-    ├── services/
-    │   ├── websocket.js      # WebSocket client service
-    │   ├── orderManager.js   # Order lifecycle management service
-    │   └── dex/              # DEX service abstraction layer
-    │       ├── DexService.js         # Abstract DEX service interface
-    │       └── aster/               # Aster Finance implementation
-    │           ├── AsterDexService.js # Aster DEX service
-    │           └── AsterApiClient.js  # Aster API HTTP client
-    └── components/
-        ├── LandingScreen.jsx    # Landing screen component
-        ├── LandingScreen.css    # Landing screen styles
-        ├── HomePage.jsx         # Homepage carousel component
-        ├── HomePage.css         # Homepage styles
-        ├── RobotWidget.jsx      # Robot widget component (top left)
-        ├── RobotWidget.css      # Robot widget styles
-        ├── ConnectWallet.jsx    # Connect wallet widget (top right)
-        ├── ConnectWallet.css    # Connect wallet styles
-        ├── DevToggle.jsx        # Dev tools toggle (dev mode only)
-        ├── DevToggle.css        # Dev toggle styles
-        └── sections/
-            ├── HopiumFarming.jsx    # HOPIUM Farming section
-            ├── HopiumFarming.css   # HOPIUM Farming styles
-            ├── PerpFarming.jsx      # Perp Farming section
-            ├── PerpFarming.css     # Perp Farming styles
-            ├── AirdropAlpha.jsx    # Airdrop Alpha section
-            └── AirdropAlpha.css    # Airdrop Alpha styles
+   ├── main.jsx           # React entry point
+   ├── App.jsx            # Main app component
+   ├── index.css          # Global styles
+   ├── config/
+   │   ├── walletConnect.js  # WalletConnect configuration
+   │   ├── websocket.js      # WebSocket configuration
+   │   └── api.js            # API configuration for HopiumCore API (includes Tasks endpoints and auth)
+   ├── contexts/
+   │   └── AuthContext.jsx   # Authentication context for wallet-based auth state management
+   ├── hooks/
+   │   └── useWebSocket.js   # React hook for authenticated WebSocket connections
+   ├── types/
+   │   └── websocket.d.ts    # TypeScript type definitions for WebSocket API
+   ├── services/
+   │   ├── auth.js           # Authentication service (wallet signature-based)
+   │   ├── websocket.js      # WebSocket client service (with JWT auth)
+   │   ├── orderManager.js   # Order lifecycle management service
+   │   └── dex/              # DEX service abstraction layer
+   │       ├── DexService.js         # Abstract DEX service interface
+   │       └── aster/               # Aster Finance implementation
+   │           ├── AsterDexService.js # Aster DEX service
+   │           └── AsterApiClient.js  # Aster API HTTP client
+   └── components/
+       ├── LandingScreen.jsx    # Landing screen component
+       ├── LandingScreen.css    # Landing screen styles
+       ├── HomePage.jsx         # Homepage carousel component
+       ├── HomePage.css         # Homepage styles
+       ├── RobotWidget.jsx      # Robot widget component (top left)
+       ├── RobotWidget.css      # Robot widget styles
+       ├── ConnectWallet.jsx    # Connect wallet widget (top right)
+       ├── ConnectWallet.css    # Connect wallet styles
+       ├── AuthStatus.jsx       # Authentication status indicator
+       ├── AuthStatus.css       # Authentication status styles
+       ├── DevToggle.jsx        # Dev tools toggle (dev mode only)
+       ├── DevToggle.css        # Dev toggle styles
+       └── sections/
+           ├── HopiumFarming.jsx    # HOPIUM Farming section
+           ├── HopiumFarming.css   # HOPIUM Farming styles
+           ├── PerpFarming.jsx      # Perp Farming section
+           ├── PerpFarming.css     # Perp Farming styles
+           ├── AirdropAlpha.jsx    # Airdrop Alpha section
+           └── AirdropAlpha.css    # Airdrop Alpha styles
 ```
 
 ## Getting Started
@@ -86,6 +93,13 @@ npm run preview
 
 - **Landing Screen**: Fullscreen view with a steel door in a brick wall (CSS representation)
 - **Interactive Door**: Type "AURA" to unlock and open the door
+- **Wallet Authentication**: 
+  - **Signature-Based Auth**: Secure authentication using wallet signatures (EIP-4361)
+  - **Automatic Flow**: Connect wallet → Sign message → Get JWT token
+  - **Session Persistence**: Auth token persists in sessionStorage (24h expiry)
+  - **Auto Re-auth**: Automatically re-authenticates on wallet switch or token expiry
+  - **Visual Feedback**: Real-time status indicator showing auth state, errors, and retry options
+  - **Protected Endpoints**: Automatic auth token injection for API requests
 - **Homepage Carousel**: Smooth horizontal carousel with three sections:
   - HOPIUM Farming
     - **Tasks System**: Complete tasks to earn HOPIUM tokens
@@ -170,28 +184,52 @@ The project integrates with the HopiumCore API for market data, sentiment analys
   - Development URL: `http://localhost:8080`
   - Production URL: `https://api.hopiumbot.com`
   - Automatically detects environment based on hostname
+  - **Auto Auth Headers**: Automatically includes JWT auth tokens for protected endpoints
   - **Dev Toggle**: When running locally, you can toggle between dev and prod APIs:
     - **UI Toggle**: Click the gear icon (⚙️) in the bottom right corner (dev mode only)
     - **Console**: `localStorage.setItem('api_use_prod', 'true')` to use production API
     - Setting persists across page reloads
 
+### Authentication
+
+The app uses **wallet signature-based authentication** for secure, passwordless access:
+
+**Authentication Flow**:
+1. Connect wallet (MetaMask, WalletConnect, etc.)
+2. Sign authentication message (proves wallet ownership)
+3. Receive JWT token (24h expiry)
+4. Token automatically included in protected API requests
+
+**Auth Endpoints**:
+- `POST /api/auth/challenge` - Request authentication challenge
+- `POST /api/auth/verify` - Verify signature and get JWT token
+
+**Protected vs Public**:
+- 🔒 **Protected** (require auth): User profile, task completion, referrals, Discord OAuth
+- 🌐 **Public** (no auth): Market data, leaderboard, health check
+
+See **[docs/AUTHENTICATION_GUIDE.md](docs/AUTHENTICATION_GUIDE.md)** for complete authentication documentation.  
+See **[docs/TESTING_AUTH.md](docs/TESTING_AUTH.md)** for testing guide.
+
 ### HopiumTasks API Endpoints
 
 The API includes a complete tasks/airdrop system:
 
-**User Management**:
+**User Management** (🔒 Protected):
 - `POST /api/tasks/user/register` - Register a new user
 - `GET /api/tasks/user/{wallet_address}` - Get user profile with tasks and referral stats
+- `POST /api/tasks/complete` - Complete a task
 
-**Discord OAuth**:
+**Discord OAuth** (🔒 Protected):
 - `GET /api/tasks/discord/auth?wallet_address={address}` - Get Discord OAuth URL
 - `GET /api/tasks/discord/callback` - OAuth callback (handles Discord verification)
 
-**Referrals**:
+**Referrals** (🔒 Protected):
 - `POST /api/tasks/referral/enter` - Submit a referral code
+- `POST /api/tasks/referral/verify` - Verify referral completion
 - `GET /api/tasks/referral/{wallet_address}` - Get referral stats
 
-**Leaderboard**:
+**Leaderboard** (🌐 Public):
 - `GET /api/tasks/leaderboard?limit={n}&offset={n}` - Get leaderboard entries
 - `GET /api/tasks/leaderboard/user/{wallet_address}` - Get user's rank
 
@@ -215,13 +253,14 @@ See `API_INTEGRATION_GUIDE.md` for complete API documentation.
 
 ## WebSocket Integration
 
-The project includes a fully functional WebSocket client for integrating with the HopiumCore API. The WebSocket connection is automatically established when trading is started in the Perp Farming section.
+The project includes a fully functional WebSocket client for integrating with the HopiumCore API. The WebSocket connection **requires authentication** and is automatically established when trading is started in the Perp Farming section.
 
 ### WebSocket Files
 
 - **`src/config/websocket.js`**: Configuration for WebSocket URLs and connection settings
   - Development URL: `ws://localhost:8080/ws`
-  - Production URL: To be configured later
+  - Production URL: `wss://api.hopiumbot.com/ws`
+  - Same dev/prod toggle as API configuration
   
 - **`src/types/websocket.d.ts`**: TypeScript type definitions for all WebSocket messages and data structures
   - Message types (subscribe, unsubscribe, summary, alert, etc.)
@@ -230,13 +269,36 @@ The project includes a fully functional WebSocket client for integrating with th
   
 - **`src/services/websocket.js`**: WebSocket client service class
   - `HopiumWebSocketClient` class with full connection implementation
+  - JWT authentication (token in URL query parameter)
   - Event handlers for summary, alert, and error messages
   - Automatic subscription management
+  - Handles auth failures and reconnection
+  
+- **`src/hooks/useWebSocket.js`**: React hook for easy WebSocket usage
+  - Auto-connect/disconnect based on auth state
+  - Handles token expiration and reconnection
+  - Subscription management
+  - Real-time updates via state
+
+### Authentication Required
+
+WebSocket connections **require a valid JWT token** obtained through wallet authentication:
+
+**Security Features**:
+- ✅ Token-based authentication (JWT)
+- ✅ Connection limit: 3 simultaneous connections per user
+- ✅ Message rate limit: 30 messages/minute
+- ✅ Subscription limit: 10 symbols per connection
+- ✅ Auto-reconnect with exponential backoff
+
+See **[docs/WEBSOCKET_SECURITY_GUIDE.md](docs/WEBSOCKET_SECURITY_GUIDE.md)** for detailed WebSocket authentication documentation.
 
 ### Usage Example
 
+**Using the WebSocket Client Directly**:
 ```javascript
 import { HopiumWebSocketClient } from './services/websocket'
+import authService from './services/auth'
 
 const client = new HopiumWebSocketClient()
 
@@ -250,9 +312,47 @@ client.onAlert = (data) => {
   console.warn('Alert:', data.change_type, data.description)
 }
 
-// Connect and subscribe
-await client.connect()
-client.subscribe('BTCUSDT', 'range_trading') // strategy is optional, defaults to 'range_trading'
+client.onError = (error) => {
+  if (error.payload?.requiresReauth) {
+    console.error('Re-authentication required!')
+  }
+}
+
+// Connect with authentication token
+const token = authService.getToken()
+await client.connect(token)
+
+// Subscribe to symbol
+client.subscribe('BTCUSDT', 'range_trading')
+```
+
+**Using the React Hook (Recommended)**:
+```javascript
+import { useWebSocket } from './hooks/useWebSocket'
+import { useAuth } from './contexts/AuthContext'
+
+function TradingComponent() {
+  const { token, isAuthenticated } = useAuth()
+  const { connected, subscribe, updates, error } = useWebSocket(token, isAuthenticated)
+  
+  useEffect(() => {
+    if (connected) {
+      subscribe('BTCUSDT', 'range_trading')
+    }
+  }, [connected])
+  
+  return (
+    <div>
+      <p>Status: {connected ? '🟢 Connected' : '🔴 Disconnected'}</p>
+      {error && <p>Error: {error}</p>}
+      {updates.map(update => (
+        <div key={update.timestamp}>
+          {update.symbol}: {update.data.summary.entry.side}
+        </div>
+      ))}
+    </div>
+  )
+}
 ```
 
 ### WebSocket Message Types

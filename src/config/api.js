@@ -41,6 +41,12 @@ export const API_CONFIG = {
   
   // API endpoints
   endpoints: {
+    // Auth endpoints
+    auth: {
+      challenge: '/api/auth/challenge',
+      verify: '/api/auth/verify'
+    },
+    
     // Perps endpoints
     snapshot: (symbol = 'BTCUSDT') => `/api/perps/snapshot?symbol=${symbol}`,
     marketData: (symbol) => `/api/perps/market-data?symbol=${symbol}`,
@@ -55,6 +61,7 @@ export const API_CONFIG = {
       // User endpoints
       register: '/api/tasks/user/register',
       userProfile: (walletAddress) => `/api/tasks/user/${walletAddress}`,
+      completeTask: '/api/tasks/complete',
       
       // Discord OAuth endpoints
       discordAuth: (walletAddress) => `/api/tasks/discord/auth?wallet_address=${walletAddress}`,
@@ -62,6 +69,7 @@ export const API_CONFIG = {
       
       // Referral endpoints
       enterReferral: '/api/tasks/referral/enter',
+      verifyReferral: '/api/tasks/referral/verify',
       getReferralInfo: (walletAddress) => `/api/tasks/referral/${walletAddress}`,
       
       // Leaderboard endpoints
@@ -73,19 +81,30 @@ export const API_CONFIG = {
   // Helper to get full URL
   getUrl: (endpoint) => `${this.BASE_URL}${endpoint}`,
   
-  // Fetch wrapper with error handling
+  // Fetch wrapper with error handling and optional auth
   async fetch(endpoint, options = {}) {
     const url = `${this.BASE_URL}${endpoint}`;
     
     try {
       console.log(`[API] Fetching: ${options.method || 'GET'} ${url}`);
       
+      // Auto-include auth token if available and not explicitly disabled
+      const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+      };
+      
+      // Add auth token if available (unless explicitly disabled)
+      if (options.includeAuth !== false) {
+        const token = sessionStorage.getItem('auth_token');
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+      }
+      
       const response = await fetch(url, {
         ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers
-        }
+        headers
       });
       
       console.log(`[API] Response status: ${response.status} ${response.statusText}`);

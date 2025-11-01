@@ -4,10 +4,14 @@ import asterLogo from '../../assets/aster_logo.png'
 import OrderManager from '../../services/orderManager'
 import { HopiumWebSocketClient } from '../../services/websocket'
 import AsterDexService from '../../services/dex/aster/AsterDexService'
+import { useAuth } from '../../contexts/AuthContext'
 
 const STORAGE_KEY = 'perp_farming_settings'
 
 function PerpFarming() {
+  // Get auth context for WebSocket authentication
+  const { authService } = useAuth()
+  
   const [showModal, setShowModal] = useState(false)
   const [asterApiKey, setAsterApiKey] = useState('')
   const [asterSecretKey, setAsterSecretKey] = useState('')
@@ -212,6 +216,12 @@ function PerpFarming() {
       
       // Connect WebSocket (non-blocking - if it fails, we still allow trading)
       try {
+        // Get authentication token for WebSocket
+        const token = authService.getToken()
+        if (!token) {
+          throw new Error('Not authenticated. Please connect wallet and sign in.')
+        }
+
         const wsClient = new HopiumWebSocketClient()
         
         // Handle subscription confirmation - use the full pair name from WebSocket
@@ -230,11 +240,21 @@ function PerpFarming() {
             handleError(`Failed to handle summary: ${error.message}`)
           }
         }
+        
         wsClient.onError = (error) => {
-          handleError(`WebSocket error: ${error.payload?.error || 'Unknown error'}`)
+          const errorMsg = error.payload?.error || 'Unknown error'
+          handleError(`WebSocket error: ${errorMsg}`)
+          
+          // Check if requires re-authentication
+          if (error.payload?.requiresReauth) {
+            handleError('WebSocket authentication expired. Please re-authenticate and restart trading.')
+            // Stop trading if auth fails
+            handleStop()
+          }
         }
         
-        await wsClient.connect()
+        // Connect with authentication token
+        await wsClient.connect(token)
         wsClient.subscribe(defaultSymbol, settings.strategy) // Default symbol with strategy
         wsClientRef.current = wsClient
       } catch (wsError) {

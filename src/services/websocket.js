@@ -113,37 +113,46 @@ export class HopiumWebSocketClient {
   }
 
   // ============================================================================
-  // Connection Management (Staged - Not Implemented Yet)
+  // Connection Management
   // ============================================================================
 
   /**
-   * Connect to the WebSocket server
+   * Connect to the WebSocket server with authentication
    * 
+   * @param {string} token - JWT authentication token (required)
    * @returns {Promise<void>} Resolves when connected
-   * @throws {Error} If connection fails
+   * @throws {Error} If connection fails or token is missing
    * 
    * @example
    * ```javascript
    * try {
-   *   await client.connect()
+   *   const token = authService.getToken()
+   *   await client.connect(token)
    *   console.log('Connected!')
    * } catch (error) {
    *   console.error('Connection failed:', error)
    * }
    * ```
    */
-  async connect() {
+  async connect(token) {
+    // Validate token is provided
+    if (!token) {
+      throw new Error('Authentication token required. Please authenticate first.')
+    }
+
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       return // Already connected
     }
 
     return new Promise((resolve, reject) => {
       try {
-        console.log('[WebSocket] Connecting to:', this.url)
-        this.ws = new WebSocket(this.url)
+        // Method 1: Include token in URL query parameter (recommended)
+        const authUrl = `${this.url}?token=${encodeURIComponent(token)}`
+        console.log('[WebSocket] Connecting to:', this.url.replace(/\?.*/, ''), '(with auth token)')
+        this.ws = new WebSocket(authUrl)
 
         this.ws.onopen = () => {
-          console.log('[WebSocket] Connected successfully')
+          console.log('[WebSocket] ✅ Connected successfully (authenticated)')
           if (this.onConnect) {
             this.onConnect()
           }
@@ -156,11 +165,18 @@ export class HopiumWebSocketClient {
 
         this.ws.onerror = (error) => {
           console.error('[WebSocket] Connection error:', error)
+          
+          // Check if error is due to authentication
+          const errorMessage = error.message || 'WebSocket connection error'
+          const isAuthError = errorMessage.includes('401') || 
+                             errorMessage.includes('Unauthorized') ||
+                             errorMessage.includes('authentication')
+          
           if (this.onError) {
             this.onError({
               type: 'error',
               payload: {
-                error: 'WebSocket connection error'
+                error: isAuthError ? 'Authentication failed. Please re-authenticate.' : errorMessage
               }
             })
           }
@@ -173,6 +189,10 @@ export class HopiumWebSocketClient {
             reason: event.reason,
             wasClean: event.wasClean
           })
+          
+          // Handle specific close codes
+          this._handleCloseEvent(event)
+          
           this.ws = null
           if (this.onDisconnect) {
             this.onDisconnect(event)
@@ -197,6 +217,66 @@ export class HopiumWebSocketClient {
       this.ws.close()
       this.ws = null
       this.subscriptions.clear()
+    }
+  }
+
+  /**
+   * Handle WebSocket close events with specific error codes
+   * @private
+   * @param {CloseEvent} event - Close event
+   */
+  _handleCloseEvent(event) {
+    let reason = event.reason || 'Unknown reason'
+    let requiresReauth = false
+
+    // Handle specific close codes
+    switch (event.code) {
+      case 1000:
+        // Normal closure
+        console.log('[WebSocket] Connection closed normally')
+        break
+
+      case 1008:
+        // Policy violation (authentication failed/expired)
+        console.warn('[WebSocket] ⚠️ Authentication failed or token expired')
+        reason = 'Authentication failed or token expired. Please re-authenticate.'
+        requiresReauth = true
+        break
+
+      case 4001:
+        // Custom: Invalid token
+        console.warn('[WebSocket] ⚠️ Invalid authentication token')
+        reason = 'Invalid authentication token. Please re-authenticate.'
+        requiresReauth = true
+        break
+
+      case 4029:
+        // Custom: Too many connections (429)
+        console.warn('[WebSocket] ⚠️ Connection limit exceeded')
+        reason = 'Connection limit exceeded (max 3 connections per user). Close another connection.'
+        break
+
+      case 4030:
+        // Custom: Authentication timeout
+        console.warn('[WebSocket] ⚠️ Authentication timeout')
+        reason = 'Authentication timeout (5 seconds). Please reconnect.'
+        requiresReauth = true
+        break
+
+      default:
+        console.warn('[WebSocket] Connection closed with code:', event.code)
+    }
+
+    // Notify error handler if token needs refresh
+    if (requiresReauth && this.onError) {
+      this.onError({
+        type: 'error',
+        payload: {
+          error: reason,
+          requiresReauth: true,
+          code: event.code
+        }
+      })
     }
   }
 
@@ -303,7 +383,7 @@ export class HopiumWebSocketClient {
   }
 
   // ============================================================================
-  // Message Handling (Staged - Not Implemented Yet)
+  // Message Handling
   // ============================================================================
 
   /**
@@ -376,7 +456,19 @@ export class HopiumWebSocketClient {
         break
 
       case 'error':
-        console.error('Server error:', message.payload?.error)
+        const errorMsg = message.payload?.error || 'Unknown error'
+        
+        // Categorize errors for better handling
+        if (errorMsg.includes('rate limit')) {
+          console.warn('[WebSocket] ⚠️ Rate limit exceeded:', errorMsg)
+        } else if (errorMsg.includes('Subscription limit')) {
+          console.warn('[WebSocket] ⚠️ Subscription limit exceeded:', errorMsg)
+        } else if (errorMsg.includes('authentication') || errorMsg.includes('Authentication')) {
+          console.error('[WebSocket] 🔒 Authentication error:', errorMsg)
+        } else {
+          console.error('[WebSocket] ❌ Server error:', errorMsg)
+        }
+        
         if (this.onError) {
           this.onError(message)
         }

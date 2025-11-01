@@ -30,7 +30,7 @@ function HomePage() {
   const sectionComponents = useMemo(() => [
     <PerpFarming key="perp" />,
     <HopiumFarming key="hopium" isActive={currentIndex === 1} />,
-    <AirdropAlpha key="airdrop" />
+    <AirdropAlpha key="airdrop" onNavigateToHopium={() => goToIndex(1)} />
   ], [currentIndex])
   
   const sections = [

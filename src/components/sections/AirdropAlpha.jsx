@@ -1,25 +1,17 @@
-import { useState } from 'react'
 import './AirdropAlpha.css'
 import logo from '../../assets/logo.webp'
 
 // Sample airdrop data - replace with real data later
 const sampleAirdrops = [
-  { id: 1, name: 'HOPIUM BOT', description: 'Crypto Farming Bot', status: 'Upcoming' },
-  { id: 2, name: 'LayerZero', description: 'Omnichain interoperability', status: 'Claimable' },
-  { id: 3, name: 'Starknet', description: 'ZK-Rollup scaling solution', status: 'Claimable' },
-  { id: 4, name: 'ZKSync', description: 'Layer 2 scaling protocol', status: 'Upcoming' },
-  { id: 5, name: 'Celestia', description: 'Modular blockchain network', status: 'Claimable' },
+  { id: 1, name: 'HOPIUM BOT', description: 'Crypto Farming Bot', status: 'Active' },
 ]
 
-function AirdropAlpha() {
-  const [selectedAirdrop, setSelectedAirdrop] = useState(null)
-
-  const handleAirdropClick = (airdrop) => {
-    setSelectedAirdrop(airdrop)
-  }
-
-  const closeModal = () => {
-    setSelectedAirdrop(null)
+function AirdropAlpha({ onNavigateToHopium }) {
+  const handleAirdropClick = () => {
+    // Navigate to HOPIUM Farming section (index 1)
+    if (onNavigateToHopium) {
+      onNavigateToHopium()
+    }
   }
 
   return (
@@ -44,7 +36,7 @@ function AirdropAlpha() {
                   <div
                     key={airdrop.id}
                     className="airdrop-rectangle"
-                    onClick={() => handleAirdropClick(airdrop)}
+                    onClick={handleAirdropClick}
                   >
                     <div className="airdrop-name">{airdrop.name}</div>
                     <div className="airdrop-description">{airdrop.description}</div>
@@ -58,33 +50,6 @@ function AirdropAlpha() {
           </div>
         </div>
       </div>
-
-      {/* Modal */}
-      {selectedAirdrop && (
-        <div className="airdrop-modal-overlay" onClick={closeModal}>
-          <div className="airdrop-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={closeModal}>×</button>
-            <h2 className="modal-title">{selectedAirdrop.name}</h2>
-            <div className="modal-content">
-              <p className="modal-description">{selectedAirdrop.description}</p>
-              <div className="modal-section">
-                <h3>How to Participate</h3>
-                <p>Detailed participation instructions will be available here...</p>
-              </div>
-              <div className="modal-section">
-                <h3>Estimated Value</h3>
-                <p>TBD</p>
-              </div>
-              <div className="modal-section">
-                <h3>Status</h3>
-                <span className={`modal-status ${selectedAirdrop.status.toLowerCase()}`}>
-                  {selectedAirdrop.status}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

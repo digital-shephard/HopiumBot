@@ -265,6 +265,23 @@
   box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
 }
 
+.airdrop-status.active {
+  background: rgba(0, 255, 0, 0.2);
+  border: 1px solid rgba(0, 255, 0, 0.5);
+  color: #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+  animation: activePulse 2s ease-in-out infinite;
+}
+
+@keyframes activePulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 255, 0, 0.6);
+  }
+}
+
 /* Modal Styles */
 .airdrop-modal-overlay {
   position: fixed;

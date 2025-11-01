@@ -84,7 +84,7 @@ function HomePage() {
 
   const slideVariants = {
     enter: (direction) => ({
-      x: direction > 0 ? slideDistance : -slideDistance,
+      x: direction > 0 ? -slideDistance : slideDistance,
       opacity: 0
     }),
     center: {
@@ -92,7 +92,7 @@ function HomePage() {
       opacity: 1
     },
     exit: (direction) => ({
-      x: direction > 0 ? -slideDistance : slideDistance,
+      x: direction > 0 ? slideDistance : -slideDistance,
       opacity: 0
     })
   }

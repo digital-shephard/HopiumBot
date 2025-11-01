@@ -17,7 +17,7 @@ HopiumBot/
     ├── config/
     │   ├── walletConnect.js  # WalletConnect configuration
     │   ├── websocket.js      # WebSocket configuration
-    │   └── api.js            # API configuration for HopiumCore API
+    │   └── api.js            # API configuration for HopiumCore API (includes Tasks endpoints)
     ├── types/
     │   └── websocket.d.ts    # TypeScript type definitions for WebSocket API
     ├── services/
@@ -40,8 +40,8 @@ HopiumBot/
         ├── DevToggle.jsx        # Dev tools toggle (dev mode only)
         ├── DevToggle.css        # Dev toggle styles
         └── sections/
-            ├── SwapFarming.jsx      # Swap Farming section
-            ├── SwapFarming.css     # Swap Farming styles
+            ├── HopiumFarming.jsx    # HOPIUM Farming section
+            ├── HopiumFarming.css   # HOPIUM Farming styles
             ├── PerpFarming.jsx      # Perp Farming section
             ├── PerpFarming.css     # Perp Farming styles
             ├── AirdropAlpha.jsx    # Airdrop Alpha section
@@ -87,7 +87,19 @@ npm run preview
 - **Landing Screen**: Fullscreen view with a steel door in a brick wall (CSS representation)
 - **Interactive Door**: Type "AURA" to unlock and open the door
 - **Homepage Carousel**: Smooth horizontal carousel with three sections:
-  - Swap Farming
+  - HOPIUM Farming
+    - **Tasks System**: Complete tasks to earn HOPIUM tokens
+      - **Join Discord** (500 points): Connect your Discord account via OAuth and join the server
+      - **Refer Friends** (1000 points each): Share your referral code and earn points when friends complete Discord task
+    - **Points Tracker**: Real-time display of user's accumulated points with ranking
+    - **Leaderboard**: Live leaderboard showing top 10 performers
+    - **Referral System**: 
+      - Auto-generated referral code for each wallet
+      - Track referrals (total, completed, pending)
+      - View referral points earned
+    - **Wallet Required**: Users must connect their wallet to track points and complete tasks
+    - **Auto-Registration**: Users are automatically registered when connecting wallet
+    - **API Integration**: Full integration with HopiumCore Tasks API
   - Perp Farming
     - **Risk Settings Modal**: Configure Aster API credentials, capital limits, Take Profit, Stop Loss, and Position Size
       - Fixed scrollbar clipping issue with proper container structure and overflow handling
@@ -150,7 +162,7 @@ To deploy to Vercel with the WalletConnect Project ID:
 
 ## API Integration
 
-The project integrates with the HopiumCore API for market data and sentiment analysis.
+The project integrates with the HopiumCore API for market data, sentiment analysis, and airdrop tasks.
 
 ### API Configuration
 
@@ -162,6 +174,30 @@ The project integrates with the HopiumCore API for market data and sentiment ana
     - **UI Toggle**: Click the gear icon (⚙️) in the bottom right corner (dev mode only)
     - **Console**: `localStorage.setItem('api_use_prod', 'true')` to use production API
     - Setting persists across page reloads
+
+### HopiumTasks API Endpoints
+
+The API includes a complete tasks/airdrop system:
+
+**User Management**:
+- `POST /api/tasks/user/register` - Register a new user
+- `GET /api/tasks/user/{wallet_address}` - Get user profile with tasks and referral stats
+
+**Discord OAuth**:
+- `GET /api/tasks/discord/auth?wallet_address={address}` - Get Discord OAuth URL
+- `GET /api/tasks/discord/callback` - OAuth callback (handles Discord verification)
+
+**Referrals**:
+- `POST /api/tasks/referral/enter` - Submit a referral code
+- `GET /api/tasks/referral/{wallet_address}` - Get referral stats
+
+**Leaderboard**:
+- `GET /api/tasks/leaderboard?limit={n}&offset={n}` - Get leaderboard entries
+- `GET /api/tasks/leaderboard/user/{wallet_address}` - Get user's rank
+
+**Points System**:
+- Join Discord: 500 points (verified via OAuth)
+- Refer Friend: 1000 points (when friend joins Discord)
 
 ### Sentiment Feature
 

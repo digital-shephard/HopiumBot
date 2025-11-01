@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import './HomePage.css'
-import SwapFarming from './sections/SwapFarming'
+import HopiumFarming from './sections/HopiumFarming'
 import PerpFarming from './sections/PerpFarming'
 import AirdropAlpha from './sections/AirdropAlpha'
 import RobotWidget from './RobotWidget'
@@ -29,13 +29,13 @@ function HomePage() {
   // Create section components once and keep them mounted
   const sectionComponents = useMemo(() => [
     <PerpFarming key="perp" />,
-    <SwapFarming key="swap" />,
+    <HopiumFarming key="hopium" isActive={currentIndex === 1} />,
     <AirdropAlpha key="airdrop" />
-  ], [])
+  ], [currentIndex])
   
   const sections = [
     { id: 0, title: 'Perp Farming', message: 'Analyzing perpetual funding rates across exchanges...' },
-    { id: 1, title: 'Swap Farming', message: 'Optimizing swap routes for maximum yield extraction...' },
+    { id: 1, title: 'HOPIUM Farming', message: 'Complete tasks to earn HOPIUM tokens and climb the leaderboard...' },
     { id: 2, title: 'Airdrop Alpha', message: 'Scanning for high-value airdrop opportunities...' }
   ]
 

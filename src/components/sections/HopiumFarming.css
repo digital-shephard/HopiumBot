@@ -1,0 +1,936 @@
+@import './SwapFarming.css';
+
+.hopium-farming {
+  position: relative;
+  overflow-y: auto;
+}
+
+.hopium-farming .section-content {
+  position: relative;
+  z-index: 10;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-left: 60px;
+  padding-right: 60px;
+}
+
+/* Wallet Prompt Styles */
+.wallet-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  gap: 30px;
+  margin-top: 60px;
+}
+
+.wallet-prompt-icon {
+  color: rgba(255, 215, 0, 0.6);
+  filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.3));
+}
+
+.wallet-prompt-text {
+  font-family: 'Courier New', monospace;
+  font-size: 20px;
+  color: rgba(255, 215, 0, 0.8);
+  text-align: center;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
+.connect-wallet-button {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  font-weight: bold;
+  color: #000;
+  background: #ffd700;
+  border: 2px solid #ffd700;
+  border-radius: 8px;
+  padding: 14px 32px;
+  cursor: pointer;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  transition: all 0.3s ease;
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.5),
+    inset 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+.connect-wallet-button:hover {
+  background: rgba(255, 215, 0, 0.9);
+  box-shadow: 
+    0 0 30px rgba(255, 215, 0, 0.7),
+    inset 0 0 15px rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.connect-wallet-button:active {
+  transform: translateY(0);
+}
+
+/* Points Tracker Styles */
+.points-tracker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 40px 0 60px 0;
+  padding: 30px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 
+    0 0 30px rgba(255, 215, 0, 0.3),
+    inset 0 0 20px rgba(255, 215, 0, 0.05);
+}
+
+.points-label {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  font-weight: bold;
+  color: rgba(255, 215, 0, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.polling-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.polling-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+  animation: pollingPulse 2s ease-in-out infinite;
+}
+
+@keyframes pollingPulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+}
+
+.points-value {
+  font-family: 'Courier New', monospace;
+  font-size: 48px;
+  font-weight: bold;
+  color: #ffd700;
+  text-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.5),
+    0 0 40px rgba(255, 215, 0, 0.3);
+  letter-spacing: 4px;
+  transition: all 0.1s ease-out;
+  font-variant-numeric: tabular-nums;
+}
+
+.points-rank {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  color: rgba(255, 215, 0, 0.7);
+  letter-spacing: 1px;
+  margin-top: 8px;
+}
+
+.points-value.animating {
+  animation: pointsPulse 0.1s ease-out;
+}
+
+@keyframes pointsPulse {
+  0% {
+    transform: scale(1);
+    text-shadow: 
+      0 0 20px rgba(255, 215, 0, 0.5),
+      0 0 40px rgba(255, 215, 0, 0.3);
+  }
+  50% {
+    transform: scale(1.05);
+    text-shadow: 
+      0 0 30px rgba(255, 215, 0, 0.7),
+      0 0 60px rgba(255, 215, 0, 0.5);
+  }
+  100% {
+    transform: scale(1);
+    text-shadow: 
+      0 0 20px rgba(255, 215, 0, 0.5),
+      0 0 40px rgba(255, 215, 0, 0.3);
+  }
+}
+
+/* Error Message */
+.error-message {
+  background: rgba(255, 0, 0, 0.1);
+  border: 2px solid rgba(255, 0, 0, 0.4);
+  border-radius: 12px;
+  padding: 16px 24px;
+  margin-bottom: 24px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: rgba(255, 100, 100, 0.9);
+  letter-spacing: 1px;
+  text-align: center;
+  animation: slideInDown 0.3s ease-out;
+}
+
+/* Success Message */
+.success-message {
+  background: rgba(0, 255, 0, 0.1);
+  border: 2px solid rgba(0, 255, 0, 0.4);
+  border-radius: 12px;
+  padding: 16px 24px;
+  margin-bottom: 24px;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  color: rgba(0, 255, 100, 0.9);
+  letter-spacing: 1px;
+  text-align: center;
+  animation: slideInDown 0.3s ease-out, pulse 2s ease-in-out infinite;
+  box-shadow: 
+    0 0 20px rgba(0, 255, 0, 0.3),
+    inset 0 0 15px rgba(0, 255, 0, 0.05);
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 
+      0 0 20px rgba(0, 255, 0, 0.3),
+      inset 0 0 15px rgba(0, 255, 0, 0.05);
+  }
+  50% {
+    box-shadow: 
+      0 0 30px rgba(0, 255, 0, 0.5),
+      inset 0 0 20px rgba(0, 255, 0, 0.1);
+  }
+}
+
+/* Referral Stats */
+.referral-stats {
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 40px;
+  backdrop-filter: blur(10px);
+}
+
+.referral-stats-title {
+  font-family: 'Courier New', monospace;
+  font-size: 24px;
+  font-weight: bold;
+  color: #ffd700;
+  text-align: center;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+
+.referral-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.referral-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 8px;
+}
+
+.referral-stat-value {
+  font-family: 'Courier New', monospace;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffd700;
+  text-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+}
+
+.referral-stat-label {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: rgba(255, 215, 0, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+/* Tasks Section Styles */
+.tasks-section {
+  margin-bottom: 60px;
+}
+
+.tasks-title {
+  font-family: 'Courier New', monospace;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffd700;
+  text-align: center;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  margin-bottom: 40px;
+}
+
+.tasks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.task-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.2),
+    inset 0 0 15px rgba(255, 215, 0, 0.05);
+}
+
+.task-card:hover {
+  border-color: rgba(255, 215, 0, 0.8);
+  box-shadow: 
+    0 0 30px rgba(255, 215, 0, 0.4),
+    inset 0 0 20px rgba(255, 215, 0, 0.1);
+  transform: translateY(-4px);
+}
+
+.task-card.completed {
+  border-color: rgba(0, 255, 0, 0.6);
+  background: rgba(0, 255, 0, 0.05);
+}
+
+.task-card.completed:hover {
+  border-color: rgba(0, 255, 0, 0.8);
+  box-shadow: 
+    0 0 30px rgba(0, 255, 0, 0.4),
+    inset 0 0 20px rgba(0, 255, 0, 0.1);
+}
+
+.task-icon {
+  color: #ffd700;
+  filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.5));
+}
+
+.task-card.completed .task-icon {
+  color: #00ff00;
+  filter: drop-shadow(0 0 10px rgba(0, 255, 0, 0.5));
+}
+
+.task-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: center;
+}
+
+.task-name {
+  font-family: 'Courier New', monospace;
+  font-size: 20px;
+  font-weight: bold;
+  color: #ffd700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin: 0;
+}
+
+.task-card.completed .task-name {
+  color: #00ff00;
+}
+
+.task-description {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: rgba(255, 215, 0, 0.7);
+  letter-spacing: 1px;
+  margin: 0;
+}
+
+.task-card.completed .task-description {
+  color: rgba(0, 255, 0, 0.7);
+}
+
+.task-points {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+
+.task-card.completed .task-points {
+  color: #00ff00;
+}
+
+.task-card.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.task-card.referral-card {
+  border-color: rgba(138, 43, 226, 0.4);
+}
+
+.task-card.referral-card:hover {
+  border-color: rgba(138, 43, 226, 0.8);
+  box-shadow: 
+    0 0 30px rgba(138, 43, 226, 0.4),
+    inset 0 0 20px rgba(138, 43, 226, 0.1);
+}
+
+/* Leaderboard Section Styles */
+.leaderboard-section {
+  margin-bottom: 60px;
+}
+
+.leaderboard-title {
+  font-family: 'Courier New', monospace;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffd700;
+  text-align: center;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  margin-bottom: 40px;
+}
+
+.leaderboard-container {
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 
+    0 0 30px rgba(255, 215, 0, 0.3),
+    inset 0 0 20px rgba(255, 215, 0, 0.05);
+  overflow: hidden;
+}
+
+.leaderboard-header {
+  display: grid;
+  grid-template-columns: 80px 1fr 150px;
+  gap: 20px;
+  padding: 20px 24px;
+  background: rgba(255, 215, 0, 0.1);
+  border-bottom: 2px solid rgba(255, 215, 0, 0.3);
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  color: #ffd700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.leaderboard-entry {
+  display: grid;
+  grid-template-columns: 80px 1fr 150px;
+  gap: 20px;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 215, 0, 0.1);
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  color: rgba(255, 215, 0, 0.9);
+  letter-spacing: 1px;
+  transition: all 0.3s ease;
+}
+
+.leaderboard-entry:last-child {
+  border-bottom: none;
+}
+
+.leaderboard-entry:hover {
+  background: rgba(255, 215, 0, 0.05);
+}
+
+.leaderboard-entry.your-entry {
+  background: rgba(255, 215, 0, 0.15);
+  border-left: 4px solid #ffd700;
+  font-weight: bold;
+}
+
+.leaderboard-rank {
+  font-weight: bold;
+  color: #ffd700;
+}
+
+.leaderboard-address {
+  color: rgba(255, 215, 0, 0.9);
+  letter-spacing: 1px;
+}
+
+.leaderboard-points {
+  text-align: right;
+  font-weight: bold;
+  color: #ffd700;
+}
+
+.leaderboard-empty {
+  padding: 40px 20px;
+  text-align: center;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  color: rgba(255, 215, 0, 0.6);
+  letter-spacing: 1px;
+}
+
+/* Referral Modal Styles */
+.referral-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.referral-modal {
+  background: rgba(0, 0, 0, 0.95);
+  border: 3px solid rgba(255, 215, 0, 0.4);
+  border-radius: 24px;
+  max-width: 500px;
+  width: 90%;
+  position: relative;
+  backdrop-filter: blur(10px);
+  box-shadow: 
+    0 0 60px rgba(255, 215, 0, 0.3),
+    inset 0 0 40px rgba(255, 215, 0, 0.05);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+.referral-modal-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: transparent;
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  font-family: 'Courier New', monospace;
+}
+
+.referral-modal-close:hover {
+  background: rgba(255, 215, 0, 0.2);
+  border-color: rgba(255, 215, 0, 0.8);
+  transform: rotate(90deg);
+}
+
+.referral-modal-title {
+  font-family: 'Courier New', monospace;
+  font-size: 28px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  margin: 40px 40px 30px 40px;
+  text-align: center;
+}
+
+.referral-modal-content {
+  padding: 0 40px 40px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.referral-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.referral-section-title {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.referral-code-display {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60px;
+}
+
+.referral-code-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 215, 0, 0.1);
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 8px;
+  padding: 12px 20px;
+}
+
+.referral-code-value {
+  font-family: 'Courier New', monospace;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 4px;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+.copy-referral-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 215, 0, 0.2);
+  border: 2px solid rgba(255, 215, 0, 0.5);
+  border-radius: 6px;
+  color: #ffd700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.copy-referral-button:hover {
+  background: rgba(255, 215, 0, 0.3);
+  border-color: rgba(255, 215, 0, 0.8);
+  transform: scale(1.1);
+}
+
+.copy-referral-button:active {
+  transform: scale(0.95);
+}
+
+.copy-referral-button.copied {
+  background: rgba(0, 255, 0, 0.2);
+  border-color: rgba(0, 255, 0, 0.6);
+  color: #00ff00;
+}
+
+.copy-referral-button.copied:hover {
+  background: rgba(0, 255, 0, 0.3);
+  border-color: rgba(0, 255, 0, 0.8);
+}
+
+.referral-code-hint {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: rgba(255, 215, 0, 0.7);
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+.generate-code-button,
+.submit-referral-button {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  color: #000;
+  background: #ffd700;
+  border: 2px solid #ffd700;
+  border-radius: 8px;
+  padding: 12px 24px;
+  cursor: pointer;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  transition: all 0.3s ease;
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.5),
+    inset 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+.generate-code-button:hover,
+.submit-referral-button:hover:not(:disabled) {
+  background: rgba(255, 215, 0, 0.9);
+  box-shadow: 
+    0 0 30px rgba(255, 215, 0, 0.7),
+    inset 0 0 15px rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.generate-code-button:active,
+.submit-referral-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submit-referral-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.referral-code-input {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.05);
+  border: 2px solid rgba(255, 215, 0, 0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  transition: all 0.3s ease;
+  letter-spacing: 2px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.referral-code-input:focus {
+  outline: none;
+  border-color: rgba(255, 215, 0, 0.7);
+  background: rgba(255, 215, 0, 0.1);
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+}
+
+.referral-code-input::placeholder {
+  color: rgba(255, 215, 0, 0.4);
+}
+
+.referral-loading {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  color: rgba(255, 215, 0, 0.6);
+  letter-spacing: 2px;
+  padding: 12px;
+}
+
+.referral-stats-mini {
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: rgba(255, 215, 0, 0.8);
+  letter-spacing: 1px;
+}
+
+.referral-stats-mini p {
+  margin: 4px 0;
+}
+
+.referral-error {
+  margin-top: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: rgba(255, 100, 100, 0.9);
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+  .hopium-farming .section-content {
+    padding-top: 180px;
+    padding-left: 30px;
+    padding-right: 30px;
+  }
+
+  .points-value {
+    font-size: 36px;
+  }
+
+  .points-rank {
+    font-size: 14px;
+  }
+
+  .referral-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .referral-stat-value {
+    font-size: 24px;
+  }
+
+  .tasks-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .leaderboard-header,
+  .leaderboard-entry {
+    grid-template-columns: 60px 1fr 100px;
+    gap: 12px;
+    padding: 16px;
+    font-size: 14px;
+  }
+
+  .referral-modal {
+    max-width: 95%;
+  }
+
+  .referral-modal-title {
+    font-size: 24px;
+    margin: 30px 20px 20px 20px;
+  }
+
+  .referral-modal-content {
+    padding: 0 20px 30px 20px;
+  }
+
+  .referral-code-container {
+    padding: 10px 16px;
+  }
+
+  .referral-code-value {
+    font-size: 24px;
+  }
+
+  .copy-referral-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .wallet-prompt {
+    padding: 60px 20px;
+  }
+
+  .wallet-prompt-text {
+    font-size: 18px;
+  }
+
+  .connect-wallet-button {
+    font-size: 16px;
+    padding: 12px 28px;
+  }
+}
+
+/* Small Mobile Styles */
+@media (max-width: 480px) {
+  .hopium-farming .section-content {
+    padding-top: 160px;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .points-value {
+    font-size: 32px;
+  }
+
+  .tasks-title,
+  .leaderboard-title {
+    font-size: 24px;
+  }
+
+  .task-card {
+    padding: 20px;
+  }
+
+  .task-name {
+    font-size: 18px;
+  }
+
+  .leaderboard-header,
+  .leaderboard-entry {
+    grid-template-columns: 50px 1fr 80px;
+    gap: 8px;
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  .referral-modal-title {
+    font-size: 20px;
+    margin: 25px 15px 15px 15px;
+  }
+
+  .referral-modal-content {
+    padding: 0 15px 25px 15px;
+    gap: 20px;
+  }
+
+  .referral-code-container {
+    padding: 8px 12px;
+  }
+
+  .referral-code-value {
+    font-size: 20px;
+    letter-spacing: 2px;
+  }
+
+  .copy-referral-button {
+    width: 32px;
+    height: 32px;
+  }
+
+  .referral-modal-close {
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+    top: 15px;
+    right: 15px;
+  }
+
+  .wallet-prompt {
+    padding: 40px 20px;
+  }
+
+  .wallet-prompt-icon {
+    width: 60px;
+    height: 60px;
+  }
+
+  .wallet-prompt-text {
+    font-size: 16px;
+  }
+}
+

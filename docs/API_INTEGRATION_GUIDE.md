@@ -931,6 +931,340 @@ WebSocket errors are sent as error messages:
 
 ---
 
+---
+
+## HopiumTasks API (Airdrop System)
+
+### User Registration
+
+Register a new user to participate in airdrop tasks.
+
+**Endpoint**: `POST /api/tasks/user/register`
+
+**Request Body**:
+```json
+{
+  "wallet_address": "0xABC123..."
+}
+```
+
+**Response**:
+```json
+{
+  "wallet_address": "0xABC123...",
+  "referral_code": "ABC123XY",
+  "total_points": 0,
+  "created_at": "2025-11-01T12:00:00Z",
+  "updated_at": "2025-11-01T12:00:00Z"
+}
+```
+
+---
+
+### Get User Profile
+
+Get complete user profile including tasks and referral stats.
+
+**Endpoint**: `GET /api/tasks/user/{wallet_address}`
+
+**Response**:
+```json
+{
+  "user": {
+    "wallet_address": "0xABC123...",
+    "referral_code": "ABC123XY",
+    "total_points": 60,
+    "created_at": "2025-11-01T12:00:00Z",
+    "updated_at": "2025-11-01T12:00:00Z"
+  },
+  "completed_tasks": [
+    {
+      "id": 1,
+      "wallet_address": "0xABC123...",
+      "task_type": "JOIN_DISCORD",
+      "task_data": {},
+      "points_awarded": 500,
+      "completed_at": "2025-11-01T12:05:00Z",
+      "verified": true
+    }
+  ],
+  "referral_stats": {
+    "referral_code": "ABC123XY",
+    "total_referrals": 5,
+    "completed_referrals": 1,
+    "pending_referrals": 4,
+    "total_referral_points": 1000
+  }
+}
+```
+
+---
+
+### Discord OAuth Flow
+
+#### Step 1: Initiate OAuth
+
+**Endpoint**: `GET /api/tasks/discord/auth`
+
+**Query Parameters**:
+- `wallet_address` (required): User's wallet address
+
+**Example**:
+```javascript
+const response = await fetch(`${BASE_URL}/api/tasks/discord/auth?wallet_address=0xABC123`);
+const data = await response.json();
+// data.auth_url = "https://discord.com/oauth2/authorize?client_id=...&state=xyz..."
+
+// Redirect user to Discord
+window.location.href = data.auth_url;
+```
+
+**Response**:
+```json
+{
+  "auth_url": "https://discord.com/oauth2/authorize?client_id=...&redirect_uri=...&state=xyz789"
+}
+```
+
+#### Step 2: User Authorizes on Discord
+
+User is redirected to Discord to authorize. Discord then redirects back to:
+```
+GET /api/tasks/discord/callback?state=xyz789&code=auth_code
+```
+
+#### Step 3: Backend Handles Callback
+
+**Endpoint**: `GET /api/tasks/discord/callback` (handled automatically by Discord)
+
+**Query Parameters**:
+- `state`: OAuth state token
+- `code`: Authorization code
+
+**Response**:
+```json
+{
+  "success": true,
+  "wallet_address": "0xABC123...",
+  "message": "Discord connected successfully! Guild membership verified."
+}
+```
+
+**What Happens**:
+1. Backend verifies state is valid (links to wallet address)
+2. Exchanges code for Discord access token
+3. Gets Discord user info
+4. **Verifies user is in the Discord server** (guild membership)
+5. Saves Discord tokens to database
+6. **Auto-completes JOIN_DISCORD task** (500 points awarded)
+7. If user has pending referral → **auto-completes referral** (referrer gets 1000 points)
+
+**Frontend Implementation**:
+```javascript
+// 1. User clicks "Connect Discord"
+async function connectDiscord(walletAddress) {
+  const response = await fetch(`${BASE_URL}/api/tasks/discord/auth?wallet_address=${walletAddress}`);
+  const data = await response.json();
+  
+  // 2. Redirect to Discord
+  window.location.href = data.auth_url;
+}
+
+// 3. Discord redirects back to your frontend with state/code
+// Your frontend should redirect to the callback endpoint OR handle it server-side
+
+// 4. Check user profile to see if task completed
+async function checkDiscordConnected(walletAddress) {
+  const response = await fetch(`${BASE_URL}/api/tasks/user/${walletAddress}`);
+  const profile = await response.json();
+  
+  const discordTask = profile.completed_tasks.find(t => t.task_type === 'JOIN_DISCORD');
+  return discordTask !== undefined;
+}
+```
+
+---
+
+### Enter Referral Code
+
+Allow a user to enter a referral code when signing up.
+
+**Endpoint**: `POST /api/tasks/referral/enter`
+
+**Request Body**:
+```json
+{
+  "wallet_address": "0xDEF456...",
+  "referral_code": "ABC123XY"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "referrer_address": "0xABC123...",
+  "status": "PENDING",
+  "referral": {
+    "id": 1,
+    "referrer_address": "0xABC123...",
+    "referee_address": "0xDEF456...",
+    "referral_code": "ABC123XY",
+    "status": "PENDING",
+    "twitter_verified": false,
+    "discord_joined": false,
+    "points_awarded": 0,
+    "created_at": "2025-11-01T12:00:00Z"
+  }
+}
+```
+
+**Note**: Points are awarded to referrer only when referee completes Discord OAuth (joins server).
+
+---
+
+### Get Referral Info
+
+Get referral statistics for a user (how many people they referred).
+
+**Endpoint**: `GET /api/tasks/referral/{wallet_address}`
+
+**Response**:
+```json
+{
+  "referral_code": "ABC123XY",
+  "total_referrals": 5,
+  "completed_referrals": 1,
+  "pending_referrals": 4,
+  "total_referral_points": 1000
+}
+```
+
+---
+
+### Leaderboard
+
+#### Get Leaderboard
+
+**Endpoint**: `GET /api/tasks/leaderboard`
+
+**Query Parameters**:
+- `limit` (optional, default: 100, max: 1000): Number of entries
+- `offset` (optional, default: 0): Pagination offset
+
+**Response**:
+```json
+{
+  "entries": [
+    {
+      "wallet_address": "0x...",
+      "total_points": 500,
+      "rank": 1
+    },
+    {
+      "wallet_address": "0x...",
+      "total_points": 250,
+      "rank": 2
+    }
+  ],
+  "total_users": 1000,
+  "limit": 100,
+  "offset": 0
+}
+```
+
+#### Get User Rank
+
+**Endpoint**: `GET /api/tasks/leaderboard/user/{wallet_address}`
+
+**Response**:
+```json
+{
+  "wallet_address": "0xABC123...",
+  "total_points": 100,
+  "rank": 42,
+  "total_users": 1000
+}
+```
+
+---
+
+### Points System
+
+**Task Points**:
+- `JOIN_DISCORD`: 500 points (verified via OAuth)
+- `REFER_FRIEND`: 1000 points (when friend joins Discord)
+
+**Referral Requirements**:
+- Friend must join Discord server (verified via OAuth)
+- Points awarded to referrer immediately upon friend's Discord connection
+
+---
+
+### TypeScript Interfaces
+
+```typescript
+interface User {
+  wallet_address: string;
+  referral_code: string;
+  total_points: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TaskCompletion {
+  id: number;
+  wallet_address: string;
+  task_type: 'JOIN_DISCORD' | 'REFER_FRIEND';
+  task_data: Record<string, any>;
+  points_awarded: number;
+  completed_at: string;
+  verified: boolean;
+}
+
+interface Referral {
+  id: number;
+  referrer_address: string;
+  referee_address: string;
+  referral_code: string;
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  twitter_verified: boolean;
+  discord_joined: boolean;
+  points_awarded: number;
+  created_at: string;
+  completed_at?: string;
+}
+
+interface UserProfile {
+  user: User;
+  completed_tasks: TaskCompletion[];
+  referral_stats: ReferralStats;
+}
+
+interface ReferralStats {
+  referral_code: string;
+  total_referrals: number;
+  completed_referrals: number;
+  pending_referrals: number;
+  total_referral_points: number;
+}
+
+interface LeaderboardEntry {
+  wallet_address: string;
+  total_points: number;
+  rank: number;
+}
+
+interface Leaderboard {
+  entries: LeaderboardEntry[];
+  total_users: number;
+  limit: number;
+  offset: number;
+}
+```
+
+---
+
 ## Support
 
 For issues or questions:

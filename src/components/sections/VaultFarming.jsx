@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import './VaultFarming.css'
 
 function VaultFarming() {
-  const whitepaperUrl = 'https://hopium-public.s3.us-east-2.amazonaws.com/HOPIUM_Whitepaper.pdf'
+  const whitepaperUrl = '/whitepaper'
   
   return (
     <motion.div 

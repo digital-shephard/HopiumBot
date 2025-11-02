@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    {
+      "source": "/whitepaper",
+      "destination": "https://hopium-public.s3.us-east-2.amazonaws.com/HOPIUM_Whitepaper.pdf"
+    }
+  ]
+}
+

@@ -175,7 +175,14 @@ function HopiumFarming({ isActive = false }) {
       }
     } catch (err) {
       console.error('Failed to register/load user:', err)
-      setError('Failed to load user profile. Please try again.')
+      
+      // Check if it's an authentication error
+      if (err.message.includes('401') || err.message.includes('403') || 
+          err.message.includes('unauthorized') || err.message.includes('authentication')) {
+        setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
+      } else {
+        setError('Failed to load user profile. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -340,7 +347,14 @@ function HopiumFarming({ isActive = false }) {
       }
     } catch (err) {
       console.error('Failed to initiate Discord OAuth:', err)
-      setError('Failed to connect Discord. Please try again.')
+      
+      // Check if it's an authentication error
+      if (err.message.includes('401') || err.message.includes('403') || 
+          err.message.includes('unauthorized') || err.message.includes('authentication')) {
+        setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
+      } else {
+        setError('Failed to connect Discord. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -409,7 +423,14 @@ function HopiumFarming({ isActive = false }) {
       }
     } catch (err) {
       console.error('Failed to submit referral code:', err)
-      setError(err.message || 'Failed to submit referral code. Please check the code and try again.')
+      
+      // Check if it's an authentication error
+      if (err.message.includes('401') || err.message.includes('403') || 
+          err.message.includes('unauthorized') || err.message.includes('authentication')) {
+        setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
+      } else {
+        setError(err.message || 'Failed to submit referral code. Please check the code and try again.')
+      }
     } finally {
       setLoading(false)
     }

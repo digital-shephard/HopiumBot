@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAccount } from 'wagmi'
 import { useAppKit } from '@reown/appkit/react'
+import { useAuth } from '../../contexts/AuthContext'
 import API_CONFIG from '../../config/api'
 import './HopiumFarming.css'
 
 function HopiumFarming({ isActive = false }) {
   const { address, isConnected } = useAccount()
   const { open } = useAppKit()
+  const { isAuthenticated } = useAuth()
 
   const [tasks, setTasks] = useState([
     {
@@ -52,22 +54,30 @@ function HopiumFarming({ isActive = false }) {
       setTasks(prevTasks => prevTasks.map(t => ({ ...t, completed: false })))
       setReferralStats(null)
       setUserRank(null)
+      setError(null)
+      return
+    }
+
+    if (!isAuthenticated) {
+      // Wallet connected but not authenticated
+      setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
       return
     }
 
     // Load user data and leaderboard when:
-    // 1. Wallet is already connected on page load
-    // 2. User connects wallet while on this section
-    // 3. Section becomes active after wallet was connected elsewhere
+    // 1. Wallet is already connected and authenticated
+    // 2. User authenticates while on this section
+    // 3. Section becomes active after authentication
     if (isActive) {
+      setError(null) // Clear any previous errors
       registerOrLoadUser()
       loadLeaderboard()
     }
-  }, [isConnected, address, isActive])
+  }, [isConnected, address, isActive, isAuthenticated])
 
-  // Poll for task completion updates (only when section is active)
+  // Poll for task completion updates (only when section is active and authenticated)
   useEffect(() => {
-    if (!isActive || !isConnected || !address) {
+    if (!isActive || !isConnected || !address || !isAuthenticated) {
       setIsPolling(false)
       return
     }
@@ -86,7 +96,7 @@ function HopiumFarming({ isActive = false }) {
       setIsPolling(false)
       clearInterval(pollInterval)
     }
-  }, [isActive, isConnected, address])
+  }, [isActive, isConnected, address, isAuthenticated])
 
   // Register user or load existing profile
   const registerOrLoadUser = async () => {
@@ -176,9 +186,10 @@ function HopiumFarming({ isActive = false }) {
     } catch (err) {
       console.error('Failed to register/load user:', err)
       
-      // Check if it's an authentication error
-      if (err.message.includes('401') || err.message.includes('403') || 
-          err.message.includes('unauthorized') || err.message.includes('authentication')) {
+      // Check if it's an authentication error (HTTP 401/403)
+      if (err.message.includes('HTTP 401') || err.message.includes('HTTP 403') || 
+          err.message.toLowerCase().includes('unauthorized') || 
+          err.message.toLowerCase().includes('authentication')) {
         setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
       } else {
         setError('Failed to load user profile. Please try again.')
@@ -348,9 +359,10 @@ function HopiumFarming({ isActive = false }) {
     } catch (err) {
       console.error('Failed to initiate Discord OAuth:', err)
       
-      // Check if it's an authentication error
-      if (err.message.includes('401') || err.message.includes('403') || 
-          err.message.includes('unauthorized') || err.message.includes('authentication')) {
+      // Check if it's an authentication error (HTTP 401/403)
+      if (err.message.includes('HTTP 401') || err.message.includes('HTTP 403') || 
+          err.message.toLowerCase().includes('unauthorized') || 
+          err.message.toLowerCase().includes('authentication')) {
         setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
       } else {
         setError('Failed to connect Discord. Please try again.')
@@ -424,9 +436,10 @@ function HopiumFarming({ isActive = false }) {
     } catch (err) {
       console.error('Failed to submit referral code:', err)
       
-      // Check if it's an authentication error
-      if (err.message.includes('401') || err.message.includes('403') || 
-          err.message.includes('unauthorized') || err.message.includes('authentication')) {
+      // Check if it's an authentication error (HTTP 401/403)
+      if (err.message.includes('HTTP 401') || err.message.includes('HTTP 403') || 
+          err.message.toLowerCase().includes('unauthorized') || 
+          err.message.toLowerCase().includes('authentication')) {
         setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
       } else {
         setError(err.message || 'Failed to submit referral code. Please check the code and try again.')

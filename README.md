@@ -47,12 +47,14 @@ HopiumBot/
        ├── DevToggle.jsx        # Dev tools toggle (dev mode only)
        ├── DevToggle.css        # Dev toggle styles
        └── sections/
-           ├── HopiumFarming.jsx    # HOPIUM Farming section
+           ├── HopiumFarming.jsx    # HOPIUM Farming section (Farm)
            ├── HopiumFarming.css   # HOPIUM Farming styles
-           ├── PerpFarming.jsx      # Perp Farming section
+           ├── PerpFarming.jsx      # Perp Farming section (Perps Bot)
            ├── PerpFarming.css     # Perp Farming styles
-           ├── AirdropAlpha.jsx    # Airdrop Alpha section
-           └── AirdropAlpha.css    # Airdrop Alpha styles
+           ├── AirdropAlpha.jsx    # Airdrop Alpha section (Alpha)
+           ├── AirdropAlpha.css    # Airdrop Alpha styles
+           ├── VaultFarming.jsx    # Vault section (Vault)
+           └── VaultFarming.css    # Vault styles
 ```
 
 ## Getting Started
@@ -100,8 +102,14 @@ npm run preview
   - **Auto Re-auth**: Automatically re-authenticates on wallet switch or token expiry
   - **Visual Feedback**: Real-time status indicator showing auth state, errors, and retry options
   - **Protected Endpoints**: Automatic auth token injection for API requests
-- **Homepage Carousel**: Smooth horizontal carousel with three sections:
-  - HOPIUM Farming
+- **Homepage Carousel**: Smooth horizontal carousel with four sections:
+  - **Perps Bot**: Automated perpetual futures trading
+    - **Risk Settings Modal**: Configure Aster API credentials, capital limits, Take Profit, Stop Loss, and Position Size
+      - Fixed scrollbar clipping issue with proper container structure and overflow handling
+    - **Automated Trading**: Connects to WebSocket for real-time market recommendations
+    - **Order Management**: Automatically places orders, monitors positions, and enforces TP/SL
+    - Settings are saved to localStorage and persist across sessions
+  - **Farm**: HOPIUM token farming through tasks
     - **Tasks System**: Complete tasks to earn HOPIUM tokens
       - **Join Discord** (500 points): Connect your Discord account via OAuth and join the server
       - **Refer Friends** (1000 points each): Share your referral code and earn points when friends complete Discord task
@@ -114,13 +122,12 @@ npm run preview
     - **Wallet Required**: Users must connect their wallet to track points and complete tasks
     - **Auto-Registration**: Users are automatically registered when connecting wallet
     - **API Integration**: Full integration with HopiumCore Tasks API
-  - Perp Farming
-    - **Risk Settings Modal**: Configure Aster API credentials, capital limits, Take Profit, Stop Loss, and Position Size
-      - Fixed scrollbar clipping issue with proper container structure and overflow handling
-    - **Automated Trading**: Connects to WebSocket for real-time market recommendations
-    - **Order Management**: Automatically places orders, monitors positions, and enforces TP/SL
-    - Settings are saved to localStorage and persist across sessions
-  - Airdrop Alpha
+  - **Alpha**: Airdrop opportunities and alpha insights
+  - **Vault**: Community-governed perpetual futures pool (coming soon)
+    - Dynamic capital allocation
+    - Liquidation-resistant trading strategies
+    - Continuous governance with AI-driven risk management
+    - Links to whitepaper for full protocol details
 - **Robot Widget**: Animated robot widget in the top left corner with speech bubbles
   - **Sentiment Analysis**: In the Perp Farming section, users can click "Give me the sentiment" to fetch real-time BTC sentiment analysis from the HopiumCore API
   - Shows animated "Lemme think about this..." loading state while fetching

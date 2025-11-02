@@ -1,0 +1,204 @@
+@import './SwapFarming.css';
+
+.vault-farming {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.vault-container {
+  max-width: 900px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 40px;
+}
+
+.vault-header {
+  text-align: center;
+}
+
+.vault-title {
+  font-family: 'Courier New', monospace;
+  font-size: 64px;
+  font-weight: bold;
+  color: #ffd700;
+  text-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.5),
+    0 0 40px rgba(255, 215, 0, 0.3),
+    2px 2px 8px rgba(0, 0, 0, 0.8);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.vault-icon {
+  font-size: 3rem;
+  filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.5));
+}
+
+.vault-subtitle {
+  font-family: 'Courier New', monospace;
+  font-size: 1.5rem;
+  color: rgba(255, 215, 0, 0.7);
+  margin-top: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+
+.vault-content {
+  width: 100%;
+}
+
+.vault-box {
+  background: rgba(255, 215, 0, 0.05);
+  border: 2px solid rgba(255, 215, 0, 0.2);
+  border-radius: 20px;
+  padding: 60px 40px;
+  text-align: center;
+  backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+}
+
+.vault-tagline {
+  font-family: 'Courier New', monospace;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #ffd700;
+  line-height: 1.4;
+  margin: 0;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+}
+
+.vault-description {
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  color: rgba(255, 215, 0, 0.7);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 700px;
+}
+
+.whitepaper-link {
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #000;
+  background: #ffd700;
+  padding: 15px 40px;
+  border-radius: 50px;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  margin-top: 20px;
+  display: inline-block;
+  letter-spacing: 1px;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+}
+
+.whitepaper-link:hover {
+  background: #ffed4e;
+  transform: translateY(-2px);
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.6);
+}
+
+/* Tablet styles */
+@media (max-width: 1024px) {
+  .vault-title {
+    font-size: 3rem;
+  }
+  
+  .vault-subtitle {
+    font-size: 1.3rem;
+  }
+  
+  .vault-box {
+    padding: 50px 30px;
+  }
+  
+  .vault-tagline {
+    font-size: 1.5rem;
+  }
+  
+  .vault-description {
+    font-size: 1rem;
+  }
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .vault-farming {
+    padding: 15px;
+  }
+  
+  .vault-container {
+    gap: 30px;
+  }
+  
+  .vault-title {
+    font-size: 2.5rem;
+  }
+  
+  .vault-subtitle {
+    font-size: 1.1rem;
+  }
+  
+  .vault-box {
+    padding: 40px 20px;
+    gap: 25px;
+  }
+  
+  .vault-tagline {
+    font-size: 1.3rem;
+  }
+  
+  .vault-description {
+    font-size: 0.95rem;
+  }
+  
+  .whitepaper-link {
+    font-size: 1rem;
+    padding: 12px 30px;
+  }
+}
+
+/* Small mobile styles */
+@media (max-width: 480px) {
+  .vault-title {
+    font-size: 2rem;
+  }
+  
+  .vault-subtitle {
+    font-size: 1rem;
+    letter-spacing: 1px;
+  }
+  
+  .vault-box {
+    padding: 30px 15px;
+    gap: 20px;
+  }
+  
+  .vault-tagline {
+    font-size: 1.1rem;
+  }
+  
+  .vault-description {
+    font-size: 0.9rem;
+  }
+  
+  .whitepaper-link {
+    font-size: 0.9rem;
+    padding: 10px 25px;
+  }
+}
+

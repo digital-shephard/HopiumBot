@@ -89,32 +89,43 @@
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 12px;
+  gap: 16px;
   z-index: 100;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 12px 24px;
+  border-radius: 50px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 215, 0, 0.2);
 }
 
 .indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: rgba(255, 215, 0, 0.3);
-  border: 2px solid rgba(255, 215, 0, 0.5);
+  background: rgba(255, 215, 0, 0.1);
+  border: 2px solid rgba(255, 215, 0, 0.3);
+  border-radius: 25px;
   cursor: pointer;
   transition: all 0.3s ease;
-  padding: 0;
+  padding: 10px 20px;
   touch-action: manipulation;
+  color: rgba(255, 215, 0, 0.6);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .indicator:hover {
-  background: rgba(255, 215, 0, 0.5);
-  transform: scale(1.2);
+  background: rgba(255, 215, 0, 0.2);
+  border-color: rgba(255, 215, 0, 0.5);
+  color: rgba(255, 215, 0, 0.9);
+  transform: translateY(-2px);
 }
 
 .indicator.active {
-  background: #ffd700;
+  background: rgba(255, 215, 0, 0.2);
   border-color: #ffd700;
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.6);
-  transform: scale(1.3);
+  color: #ffd700;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+  transform: translateY(-2px);
 }
 
 /* Tablet styles */
@@ -139,6 +150,13 @@
 
   .carousel-indicators {
     bottom: 30px;
+    gap: 12px;
+    padding: 10px 20px;
+  }
+
+  .indicator {
+    padding: 8px 16px;
+    font-size: 0.9rem;
   }
 }
 
@@ -166,12 +184,15 @@
 
   .carousel-indicators {
     bottom: 20px;
-    gap: 10px;
+    gap: 8px;
+    padding: 8px 16px;
+    flex-wrap: wrap;
+    max-width: 90%;
   }
 
   .indicator {
-    width: 10px;
-    height: 10px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
   }
 }
 
@@ -197,11 +218,14 @@
 
   .carousel-indicators {
     bottom: 15px;
-    gap: 8px;
+    gap: 6px;
+    padding: 6px 12px;
+    flex-wrap: wrap;
+    max-width: 95%;
   }
 
   .indicator {
-    width: 8px;
-    height: 8px;
+    padding: 5px 10px;
+    font-size: 0.75rem;
   }
 }

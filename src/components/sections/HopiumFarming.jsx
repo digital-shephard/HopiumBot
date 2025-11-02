@@ -18,6 +18,14 @@ function HopiumFarming({ isActive = false }) {
       completed: false,
       points: 500,
       taskType: 'JOIN_DISCORD'
+    },
+    {
+      id: 'FOLLOW_TWITTER',
+      name: 'Follow on X (Twitter)',
+      description: 'Follow @hopiumbot on X to stay updated (Discord Join Required)',
+      completed: false,
+      points: 1000,
+      taskType: 'FOLLOW_TWITTER'
     }
   ])
 
@@ -158,7 +166,10 @@ function HopiumFarming({ isActive = false }) {
           const pointsEarned = newPoints - oldPoints
           newlyCompleted.forEach(taskType => {
             if (taskType === 'JOIN_DISCORD') {
-              setSuccessMessage(`🎉 Discord connected! +${pointsEarned} points earned!`)
+              setSuccessMessage(`🎉 Discord connected! +500 points earned!`)
+              setTimeout(() => setSuccessMessage(null), 5000)
+            } else if (taskType === 'FOLLOW_TWITTER') {
+              setSuccessMessage(`🎉 Twitter follow completed! +1000 points earned!`)
               setTimeout(() => setSuccessMessage(null), 5000)
             }
           })
@@ -346,6 +357,9 @@ function HopiumFarming({ isActive = false }) {
       case 'JOIN_DISCORD':
         await handleDiscordConnect()
         break
+      case 'FOLLOW_TWITTER':
+        await handleTwitterFollow()
+        break
       default:
         break
     }
@@ -376,6 +390,52 @@ function HopiumFarming({ isActive = false }) {
         setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
       } else {
         setError('Failed to connect Discord. Please try again.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Handle Twitter follow task
+  const handleTwitterFollow = async () => {
+    if (!address) return
+
+    try {
+      setLoading(true)
+      setError(null)
+
+      // Open Twitter profile in new tab
+      window.open('https://x.com/hopiumbot', '_blank', 'noopener,noreferrer')
+
+      // Complete the task on the backend
+      const response = await API_CONFIG.fetch(
+        API_CONFIG.endpoints.tasks.twitterFollow,
+        {
+          method: 'POST'
+        }
+      )
+
+      if (response.success) {
+        // Success message will be shown by polling when task completion is detected
+        console.log('Twitter follow task completed:', response)
+        
+        // Immediately refresh user profile to show updated points
+        await registerOrLoadUser()
+      }
+    } catch (err) {
+      console.error('Failed to complete Twitter follow task:', err)
+      
+      // Check for specific error messages
+      if (err.message.includes('HTTP 401') || err.message.includes('HTTP 403') || 
+          err.message.toLowerCase().includes('unauthorized') || 
+          err.message.toLowerCase().includes('authentication')) {
+        setError('Please verify wallet ownership to access features. Sign the authentication message in your wallet.')
+      } else if (err.message.toLowerCase().includes('discord')) {
+        setError('Please join Discord first before completing this task.')
+      } else if (err.message.toLowerCase().includes('already completed')) {
+        setError('You have already completed this task.')
+      } else {
+        setError('Failed to complete Twitter task. Please try again.')
       }
     } finally {
       setLoading(false)
@@ -471,7 +531,7 @@ function HopiumFarming({ isActive = false }) {
   return (
     <div className="section hopium-farming" ref={sectionRef}>
       <div className="section-content">
-        <h1 className="section-title">HOPIUM Farming</h1>
+        <h1 className="section-title">Airdrop</h1>
         <p className="section-description">
           Complete tasks to earn HOPIUM tokens and climb the leaderboard
         </p>
@@ -562,8 +622,8 @@ function HopiumFarming({ isActive = false }) {
                 {tasks.map((task) => (
                   <div 
                     key={task.id} 
-                    className={`task-card ${task.completed ? 'completed' : ''} ${loading ? 'disabled' : ''}`}
-                    onClick={() => !task.completed && !loading && handleTaskClick(task.id)}
+                    className={`task-card ${task.completed ? 'completed' : ''} ${(loading || !isAuthenticated) ? 'disabled' : ''}`}
+                    onClick={() => !task.completed && !loading && isAuthenticated && handleTaskClick(task.id)}
                   >
                     <div className="task-icon">
                       {task.completed ? (
@@ -598,8 +658,8 @@ function HopiumFarming({ isActive = false }) {
                 
                 {/* Referral Task Card */}
                 <div 
-                  className="task-card referral-card"
-                  onClick={handleShowReferralModal}
+                  className={`task-card referral-card ${!isAuthenticated ? 'disabled' : ''}`}
+                  onClick={() => isAuthenticated && handleShowReferralModal()}
                 >
                   <div className="task-icon">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none">

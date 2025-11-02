@@ -112,9 +112,10 @@ npm run preview
     - **Automated Trading**: Connects to WebSocket for real-time market recommendations
     - **Order Management**: Automatically places orders, monitors positions, and enforces TP/SL
     - Settings are saved to localStorage and persist across sessions
-  - **Farm**: HOPIUM token farming through tasks
+  - **Airdrop**: HOPIUM token farming through tasks
     - **Tasks System**: Complete tasks to earn HOPIUM tokens
       - **Join Discord** (500 points): Connect your Discord account via OAuth and join the server
+      - **Follow on X** (1000 points): Follow @hopiumbot on X/Twitter (requires Discord membership)
       - **Refer Friends** (1000 points each): Share your referral code and earn points when friends complete Discord task
     - **Points Tracker**: Real-time display of user's accumulated points with ranking
     - **Leaderboard**: Live leaderboard showing top 10 performers
@@ -240,6 +241,9 @@ The API includes a complete tasks/airdrop system:
 - `GET /api/tasks/discord/auth?wallet_address={address}` - Get Discord OAuth URL
 - `GET /api/tasks/discord/callback` - OAuth callback (handles Discord verification)
 
+**Twitter Tasks** (🔒 Protected):
+- `POST /api/tasks/twitter/follow` - Complete Twitter follow task
+
 **Referrals** (🔒 Protected):
 - `POST /api/tasks/referral/enter` - Submit a referral code
 - `POST /api/tasks/referral/verify` - Verify referral completion
@@ -251,6 +255,7 @@ The API includes a complete tasks/airdrop system:
 
 **Points System**:
 - Join Discord: 500 points (verified via OAuth)
+- Follow on X: 1000 points (requires Discord membership)
 - Refer Friend: 1000 points (when friend joins Discord)
 
 ### AirdropAlpha API Endpoints

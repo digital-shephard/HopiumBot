@@ -406,8 +406,17 @@
 }
 
 .task-card.disabled {
-  opacity: 0.6;
+  opacity: 0.4;
   cursor: not-allowed;
+  pointer-events: none;
+}
+
+.task-card.disabled:hover {
+  transform: none;
+  border-color: rgba(255, 215, 0, 0.4);
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.2),
+    inset 0 0 15px rgba(255, 215, 0, 0.05);
 }
 
 .task-card.referral-card {

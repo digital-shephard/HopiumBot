@@ -37,7 +37,7 @@ function HomePage() {
   
   const sections = [
     { id: 0, title: 'Perps Bot', name: 'Perps Bot', message: 'Analyzing perpetual funding rates across exchanges...' },
-    { id: 1, title: 'Farm', name: 'Farm', message: 'Complete tasks to earn HOPIUM tokens and climb the leaderboard...' },
+    { id: 1, title: 'Airdrop', name: 'Airdrop', message: 'Complete tasks to earn HOPIUM tokens and climb the leaderboard...' },
     { id: 2, title: 'Alpha', name: 'Alpha', message: 'Scanning for high-value airdrop opportunities...' },
     { id: 3, title: 'Vault', name: 'Vault', message: 'Secure vault system - Coming soon...' }
   ]

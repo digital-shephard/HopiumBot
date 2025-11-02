@@ -67,6 +67,9 @@ export const API_CONFIG = {
       discordAuth: (walletAddress) => `/api/tasks/discord/auth?wallet_address=${walletAddress}`,
       discordCallback: '/api/tasks/discord/callback',
       
+      // Twitter endpoints
+      twitterFollow: '/api/tasks/twitter/follow',
+      
       // Referral endpoints
       enterReferral: '/api/tasks/referral/enter',
       verifyReferral: '/api/tasks/referral/verify',

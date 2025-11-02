@@ -91,6 +91,7 @@ User-specific endpoints that require authentication:
 - `POST /api/tasks/user/register` - Register user
 - `GET /api/tasks/user/{address}` - Get user profile
 - `POST /api/tasks/complete` - Complete a task
+- `POST /api/tasks/twitter/follow` - Complete Twitter follow task
 - `POST /api/tasks/referral/enter` - Enter referral code
 - `POST /api/tasks/referral/verify` - Verify referral completion
 - `GET /api/tasks/referral/{address}` - Get referral info

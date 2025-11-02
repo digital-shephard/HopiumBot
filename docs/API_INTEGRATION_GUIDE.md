@@ -1199,10 +1199,127 @@ Get referral statistics for a user (how many people they referred).
 
 ---
 
+### Complete Twitter Follow Task
+
+Complete the Twitter follow task to earn points.
+
+**Endpoint**: `POST /api/tasks/twitter/follow`
+
+**Authentication**: Required (JWT token in Authorization header)
+
+**Requirements**:
+- User must be registered
+- User must have joined Discord first (completed Discord OAuth)
+- Task can only be completed once per user
+
+**Request Body**: None required
+
+**Example Request**:
+```javascript
+const response = await fetch(`${BASE_URL}/api/tasks/twitter/follow`, {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${jwtToken}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+const data = await response.json();
+```
+
+**Success Response (200 OK)**:
+```json
+{
+  "success": true,
+  "points_awarded": 1000,
+  "total_points": 1500,
+  "completion": {
+    "id": 123,
+    "wallet_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    "task_type": "FOLLOW_TWITTER",
+    "task_data": null,
+    "points_awarded": 1000,
+    "completed_at": "2025-11-02T15:30:00Z",
+    "verified": true
+  },
+  "message": "Twitter follow task completed! Thank you for following us."
+}
+```
+
+**Error Responses**:
+
+**401 Unauthorized** - Not authenticated:
+```json
+{
+  "error": "Authentication required"
+}
+```
+
+**403 Forbidden** - User hasn't joined Discord:
+```json
+{
+  "error": "must join Discord before completing this task"
+}
+```
+
+**404 Not Found** - User not registered:
+```json
+{
+  "error": "user not found: 0x..."
+}
+```
+
+**409 Conflict** - Already completed:
+```json
+{
+  "error": "task already completed"
+}
+```
+
+**Frontend Integration Example**:
+```javascript
+const TWITTER_URL = 'https://x.com/hopiumbot';
+
+async function completeTwitterFollowTask(jwtToken) {
+  // 1. Open Twitter page in new tab
+  window.open(TWITTER_URL, '_blank');
+  
+  // 2. Complete the task
+  try {
+    const response = await fetch(`${BASE_URL}/api/tasks/twitter/follow`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${jwtToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error);
+    }
+
+    const data = await response.json();
+    console.log(`Success! Earned ${data.points_awarded} points`);
+    return data;
+  } catch (error) {
+    if (error.message.includes('Discord')) {
+      console.error('Please join Discord first');
+    } else if (error.message.includes('already completed')) {
+      console.error('Task already completed');
+    }
+    throw error;
+  }
+}
+```
+
+---
+
 ### Points System
 
 **Task Points**:
 - `JOIN_DISCORD`: 500 points (verified via OAuth)
+- `FOLLOW_TWITTER`: 1000 points (honor system, requires Discord membership)
 - `REFER_FRIEND`: 1000 points (when friend joins Discord)
 
 **Referral Requirements**:
@@ -1225,7 +1342,7 @@ interface User {
 interface TaskCompletion {
   id: number;
   wallet_address: string;
-  task_type: 'JOIN_DISCORD' | 'REFER_FRIEND';
+  task_type: 'JOIN_DISCORD' | 'FOLLOW_TWITTER' | 'REFER_FRIEND';
   task_data: Record<string, any>;
   points_awarded: number;
   completed_at: string;

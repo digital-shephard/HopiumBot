@@ -3,16 +3,9 @@ import './LandingScreen.css'
 
 function LandingScreen({ onComplete }) {
   const [showText, setShowText] = useState(false)
-  const [showInput, setShowInput] = useState(false)
-  const [inputValue, setInputValue] = useState('')
   const [doorOpen, setDoorOpen] = useState(false)
-  const [isCorrectAnswer, setIsCorrectAnswer] = useState(false)
   const [streamedText, setStreamedText] = useState('')
-  const [showInputFade, setShowInputFade] = useState(true)
-  const [inputShake, setInputShake] = useState(false)
   const streamingTimeoutRef = useRef(null)
-  
-  const PASSKEY = 'hopium_passphrase_entered'
 
   const streamText = (text, onComplete) => {
     // Clear any existing timeout
@@ -40,49 +33,24 @@ function LandingScreen({ onComplete }) {
     }, 200)
   }
 
-  // Check if user has already entered passphrase
+  // Show welcome message after door latch animation
   useEffect(() => {
-    const savedPassphrase = localStorage.getItem(PASSKEY)
-    
-    if (savedPassphrase === 'true') {
-      // User has already entered passphrase - skip input and go straight to welcome
-      // Latch opens at 3s delay + 0.6s animation = 3.6s
-      const textTimer = setTimeout(() => {
-        setShowText(true)
-        // Stream welcome message directly
-        streamText('WELCOME FREN!', () => {
-          // After welcome message streams, wait a bit then open door
-          setTimeout(() => {
-            setDoorOpen(true)
-          }, 800)
-        })
-      }, 3600)
+    // Latch opens at 3s delay + 0.6s animation = 3.6s
+    const textTimer = setTimeout(() => {
+      setShowText(true)
+      // Stream welcome message
+      streamText('WELCOME FREN!', () => {
+        // After welcome message streams, wait a bit then open door
+        setTimeout(() => {
+          setDoorOpen(true)
+        }, 800)
+      })
+    }, 3600)
 
-      return () => {
-        clearTimeout(textTimer)
-        if (streamingTimeoutRef.current) {
-          clearTimeout(streamingTimeoutRef.current)
-        }
-      }
-    } else {
-      // First time - show input prompt
-      // Latch opens at 3s delay + 0.6s animation = 3.6s
-      const textTimer = setTimeout(() => {
-        setShowText(true)
-        // Start streaming the intro question
-        streamText('WHATS THE TICKER?', () => {
-          // After intro question is streamed, show input
-          setTimeout(() => {
-            setShowInput(true)
-          }, 300)
-        })
-      }, 3600)
-
-      return () => {
-        clearTimeout(textTimer)
-        if (streamingTimeoutRef.current) {
-          clearTimeout(streamingTimeoutRef.current)
-        }
+    return () => {
+      clearTimeout(textTimer)
+      if (streamingTimeoutRef.current) {
+        clearTimeout(streamingTimeoutRef.current)
       }
     }
   }, [])
@@ -99,40 +67,6 @@ function LandingScreen({ onComplete }) {
     }
   }, [doorOpen, onComplete])
 
-  const handleInputChange = (e) => {
-    const value = e.target.value.toUpperCase()
-    setInputValue(value)
-    
-    // Check if user has typed 4 characters (length of AURA)
-    if (value.length === 4) {
-      if (value === 'AURA') {
-        // Correct answer - save to localStorage
-        localStorage.setItem(PASSKEY, 'true')
-        
-        // Correct answer - fade out input, then stream welcome message
-        setShowInputFade(false)
-        setIsCorrectAnswer(true)
-        
-        // Wait for input to fade out, then stream welcome message
-        setTimeout(() => {
-          setStreamedText('')
-          streamText('WELCOME FREN!', () => {
-            // After welcome message streams, wait a bit then open door
-            setTimeout(() => {
-              setDoorOpen(true)
-            }, 800)
-          })
-        }, 500) // Wait for input fade animation
-      } else {
-        // Wrong answer - shake red
-        setInputShake(true)
-        setTimeout(() => {
-          setInputShake(false)
-          setInputValue('') // Clear the input
-        }, 600)
-      }
-    }
-  }
 
   return (
     <div className="landing-screen">
@@ -154,20 +88,6 @@ function LandingScreen({ onComplete }) {
                 {streamedText}
                 {streamedText.length > 0 && <span className="cursor">|</span>}
               </div>
-            </div>
-          )}
-          
-          {showInput && !doorOpen && (
-            <div className={`ticker-input-container ${showInputFade ? '' : 'fade-out'} ${inputShake ? 'shake-red' : ''}`}>
-              <input 
-                type="text" 
-                className="ticker-input" 
-                placeholder=""
-                value={inputValue}
-                onChange={handleInputChange}
-                autoFocus
-                disabled={!showInputFade}
-              />
             </div>
           )}
         </div>

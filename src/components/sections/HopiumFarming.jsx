@@ -75,6 +75,13 @@ function HopiumFarming({ isActive = false }) {
     }
   }, [isConnected, address, isActive, isAuthenticated])
 
+  // Load leaderboard when section becomes active (public endpoint, no auth needed)
+  useEffect(() => {
+    if (isActive) {
+      loadLeaderboard()
+    }
+  }, [isActive])
+
   // Poll for task completion updates (only when section is active and authenticated)
   useEffect(() => {
     if (!isActive || !isConnected || !address || !isAuthenticated) {
@@ -199,10 +206,13 @@ function HopiumFarming({ isActive = false }) {
     }
   }
 
-  // Load leaderboard
+  // Load leaderboard (public endpoint, no auth required)
   const loadLeaderboard = async () => {
     try {
-      const data = await API_CONFIG.fetch(API_CONFIG.endpoints.tasks.leaderboard(10, 0))
+      const data = await API_CONFIG.fetch(
+        API_CONFIG.endpoints.tasks.leaderboard(10, 0),
+        { includeAuth: false } // Public endpoint
+      )
       setLeaderboard(data.entries || [])
     } catch (err) {
       console.error('Failed to load leaderboard:', err)
@@ -625,37 +635,42 @@ function HopiumFarming({ isActive = false }) {
               </div>
             </div>
 
-            {/* Leaderboard Section */}
-            <div className="leaderboard-section">
-              <h2 className="leaderboard-title">Leaderboard</h2>
-              <div className="leaderboard-container">
-                <div className="leaderboard-header">
-                  <span className="leaderboard-rank">Rank</span>
-                  <span className="leaderboard-address">Address</span>
-                  <span className="leaderboard-points">Points</span>
-                </div>
-                <div className="leaderboard-list">
-                  {leaderboard.length > 0 ? (
-                    leaderboard.map((entry) => (
-                      <div 
-                        key={entry.rank} 
-                        className={`leaderboard-entry ${entry.wallet_address?.toLowerCase() === address?.toLowerCase() ? 'your-entry' : ''}`}
-                      >
-                        <span className="leaderboard-rank">#{entry.rank}</span>
-                        <span className="leaderboard-address">{formatAddress(entry.wallet_address)}</span>
-                        <span className="leaderboard-points">{entry.total_points?.toLocaleString() || 0}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="leaderboard-empty">
-                      <p>No entries yet. Be the first!</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
           </>
         )}
+
+        {/* Leaderboard Section - Always visible */}
+        <div className="leaderboard-section">
+          <h2 className="leaderboard-title">Leaderboard</h2>
+          <div className="leaderboard-container">
+            <div className="leaderboard-header">
+              <span className="leaderboard-rank">Rank</span>
+              <span className="leaderboard-address">Address</span>
+              <span className="leaderboard-points">Points</span>
+            </div>
+            <div className="leaderboard-list">
+              {leaderboard.length > 0 ? (
+                leaderboard.map((entry) => (
+                  <div 
+                    key={entry.rank} 
+                    className={`leaderboard-entry ${entry.wallet_address?.toLowerCase() === address?.toLowerCase() ? 'your-entry' : ''}`}
+                  >
+                    <span className="leaderboard-rank">#{entry.rank}</span>
+                    <span className="leaderboard-address">{formatAddress(entry.wallet_address)}</span>
+                    <span className="leaderboard-points">{entry.total_points?.toLocaleString() || 0}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="leaderboard-empty">
+                  {!isConnected || !isAuthenticated ? (
+                    <p>Connect wallet and sign in to view Leaderboard</p>
+                  ) : (
+                    <p>No entries yet. Be the first!</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Referral Modal */}

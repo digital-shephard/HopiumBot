@@ -1275,6 +1275,367 @@ interface Leaderboard {
 
 ---
 
+## AirdropAlpha API (Airdrop Opportunities)
+
+The AirdropAlpha module provides public access to curated airdrop opportunities posted by your team.
+
+### List Airdrops
+
+Get a list of airdrop opportunities with optional filtering.
+
+**Endpoint**: `GET /api/airdrops`
+
+**Query Parameters**:
+- `status` (optional): Filter by status (`Active`, `Ended`, `Coming Soon`)
+- `limit` (optional, default: 50, max: 100): Number of results
+- `offset` (optional, default: 0): Pagination offset
+
+**Example Requests**:
+```javascript
+// Get all active airdrops
+const response = await fetch(`${BASE_URL}/api/airdrops?status=Active&limit=20`);
+const data = await response.json();
+
+// Get all airdrops (no filter)
+const allAirdrops = await fetch(`${BASE_URL}/api/airdrops`);
+```
+
+**Response**:
+```json
+{
+  "airdrops": [
+    {
+      "id": 3,
+      "name": "Simple Protocol",
+      "description": "DeFi Lending Platform",
+      "status": "Active",
+      "farmingGuide": {
+        "difficulty": "Easy",
+        "steps": [
+          {
+            "stepNumber": 1,
+            "title": "Visit Website",
+            "description": "Go to simple-protocol.io and connect wallet"
+          },
+          {
+            "stepNumber": 2,
+            "title": "Make a Deposit",
+            "description": "Deposit any amount of USDC or ETH"
+          },
+          {
+            "stepNumber": 3,
+            "title": "Hold for 30 Days",
+            "description": "Keep your funds deposited for at least one month"
+          }
+        ],
+        "requirements": ["Wallet with USDC or ETH", "Minimum $10"],
+        "warnings": ["Smart contract risk - funds could be lost"]
+      },
+      "createdAt": "2025-11-02T15:30:00Z",
+      "updatedAt": "2025-11-02T15:30:00Z",
+      "createdBy": "ModUsername"
+    }
+  ],
+  "total": 42,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+---
+
+### Get Specific Airdrop
+
+Get detailed information about a specific airdrop by ID.
+
+**Endpoint**: `GET /api/airdrops/{id}`
+
+**Path Parameters**:
+- `id` (required): Airdrop ID
+
+**Example Request**:
+```javascript
+const response = await fetch(`${BASE_URL}/api/airdrops/3`);
+const airdrop = await response.json();
+```
+
+**Response**:
+```json
+{
+  "id": 3,
+  "name": "Simple Protocol",
+  "description": "DeFi Lending Platform",
+  "status": "Active",
+  "farmingGuide": {
+    "difficulty": "Easy",
+    "steps": [
+      {
+        "stepNumber": 1,
+        "title": "Visit Website",
+        "description": "Go to simple-protocol.io and connect wallet"
+      },
+      {
+        "stepNumber": 2,
+        "title": "Make a Deposit",
+        "description": "Deposit any amount of USDC or ETH"
+      },
+      {
+        "stepNumber": 3,
+        "title": "Hold for 30 Days",
+        "description": "Keep your funds deposited for at least one month"
+      }
+    ],
+    "requirements": ["Wallet with USDC or ETH", "Minimum $10"],
+    "warnings": ["Smart contract risk - funds could be lost"]
+  },
+  "createdAt": "2025-11-02T15:30:00Z",
+  "updatedAt": "2025-11-02T15:30:00Z",
+  "createdBy": "ModUsername"
+}
+```
+
+---
+
+### TypeScript Interfaces
+
+```typescript
+interface Airdrop {
+  id: number;
+  name: string;
+  description: string;
+  status: 'Active' | 'Ended' | 'Coming Soon';
+  farmingGuide: FarmingGuide;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+interface FarmingGuide {
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  steps: Step[];
+  requirements: string[];
+  warnings: string[];
+}
+
+interface Step {
+  stepNumber: number;
+  title: string;
+  description: string;
+}
+
+interface AirdropListResponse {
+  airdrops: Airdrop[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+```
+
+---
+
+### Complete Example
+
+**React/TypeScript Implementation**:
+```typescript
+import { useState, useEffect } from 'react';
+
+// Interfaces
+interface Step {
+  stepNumber: number;
+  title: string;
+  description: string;
+}
+
+interface FarmingGuide {
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  steps: Step[];
+  requirements: string[];
+  warnings: string[];
+}
+
+interface Airdrop {
+  id: number;
+  name: string;
+  description: string;
+  status: 'Active' | 'Ended' | 'Coming Soon';
+  farmingGuide: FarmingGuide;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+// API Client
+class AirdropAPI {
+  constructor(private baseUrl: string) {}
+
+  async listAirdrops(
+    status?: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<{ airdrops: Airdrop[]; total: number }> {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    params.append('limit', limit.toString());
+    params.append('offset', offset.toString());
+
+    const response = await fetch(
+      `${this.baseUrl}/api/airdrops?${params.toString()}`
+    );
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch airdrops');
+    }
+
+    return await response.json();
+  }
+
+  async getAirdrop(id: number): Promise<Airdrop> {
+    const response = await fetch(`${this.baseUrl}/api/airdrops/${id}`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Airdrop not found');
+      }
+      throw new Error('Failed to fetch airdrop');
+    }
+
+    return await response.json();
+  }
+}
+
+// React Component Example
+function AirdropsList() {
+  const [airdrops, setAirdrops] = useState<Airdrop[]>([]);
+  const [filter, setFilter] = useState<string>('Active');
+  const [loading, setLoading] = useState(true);
+
+  const api = new AirdropAPI(BASE_URL);
+
+  useEffect(() => {
+    async function fetchAirdrops() {
+      setLoading(true);
+      try {
+        const data = await api.listAirdrops(filter);
+        setAirdrops(data.airdrops);
+      } catch (error) {
+        console.error('Error fetching airdrops:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchAirdrops();
+  }, [filter]);
+
+  return (
+    <div>
+      <h1>Airdrop Opportunities</h1>
+      
+      {/* Filter buttons */}
+      <div>
+        <button onClick={() => setFilter('Active')}>Active</button>
+        <button onClick={() => setFilter('Coming Soon')}>Coming Soon</button>
+        <button onClick={() => setFilter('Ended')}>Ended</button>
+      </div>
+
+      {/* Airdrops list */}
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
+        <div>
+          {airdrops.map((airdrop) => (
+            <div key={airdrop.id} className="airdrop-card">
+              <h2>{airdrop.name}</h2>
+              <p>{airdrop.description}</p>
+              <span className={`status ${airdrop.status.toLowerCase()}`}>
+                {airdrop.status}
+              </span>
+              <span className={`difficulty ${airdrop.farmingGuide.difficulty.toLowerCase()}`}>
+                {airdrop.farmingGuide.difficulty}
+              </span>
+              
+              {/* Steps */}
+              <div className="steps">
+                <h3>How to Farm:</h3>
+                {airdrop.farmingGuide.steps.map((step) => (
+                  <div key={step.stepNumber} className="step">
+                    <strong>Step {step.stepNumber}: {step.title}</strong>
+                    <p>{step.description}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Requirements */}
+              {airdrop.farmingGuide.requirements.length > 0 && (
+                <div className="requirements">
+                  <h4>Requirements:</h4>
+                  <ul>
+                    {airdrop.farmingGuide.requirements.map((req, i) => (
+                      <li key={i}>{req}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Warnings */}
+              {airdrop.farmingGuide.warnings.length > 0 && (
+                <div className="warnings">
+                  <h4>⚠️ Warnings:</h4>
+                  <ul>
+                    {airdrop.farmingGuide.warnings.map((warning, i) => (
+                      <li key={i}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <small>Posted by {airdrop.createdBy} on {new Date(airdrop.createdAt).toLocaleDateString()}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+### Error Responses
+
+**404 Not Found** (airdrop doesn't exist):
+```json
+{
+  "error": "Airdrop not found"
+}
+```
+
+**400 Bad Request** (invalid ID):
+```json
+{
+  "error": "Invalid airdrop ID"
+}
+```
+
+**500 Internal Server Error**:
+```json
+{
+  "error": "Failed to list airdrops: ..."
+}
+```
+
+---
+
+### Notes
+
+- **Public Endpoints**: No authentication required
+- **Real-time Updates**: Airdrops posted in Discord appear immediately via API
+- **Pagination**: Use `limit` and `offset` for large result sets
+- **Status Values**: `Active`, `Ended`, `Coming Soon`
+- **Difficulty Values**: `Easy`, `Medium`, `Hard`
+
+---
+
 ## Support
 
 For issues or questions:

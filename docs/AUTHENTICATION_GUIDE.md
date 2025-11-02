@@ -105,6 +105,8 @@ Read-only or public endpoints:
 - `GET /api/perps/*` - All perps/market data endpoints
 - `GET /api/tasks/leaderboard` - Public leaderboard
 - `GET /api/tasks/leaderboard/user/{address}` - Public user rank
+- `GET /api/airdrops` - List airdrop opportunities
+- `GET /api/airdrops/{id}` - Get specific airdrop details
 - `GET /health` - Health check
 
 ## 🔄 Complete Authentication Flow Example
@@ -231,6 +233,308 @@ const completion = await auth.completeTask('follow_twitter', {
 });
 console.log('Task completed:', completion);
 ```
+
+## 🔌 **WebSocket Authentication**
+
+WebSocket connections **require authentication** to subscribe to real-time updates. Two methods are supported:
+
+### **Method 1: Token in Query Parameter** (Recommended - Simplest)
+
+```javascript
+const auth = new HopiumCoreAuth('http://localhost:8080');
+
+// Authenticate first to get token
+await auth.authenticate(walletAddress);
+
+// Connect WebSocket with token in URL
+const ws = new WebSocket(`ws://localhost:8080/ws?token=${auth.token}`);
+
+ws.onopen = () => {
+  console.log('✅ WebSocket connected and authenticated!');
+  
+  // Subscribe to BTCUSDT
+  ws.send(JSON.stringify({
+    type: 'subscribe',
+    symbol: 'BTCUSDT',
+    strategy: 'range_trading'
+  }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Received:', data);
+  
+  if (data.type === 'summary') {
+    console.log('Market summary:', data.data);
+  }
+};
+
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+
+ws.onclose = () => {
+  console.log('WebSocket disconnected');
+};
+```
+
+---
+
+### **Method 2: Token in First Message** (More Secure)
+
+```javascript
+const auth = new HopiumCoreAuth('http://localhost:8080');
+
+// Authenticate first to get token
+await auth.authenticate(walletAddress);
+
+// Connect without token
+const ws = new WebSocket('ws://localhost:8080/ws');
+
+ws.onopen = () => {
+  console.log('WebSocket connected, authenticating...');
+  
+  // Send authentication message (must be within 5 seconds)
+  ws.send(JSON.stringify({
+    type: 'authenticate',
+    token: auth.token
+  }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  
+  if (data.type === 'authenticated') {
+    console.log('✅ Authenticated:', data.payload.wallet_address);
+    
+    // Now we can subscribe
+    ws.send(JSON.stringify({
+      type: 'subscribe',
+      symbol: 'BTCUSDT',
+      strategy: 'range_trading'
+    }));
+  }
+  
+  if (data.type === 'summary') {
+    console.log('Market summary:', data.data);
+  }
+  
+  if (data.type === 'auth_error') {
+    console.error('Auth failed:', data.payload);
+  }
+};
+```
+
+---
+
+### **Full WebSocket Class with Authentication**
+
+```javascript
+class HopiumWebSocket {
+  constructor(baseUrl, token) {
+    this.baseUrl = baseUrl.replace('http', 'ws'); // http -> ws, https -> wss
+    this.token = token;
+    this.ws = null;
+    this.isAuthenticated = false;
+  }
+
+  // Method 1: Connect with token in URL (recommended)
+  connectWithToken() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(`${this.baseUrl}/ws?token=${this.token}`);
+      
+      this.ws.onopen = () => {
+        console.log('✅ WebSocket connected and authenticated');
+        this.isAuthenticated = true;
+        resolve();
+      };
+
+      this.ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        reject(error);
+      };
+
+      this.setupMessageHandlers();
+    });
+  }
+
+  // Method 2: Connect and authenticate via message
+  connectWithMessage() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(`${this.baseUrl}/ws`);
+      
+      this.ws.onopen = () => {
+        console.log('WebSocket connected, sending auth...');
+        
+        // Send authentication within 5 seconds
+        this.ws.send(JSON.stringify({
+          type: 'authenticate',
+          token: this.token
+        }));
+      };
+
+      // Wait for authenticated response
+      const authHandler = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'authenticated') {
+          console.log('✅ Authenticated:', data.payload.wallet_address);
+          this.isAuthenticated = true;
+          this.ws.removeEventListener('message', authHandler);
+          resolve();
+        }
+        
+        if (data.type === 'error' || data.type === 'auth_error') {
+          console.error('Auth failed:', data.payload);
+          reject(new Error(data.payload.error || 'Authentication failed'));
+        }
+      };
+
+      this.ws.addEventListener('message', authHandler);
+      this.setupMessageHandlers();
+    });
+  }
+
+  setupMessageHandlers() {
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      this.handleMessage(data);
+    };
+
+    this.ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      this.isAuthenticated = false;
+    };
+  }
+
+  handleMessage(data) {
+    switch (data.type) {
+      case 'subscribed':
+        console.log('✅ Subscribed to:', data.symbol, 'with strategy:', data.strategy);
+        break;
+        
+      case 'summary':
+        console.log('📊 Market summary for', data.symbol);
+        console.log('Entry:', data.data.summary.entry);
+        break;
+        
+      case 'alert':
+        console.log('⚠️ Alert:', data.data.description);
+        break;
+        
+      case 'error':
+        console.error('❌ Error:', data.payload);
+        break;
+    }
+  }
+
+  subscribe(symbol, strategy = 'range_trading') {
+    if (!this.isAuthenticated) {
+      console.error('Cannot subscribe: not authenticated');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({
+      type: 'subscribe',
+      symbol: symbol,
+      strategy: strategy
+    }));
+  }
+
+  unsubscribe(symbol) {
+    this.ws.send(JSON.stringify({
+      type: 'unsubscribe',
+      symbol: symbol
+    }));
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+}
+
+// Usage Example
+async function setupWebSocket() {
+  // 1. Authenticate with HTTP API first
+  const auth = new HopiumCoreAuth('http://localhost:8080');
+  const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+  await auth.authenticate(accounts[0]);
+
+  // 2. Connect WebSocket with token
+  const wsClient = new HopiumWebSocket('http://localhost:8080', auth.token);
+  
+  // Method 1: Token in URL (recommended)
+  await wsClient.connectWithToken();
+  
+  // OR Method 2: Token in message
+  // await wsClient.connectWithMessage();
+
+  // 3. Subscribe to symbols
+  wsClient.subscribe('BTCUSDT', 'range_trading');
+
+  // 4. Listen for updates (handled by setupMessageHandlers)
+}
+```
+
+---
+
+### **WebSocket Authentication Errors**
+
+**Connection Rejected (Invalid Token):**
+```
+WebSocket connection failed: 401 Unauthorized
+```
+
+**Authentication Timeout (5 seconds):**
+```json
+{
+  "type": "error",
+  "payload": {
+    "error": "Authentication timeout. You must authenticate within 5 seconds of connecting."
+  }
+}
+```
+
+**Connection Limit Exceeded:**
+```
+WebSocket connection failed: 429 Too Many Requests
+Connection limit exceeded: maximum 3 connections per user
+```
+
+**Message Rate Limit Exceeded:**
+```json
+{
+  "type": "error",
+  "payload": {
+    "error": "Message rate limit exceeded: maximum 30 messages per minute"
+  }
+}
+```
+
+**Subscription Limit Exceeded:**
+```json
+{
+  "type": "error",
+  "payload": {
+    "error": "Subscription limit exceeded: maximum 10 subscriptions per connection"
+  }
+}
+```
+
+---
+
+### **WebSocket Limits**
+
+| Limit | Value | Reason |
+|-------|-------|--------|
+| **Auth Timeout** | 5 seconds | Must authenticate quickly |
+| **Max Connections** | 3 per user | Allow multiple devices |
+| **Message Rate** | 30/minute | Prevent spam |
+| **Max Subscriptions** | 10 per connection | Reasonable for most use cases |
+
+---
 
 ## 🛡️ Security Best Practices
 

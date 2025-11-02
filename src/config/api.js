@@ -75,6 +75,18 @@ export const API_CONFIG = {
       // Leaderboard endpoints
       leaderboard: (limit = 100, offset = 0) => `/api/tasks/leaderboard?limit=${limit}&offset=${offset}`,
       userRank: (walletAddress) => `/api/tasks/leaderboard/user/${walletAddress}`
+    },
+    
+    // AirdropAlpha endpoints
+    airdrops: {
+      list: (status = null, limit = 50, offset = 0) => {
+        const params = new URLSearchParams()
+        if (status) params.append('status', status)
+        params.append('limit', limit.toString())
+        params.append('offset', offset.toString())
+        return `/api/airdrops?${params.toString()}`
+      },
+      getById: (id) => `/api/airdrops/${id}`
     }
   },
   

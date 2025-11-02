@@ -28,6 +28,7 @@ HopiumBot/
    │   ├── auth.js           # Authentication service (wallet signature-based)
    │   ├── websocket.js      # WebSocket client service (with JWT auth)
    │   ├── orderManager.js   # Order lifecycle management service
+   │   ├── airdrop.js        # Airdrop service for fetching opportunities
    │   └── dex/              # DEX service abstraction layer
    │       ├── DexService.js         # Abstract DEX service interface
    │       └── aster/               # Aster Finance implementation
@@ -47,14 +48,16 @@ HopiumBot/
        ├── DevToggle.jsx        # Dev tools toggle (dev mode only)
        ├── DevToggle.css        # Dev toggle styles
        └── sections/
-           ├── HopiumFarming.jsx    # HOPIUM Farming section (Farm)
-           ├── HopiumFarming.css   # HOPIUM Farming styles
-           ├── PerpFarming.jsx      # Perp Farming section (Perps Bot)
-           ├── PerpFarming.css     # Perp Farming styles
-           ├── AirdropAlpha.jsx    # Airdrop Alpha section (Alpha)
-           ├── AirdropAlpha.css    # Airdrop Alpha styles
-           ├── VaultFarming.jsx    # Vault section (Vault)
-           └── VaultFarming.css    # Vault styles
+           ├── HopiumFarming.jsx      # HOPIUM Farming section (Farm)
+           ├── HopiumFarming.css     # HOPIUM Farming styles
+           ├── PerpFarming.jsx        # Perp Farming section (Perps Bot)
+           ├── PerpFarming.css       # Perp Farming styles
+           ├── AirdropAlpha.jsx      # Airdrop Alpha section (Alpha)
+           ├── AirdropAlpha.css      # Airdrop Alpha styles
+           ├── FarmingGuideModal.jsx # Farming guide modal component
+           ├── FarmingGuideModal.css # Farming guide modal styles
+           ├── VaultFarming.jsx      # Vault section (Vault)
+           └── VaultFarming.css      # Vault styles
 ```
 
 ## Getting Started
@@ -123,6 +126,12 @@ npm run preview
     - **Auto-Registration**: Users are automatically registered when connecting wallet
     - **API Integration**: Full integration with HopiumCore Tasks API
   - **Alpha**: Airdrop opportunities and alpha insights
+    - **Real-time Airdrops**: Live airdrop opportunities fetched from Discord
+    - **Farming Guides**: Detailed step-by-step farming instructions for each airdrop
+    - **Difficulty Ratings**: Easy/Medium/Hard/Expert difficulty indicators
+    - **Interactive Modal**: Click any airdrop to view comprehensive farming guide
+    - **Smart Fallback**: Shows HOPIUM BOT when no airdrops available
+    - **Auto-refresh**: Automatically displays new airdrops posted in Discord
   - **Vault**: Community-governed perpetual futures pool (coming soon)
     - Dynamic capital allocation
     - Liquidation-resistant trading strategies
@@ -243,6 +252,50 @@ The API includes a complete tasks/airdrop system:
 **Points System**:
 - Join Discord: 500 points (verified via OAuth)
 - Refer Friend: 1000 points (when friend joins Discord)
+
+### AirdropAlpha API Endpoints
+
+The API provides curated airdrop opportunities posted by moderators in Discord:
+
+**Airdrops** (🌐 Public):
+- `GET /api/airdrops?status={status}&limit={n}&offset={n}` - List airdrop opportunities
+- `GET /api/airdrops/{id}` - Get specific airdrop with farming guide
+
+**Airdrop Features**:
+- **Discord Integration**: Airdrops posted in private Discord channel appear immediately
+- **Farming Guides**: Step-by-step instructions with tips and warnings
+- **Difficulty Ratings**: Easy, Medium, Hard, Expert
+- **Status Tracking**: Active, Coming Soon, Ended
+- **Requirements**: Prerequisites listed for each airdrop
+- **Expected Rewards**: Estimated token amounts and criteria
+
+**Example Airdrop Data**:
+```json
+{
+  "id": 1,
+  "name": "LayerZero",
+  "description": "Omnichain Interoperability Protocol",
+  "status": "Active",
+  "farmingGuide": {
+    "difficulty": "Medium",
+    "estimatedTime": "20 minutes daily",
+    "steps": [
+      {
+        "stepNumber": 1,
+        "title": "Bridge Assets",
+        "description": "Use Stargate to bridge USDC...",
+        "tips": "Bridge at least $100 worth..."
+      }
+    ],
+    "requirements": ["Multi-chain wallet", "Minimum $200"],
+    "rewards": {
+      "estimated": "1000-10000 tokens",
+      "criteria": "Based on volume and frequency"
+    },
+    "warnings": ["No official airdrop confirmed", "DYOR"]
+  }
+}
+```
 
 ### Sentiment Feature
 

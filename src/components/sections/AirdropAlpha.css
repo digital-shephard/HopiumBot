@@ -249,6 +249,42 @@
   border-radius: 6px;
   letter-spacing: 1px;
   text-transform: uppercase;
+  margin-right: 8px;
+}
+
+.airdrop-difficulty {
+  display: inline-block;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 6px 14px;
+  border-radius: 6px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.airdrop-difficulty.easy {
+  background: rgba(0, 255, 0, 0.15);
+  border: 1px solid rgba(0, 255, 0, 0.4);
+  color: #00ff88;
+}
+
+.airdrop-difficulty.medium {
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+}
+
+.airdrop-difficulty.hard {
+  background: rgba(255, 100, 0, 0.15);
+  border: 1px solid rgba(255, 100, 0, 0.4);
+  color: #ff6644;
+}
+
+.airdrop-difficulty.expert {
+  background: rgba(255, 0, 0, 0.15);
+  border: 1px solid rgba(255, 0, 0, 0.4);
+  color: #ff4444;
 }
 
 .airdrop-status.claimable {
@@ -280,6 +316,89 @@
   50% {
     box-shadow: 0 0 20px rgba(0, 255, 0, 0.6);
   }
+}
+
+/* Loading Banner (smaller, non-blocking) */
+.airdrop-loading-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: rgba(255, 215, 0, 0.08);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 8px;
+}
+
+.airdrop-loading-banner p {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: rgba(255, 215, 0, 0.8);
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.loading-spinner-small {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(255, 215, 0, 0.2);
+  border-top: 3px solid #ffd700;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error Banner (smaller, non-blocking) */
+.airdrop-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: rgba(255, 100, 0, 0.1);
+  border: 1px solid rgba(255, 100, 0, 0.4);
+  border-radius: 8px;
+}
+
+.airdrop-error-banner p {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: rgba(255, 150, 0, 0.95);
+  letter-spacing: 0.5px;
+  margin: 0;
+  flex: 1;
+}
+
+.retry-button-small {
+  padding: 6px 14px;
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.retry-button-small:hover {
+  background: rgba(255, 215, 0, 0.2);
+  border-color: rgba(255, 215, 0, 0.6);
+  box-shadow: 0 2px 10px rgba(255, 215, 0, 0.3);
 }
 
 /* Modal Styles */

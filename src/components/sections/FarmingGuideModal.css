@@ -1,0 +1,576 @@
+/* Farming Guide Modal Styles */
+
+.farming-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.3s ease-out;
+  padding: 20px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.farming-modal {
+  background: linear-gradient(
+    135deg,
+    rgba(0, 0, 0, 0.98) 0%,
+    rgba(10, 10, 20, 0.98) 100%
+  );
+  border: 3px solid rgba(255, 215, 0, 0.5);
+  border-radius: 24px;
+  padding: 0;
+  max-width: 700px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+  backdrop-filter: blur(10px);
+  box-shadow: 
+    0 0 80px rgba(255, 215, 0, 0.4),
+    inset 0 0 60px rgba(255, 215, 0, 0.08);
+  animation: modalSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.farming-modal::-webkit-scrollbar {
+  width: 10px;
+}
+
+.farming-modal::-webkit-scrollbar-track {
+  background: rgba(255, 215, 0, 0.1);
+  border-radius: 5px;
+  margin: 10px;
+}
+
+.farming-modal::-webkit-scrollbar-thumb {
+  background: rgba(255, 215, 0, 0.4);
+  border-radius: 5px;
+  border: 2px solid rgba(0, 0, 0, 0.98);
+}
+
+.farming-modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 215, 0, 0.6);
+}
+
+/* Close Button */
+.farming-modal-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: transparent;
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  font-family: 'Courier New', monospace;
+  z-index: 10;
+}
+
+.farming-modal-close:hover {
+  background: rgba(255, 215, 0, 0.2);
+  border-color: rgba(255, 215, 0, 0.8);
+  transform: rotate(90deg);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+/* Header */
+.farming-modal-header {
+  padding: 40px 40px 30px;
+  border-bottom: 2px solid rgba(255, 215, 0, 0.2);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 215, 0, 0.05) 0%,
+    transparent 100%
+  );
+}
+
+.farming-modal-title {
+  font-family: 'Courier New', monospace;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.6),
+    0 0 40px rgba(255, 215, 0, 0.3);
+  margin: 0 0 16px 0;
+  padding-right: 50px;
+  animation: titleGlow 2s ease-in-out infinite;
+}
+
+@keyframes titleGlow {
+  0%, 100% {
+    text-shadow: 
+      0 0 20px rgba(255, 215, 0, 0.6),
+      0 0 40px rgba(255, 215, 0, 0.3);
+  }
+  50% {
+    text-shadow: 
+      0 0 30px rgba(255, 215, 0, 0.8),
+      0 0 60px rgba(255, 215, 0, 0.5);
+  }
+}
+
+.farming-modal-meta {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.farming-modal-status {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: bold;
+  padding: 6px 16px;
+  border-radius: 6px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.farming-modal-status.active {
+  background: rgba(0, 255, 0, 0.2);
+  border: 1px solid rgba(0, 255, 0, 0.6);
+  color: #00ff00;
+  box-shadow: 0 0 12px rgba(0, 255, 0, 0.4);
+}
+
+.farming-modal-status.ended {
+  background: rgba(255, 0, 0, 0.2);
+  border: 1px solid rgba(255, 0, 0, 0.6);
+  color: #ff4444;
+  box-shadow: 0 0 12px rgba(255, 0, 0, 0.4);
+}
+
+.farming-modal-status.coming-soon {
+  background: rgba(255, 215, 0, 0.2);
+  border: 1px solid rgba(255, 215, 0, 0.6);
+  color: #ffd700;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+}
+
+.farming-modal-difficulty {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: bold;
+  padding: 6px 16px;
+  border-radius: 6px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.farming-modal-difficulty.easy {
+  background: rgba(0, 255, 0, 0.15);
+  border: 1px solid rgba(0, 255, 0, 0.4);
+  color: #00ff88;
+}
+
+.farming-modal-difficulty.medium {
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+}
+
+.farming-modal-difficulty.hard {
+  background: rgba(255, 100, 0, 0.15);
+  border: 1px solid rgba(255, 100, 0, 0.4);
+  color: #ff6644;
+}
+
+.farming-modal-difficulty.expert {
+  background: rgba(255, 0, 0, 0.15);
+  border: 1px solid rgba(255, 0, 0, 0.4);
+  color: #ff4444;
+}
+
+.farming-modal-description {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  color: rgba(255, 215, 0, 0.8);
+  letter-spacing: 1px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Content */
+.farming-modal-content {
+  padding: 30px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.farming-modal-section {
+  padding: 24px;
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.farming-modal-section:hover {
+  background: rgba(255, 215, 0, 0.08);
+  border-color: rgba(255, 215, 0, 0.3);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.1);
+}
+
+.farming-modal-section h3 {
+  font-family: 'Courier New', monospace;
+  font-size: 20px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 2px;
+  margin: 0 0 16px 0;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
+.farming-modal-section p {
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  color: rgba(255, 215, 0, 0.85);
+  letter-spacing: 0.5px;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.farming-modal-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.farming-modal-list li {
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  color: rgba(255, 215, 0, 0.85);
+  letter-spacing: 0.5px;
+  line-height: 1.7;
+  padding-left: 24px;
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.farming-modal-list li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: #ffd700;
+  font-weight: bold;
+}
+
+/* Steps */
+.farming-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.farming-step {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.farming-step:hover {
+  background: rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 215, 0, 0.4);
+  transform: translateX(4px);
+}
+
+.farming-step-number {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 215, 0, 0.1));
+  border: 2px solid rgba(255, 215, 0, 0.5);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Courier New', monospace;
+  font-size: 20px;
+  font-weight: bold;
+  color: #ffd700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.farming-step-content {
+  flex: 1;
+}
+
+.farming-step-title {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 1.5px;
+  margin: 0 0 8px 0;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+}
+
+.farming-step-description {
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  color: rgba(255, 215, 0, 0.8);
+  letter-spacing: 0.5px;
+  line-height: 1.6;
+  margin: 0 0 10px 0;
+}
+
+.farming-step-tips {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: rgba(0, 255, 255, 0.85);
+  background: rgba(0, 255, 255, 0.1);
+  border-left: 3px solid rgba(0, 255, 255, 0.5);
+  padding: 10px 12px;
+  border-radius: 6px;
+  line-height: 1.6;
+  margin-top: 10px;
+}
+
+.farming-step-tips-label {
+  font-weight: bold;
+  color: #00ffff;
+}
+
+/* Rewards Section */
+.farming-modal-rewards {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(255, 215, 0, 0.05));
+  border-color: rgba(255, 215, 0, 0.3);
+}
+
+.farming-reward-estimate,
+.farming-reward-criteria {
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  color: rgba(255, 215, 0, 0.9);
+  letter-spacing: 0.5px;
+  line-height: 1.7;
+  margin: 0 0 10px 0;
+}
+
+.farming-reward-estimate:last-child,
+.farming-reward-criteria:last-child {
+  margin-bottom: 0;
+}
+
+/* Warnings Section */
+.farming-modal-warnings {
+  background: linear-gradient(135deg, rgba(255, 100, 0, 0.1), rgba(255, 50, 0, 0.05));
+  border-color: rgba(255, 100, 0, 0.3);
+}
+
+.farming-warnings-list li {
+  color: rgba(255, 150, 0, 0.95);
+}
+
+.farming-warnings-list li::before {
+  content: '⚠';
+  color: #ff8800;
+}
+
+/* Footer */
+.farming-modal-footer {
+  padding: 24px 40px 40px;
+  border-top: 2px solid rgba(255, 215, 0, 0.2);
+  background: linear-gradient(
+    0deg,
+    rgba(255, 215, 0, 0.05) 0%,
+    transparent 100%
+  );
+}
+
+.farming-modal-action {
+  width: 100%;
+  padding: 16px 32px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 215, 0, 0.1));
+  border: 2px solid rgba(255, 215, 0, 0.5);
+  border-radius: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffd700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
+}
+
+.farming-modal-action:hover {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 215, 0, 0.2));
+  border-color: rgba(255, 215, 0, 0.8);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 30px rgba(255, 215, 0, 0.4);
+}
+
+.farming-modal-action:active {
+  transform: translateY(0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .farming-modal {
+    max-width: 95%;
+    max-height: 90vh;
+    border-radius: 20px;
+  }
+
+  .farming-modal-header {
+    padding: 30px 24px 24px;
+  }
+
+  .farming-modal-title {
+    font-size: 24px;
+    letter-spacing: 2px;
+    padding-right: 40px;
+  }
+
+  .farming-modal-close {
+    width: 40px;
+    height: 40px;
+    font-size: 28px;
+    top: 16px;
+    right: 16px;
+  }
+
+  .farming-modal-content {
+    padding: 24px 24px;
+    gap: 24px;
+  }
+
+  .farming-modal-section {
+    padding: 18px;
+  }
+
+  .farming-modal-section h3 {
+    font-size: 18px;
+  }
+
+  .farming-step {
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .farming-step-number {
+    width: 38px;
+    height: 38px;
+    font-size: 18px;
+  }
+
+  .farming-step-title {
+    font-size: 16px;
+  }
+
+  .farming-step-description,
+  .farming-modal-section p,
+  .farming-modal-list li {
+    font-size: 14px;
+  }
+
+  .farming-modal-footer {
+    padding: 20px 24px 30px;
+  }
+
+  .farming-modal-action {
+    font-size: 16px;
+    padding: 14px 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  .farming-modal-overlay {
+    padding: 10px;
+  }
+
+  .farming-modal-header {
+    padding: 24px 18px 20px;
+  }
+
+  .farming-modal-title {
+    font-size: 20px;
+    letter-spacing: 1.5px;
+  }
+
+  .farming-modal-close {
+    width: 36px;
+    height: 36px;
+    font-size: 24px;
+  }
+
+  .farming-modal-content {
+    padding: 20px 18px;
+    gap: 20px;
+  }
+
+  .farming-modal-section {
+    padding: 16px;
+  }
+
+  .farming-modal-section h3 {
+    font-size: 16px;
+    margin-bottom: 12px;
+  }
+
+  .farming-step {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .farming-step-number {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+  }
+
+  .farming-modal-footer {
+    padding: 18px 18px 24px;
+  }
+
+  .farming-modal-action {
+    font-size: 14px;
+    padding: 12px 24px;
+  }
+}
+

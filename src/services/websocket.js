@@ -58,6 +58,22 @@ export class HopiumWebSocketClient {
   onSummary = null
 
   /**
+   * Called when a scalp indicator message is received
+   * @type {Function}
+   * @param {Object} data - Scalp indicator data
+   * @param {string} data.symbol - Trading pair symbol
+   * @param {number} data.current_price - Current market price
+   * @param {number} data.ema_1min - 1-minute EMA
+   * @param {string} data.side - Trading direction ('LONG', 'SHORT', 'NEUTRAL')
+   * @param {number} data.limit_price - Recommended limit order price
+   * @param {number} data.tp_price - Take profit price
+   * @param {number} data.sl_price - Stop loss price
+   * @param {string} data.confidence - Confidence level ('high', 'medium', 'low')
+   * @param {string} data.reasoning - Strategy reasoning
+   */
+  onScalpIndicator = null
+
+  /**
    * Called when an alert message is received
    * @type {Function}
    * @param {Object} data - Alert message data
@@ -296,12 +312,14 @@ export class HopiumWebSocketClient {
    * Subscribe to receive updates for a specific trading pair
    * 
    * @param {string} symbol - Trading pair symbol (e.g., 'BTCUSDT')
-   * @param {string} [strategy='range_trading'] - Trading strategy ('range_trading' or 'momentum')
+   * @param {string} [strategy='range_trading'] - Trading strategy ('range_trading', 'momentum', or 'scalp')
    * @throws {Error} If WebSocket is not connected
    * 
    * @example
    * ```javascript
    * client.subscribe('BTCUSDT', 'range_trading')
+   * // Or for scalp strategy
+   * client.subscribe('BTCUSDT', 'scalp')
    * ```
    */
   subscribe(symbol, strategy = 'range_trading') {
@@ -446,6 +464,12 @@ export class HopiumWebSocketClient {
       case 'summary':
         if (this.onSummary) {
           this.onSummary(message.payload)
+        }
+        break
+
+      case 'scalp_indicator':
+        if (this.onScalpIndicator) {
+          this.onScalpIndicator(message.payload?.data || message.payload)
         }
         break
 

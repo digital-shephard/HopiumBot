@@ -479,19 +479,17 @@ export class HopiumWebSocketClient {
 
       case 'scalp_indicator':
         if (this.onScalpIndicator) {
-          // Server sends scalp data in message.message.data or message.payload.data
-          console.log('[WebSocket] Processing scalp_indicator:', {
-            hasMessage: !!message.message,
-            hasPayload: !!message.payload,
-            messageData: message.message?.data,
-            payloadData: message.payload?.data,
-            rawMessage: message.message,
-            rawPayload: message.payload
-          })
+          // Server sends scalp data in fullMessage.data
+          console.log('[WebSocket] Received scalp_indicator:', message)
           
-          const scalpData = message.message?.data || message.payload?.data || message.message || message.payload
-          console.log('[WebSocket] Extracted scalpData:', scalpData)
-          this.onScalpIndicator(scalpData)
+          // Extract data from fullMessage structure
+          const scalpMessage = message.fullMessage || message.message || message.payload || message
+          const scalpData = scalpMessage?.data || scalpMessage
+          
+          console.log('[WebSocket] Extracted scalp data:', scalpData)
+          
+          // Pass the full message structure (contains symbol, strategy, and data)
+          this.onScalpIndicator(scalpMessage)
         }
         break
 

@@ -316,9 +316,9 @@ function PerpFarming() {
           try {
             console.log('[PerpFarming] Received scalp message:', message)
             
-            // Extract the actual scalp data from nested structure
-            // WebSocket sends: { type: "scalp_indicator", message: { data: {...} } }
-            const scalpData = message?.message?.data || message?.data || message
+            // Extract the actual scalp data
+            // WebSocket sends the data in message.data
+            const scalpData = message?.data || message
             
             // Defensive: ignore if malformed
             if (!scalpData) {

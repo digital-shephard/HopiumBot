@@ -760,13 +760,8 @@ function PerpFarming() {
       </div>
       
       <div className="section-content">
-        <h1 className={`section-title ${isRunning ? 'fade-out' : ''}`}>Perp Farming</h1>
-        <p className={`section-description ${isRunning ? 'fade-out' : ''}`}>
-          Advanced perpetual farming strategies for maximum yield
-        </p>
-        
-        <div className="aster-circle-container">
-          {/* Overall Stats Display - Above Circle */}
+        {/* Overall Stats Display - Absolutely positioned at top */}
+        {isRunning && (
           <div className="overall-stats">
             <div className="stats-row">
               <div className="stat-item">
@@ -793,6 +788,14 @@ function PerpFarming() {
               Reset Stats
             </button>
           </div>
+        )}
+        
+        <h1 className={`section-title ${isRunning ? 'fade-out' : ''}`}>Perp Farming</h1>
+        <p className={`section-description ${isRunning ? 'fade-out' : ''}`}>
+          Advanced perpetual farming strategies for maximum yield
+        </p>
+        
+        <div className="aster-circle-container">
 
           {isRunning && tradingSymbol && (
             <div className="trading-status">

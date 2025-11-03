@@ -473,7 +473,17 @@ export class HopiumWebSocketClient {
       case 'scalp_indicator':
         if (this.onScalpIndicator) {
           // Server sends scalp data in message.message.data or message.payload.data
+          console.log('[WebSocket] Processing scalp_indicator:', {
+            hasMessage: !!message.message,
+            hasPayload: !!message.payload,
+            messageData: message.message?.data,
+            payloadData: message.payload?.data,
+            rawMessage: message.message,
+            rawPayload: message.payload
+          })
+          
           const scalpData = message.message?.data || message.payload?.data || message.message || message.payload
+          console.log('[WebSocket] Extracted scalpData:', scalpData)
           this.onScalpIndicator(scalpData)
         }
         break

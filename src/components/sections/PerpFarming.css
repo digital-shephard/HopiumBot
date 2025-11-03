@@ -663,6 +663,46 @@
   margin-top: 4px;
 }
 
+/* Break-even Mode Toggle */
+.breakeven-toggle-container {
+  width: 100%;
+}
+
+.breakeven-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.breakeven-checkbox {
+  width: 20px;
+  height: 20px;
+  margin-right: 12px;
+  cursor: pointer;
+  accent-color: #ffd700;
+}
+
+.breakeven-text {
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  color: rgba(255, 215, 0, 0.9);
+  letter-spacing: 0.5px;
+}
+
+.breakeven-description {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: rgba(255, 215, 0, 0.6);
+  background: rgba(0, 200, 100, 0.08);
+  border: 1px solid rgba(0, 200, 100, 0.3);
+  border-radius: 6px;
+  padding: 10px 14px;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+
 .risk-input.shake-red {
   animation: shakeRed 0.5s ease-in-out;
   border-color: rgba(255, 0, 0, 0.8);

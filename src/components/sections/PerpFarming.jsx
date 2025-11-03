@@ -29,6 +29,7 @@ function PerpFarming() {
   const [tpSlMode, setTpSlMode] = useState('percent') // 'percent' or 'dollar'
   const [positionSize, setPositionSize] = useState(10)
   const [strategy, setStrategy] = useState('range_trading')
+  const [breakEvenMode, setBreakEvenMode] = useState(false)
   const [shakeApiKey, setShakeApiKey] = useState(false)
   const [shakeSecretKey, setShakeSecretKey] = useState(false)
   const [shakeCapital, setShakeCapital] = useState(false)
@@ -68,6 +69,7 @@ function PerpFarming() {
         setTpSlMode(settings.tpSlMode || 'percent')
         setPositionSize(settings.positionSize !== undefined ? settings.positionSize : 10)
         setStrategy(settings.strategy || 'range_trading')
+        setBreakEvenMode(settings.breakEvenMode || false)
       } catch (error) {
         console.error('Error loading settings:', error)
       }
@@ -148,7 +150,8 @@ function PerpFarming() {
         stopLoss,
         tpSlMode,
         positionSize,
-        strategy
+        strategy,
+        breakEvenMode
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
       setShowModal(false)
@@ -308,9 +311,17 @@ function PerpFarming() {
             lastPnlRef.current = netPnl // Store NET PNL for stats
             lastPositionCountRef.current = currentPositionCount
             
+            // Check break-even mode (volume farming)
+            if (settings.breakEvenMode && netPnl >= 0) {
+              console.log(`Break-even hit: Net PNL $${netPnl.toFixed(2)} >= $0 (after fees)`)
+              // Close all positions at break-even
+              for (const position of status.activePositions) {
+                await closePosition(orderManager, position.symbol)
+              }
+            }
             // Check dollar-based TP/SL if in dollar mode
             // NOTE: TP/SL based on GROSS PNL (before fees) - fees are fixed cost, not price risk
-            if (settings.tpSlMode === 'dollar') {
+            else if (settings.tpSlMode === 'dollar') {
               const takeProfitDollars = parseFloat(settings.takeProfit)
               const stopLossDollars = parseFloat(settings.stopLoss)
               
@@ -964,6 +975,25 @@ function PerpFarming() {
                     ? '🤖 AI-powered trend-following using GPT-5 analysis'
                     : '⚡ Ultra-fast 30-second signals, optimized for 75x leverage'
                   }
+                </div>
+              </div>
+
+              <div className="risk-form-group">
+                <div className="breakeven-toggle-container">
+                  <label className="breakeven-label">
+                    <input
+                      type="checkbox"
+                      checked={breakEvenMode}
+                      onChange={(e) => setBreakEvenMode(e.target.checked)}
+                      className="breakeven-checkbox"
+                    />
+                    <span className="breakeven-text">
+                      Volume Farming Mode (Auto-close at break-even)
+                    </span>
+                  </label>
+                  <div className="breakeven-description">
+                    💰 Automatically closes positions when Net PNL ≥ $0 (after fees). Perfect for farming trading volume while minimizing risk.
+                  </div>
                 </div>
               </div>
 

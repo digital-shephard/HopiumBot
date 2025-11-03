@@ -664,26 +664,33 @@
 }
 
 /* Break-even Mode Toggle */
-.breakeven-toggle-container {
-  width: 100%;
-}
-
-.breakeven-label {
+.breakeven-option {
   display: flex;
   align-items: center;
   cursor: pointer;
   user-select: none;
+  padding: 12px;
+  margin: 8px 0;
+  background: rgba(255, 215, 0, 0.03);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 8px;
+  transition: all 0.3s ease;
 }
 
-.breakeven-checkbox {
-  width: 20px;
-  height: 20px;
+.breakeven-option:hover {
+  background: rgba(255, 215, 0, 0.08);
+  border-color: rgba(255, 215, 0, 0.4);
+}
+
+.breakeven-radio {
+  width: 18px;
+  height: 18px;
   margin-right: 12px;
   cursor: pointer;
   accent-color: #ffd700;
 }
 
-.breakeven-text {
+.breakeven-option-text {
   font-family: 'Courier New', monospace;
   font-size: 15px;
   color: rgba(255, 215, 0, 0.9);
@@ -692,7 +699,7 @@
 
 .breakeven-description {
   font-family: 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(255, 215, 0, 0.6);
   background: rgba(0, 200, 100, 0.08);
   border: 1px solid rgba(0, 200, 100, 0.3);
@@ -700,7 +707,49 @@
   padding: 10px 14px;
   letter-spacing: 0.5px;
   line-height: 1.5;
-  margin-top: 8px;
+  margin: 8px 0 0 30px;
+}
+
+.trailing-config {
+  margin: 8px 0 0 30px;
+}
+
+.trailing-setting {
+  margin: 12px 0;
+}
+
+.trailing-setting-label {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: rgba(255, 215, 0, 0.8);
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.trailing-select {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #ffd700;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 215, 0, 0.3);
+  border-radius: 6px;
+  padding: 10px 14px;
+  width: 100%;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.trailing-select:hover {
+  border-color: rgba(255, 215, 0, 0.6);
+  background: rgba(255, 215, 0, 0.05);
+}
+
+.trailing-select:focus {
+  outline: none;
+  border-color: rgba(255, 215, 0, 0.8);
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
 }
 
 .risk-input.shake-red {

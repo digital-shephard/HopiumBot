@@ -30,6 +30,9 @@ function PerpFarming() {
   const [positionSize, setPositionSize] = useState(10)
   const [strategy, setStrategy] = useState('range_trading')
   const [breakEvenMode, setBreakEvenMode] = useState(false)
+  const [trailingBreakEven, setTrailingBreakEven] = useState(false)
+  const [trailingActivation, setTrailingActivation] = useState('3x_fees') // '2x_fees', '3x_fees', '5x_fees', '$50', '$100'
+  const [trailingDistance, setTrailingDistance] = useState('10') // '5', '10', '15', '20' (percentage)
   const [shakeApiKey, setShakeApiKey] = useState(false)
   const [shakeSecretKey, setShakeSecretKey] = useState(false)
   const [shakeCapital, setShakeCapital] = useState(false)
@@ -53,6 +56,10 @@ function PerpFarming() {
   const pnlPollIntervalRef = useRef(null)
   const lastPositionCountRef = useRef(0)
   const lastPnlRef = useRef(0)
+  const peakPnlRef = useRef(0)
+  const trailingStopRef = useRef(0)
+  const lastBalanceRef = useRef(0)
+  const positionOpenBalanceRef = useRef(0)
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -70,6 +77,9 @@ function PerpFarming() {
         setPositionSize(settings.positionSize !== undefined ? settings.positionSize : 10)
         setStrategy(settings.strategy || 'range_trading')
         setBreakEvenMode(settings.breakEvenMode || false)
+        setTrailingBreakEven(settings.trailingBreakEven || false)
+        setTrailingActivation(settings.trailingActivation || '3x_fees')
+        setTrailingDistance(settings.trailingDistance || '10')
       } catch (error) {
         console.error('Error loading settings:', error)
       }
@@ -91,6 +101,17 @@ function PerpFarming() {
   // Helper function to format percentage display
   const formatPercentage = (value) => {
     return value === 0 ? 'None' : `${value}%`
+  }
+
+  // Helper function to save stats to localStorage
+  const saveStats = (newOverallPnl, newTotalTrades) => {
+    const stats = {
+      overallPnl: newOverallPnl,
+      totalTrades: newTotalTrades,
+      lastUpdated: Date.now()
+    }
+    localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(stats))
+    console.log(`[Stats] Saved:`, stats)
   }
 
   const handleStart = async () => {
@@ -151,7 +172,10 @@ function PerpFarming() {
         tpSlMode,
         positionSize,
         strategy,
-        breakEvenMode
+        breakEvenMode,
+        trailingBreakEven,
+        trailingActivation,
+        trailingDistance
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
       setShowModal(false)
@@ -277,7 +301,17 @@ function PerpFarming() {
           const status = orderManager.getStatus()
           const currentPositionCount = status.activePositions ? status.activePositions.length : 0
           
+          // Get current account balance for realized PNL tracking
+          const accountBalance = await orderManager.dexService.getAccountBalance()
+          const currentBalance = parseFloat(accountBalance.availableBalance || '0')
+          
           if (status.activePositions && status.activePositions.length > 0) {
+            // Track balance when position first opens (count 0 -> 1)
+            if (lastPositionCountRef.current === 0) {
+              positionOpenBalanceRef.current = currentBalance
+              console.log(`[Stats] Position opened - balance snapshot: $${currentBalance.toFixed(2)}`)
+            }
+            
             // Calculate total PNL in dollars from all positions
             let totalPnlDollars = 0
             let totalFees = 0
@@ -310,9 +344,48 @@ function PerpFarming() {
             setEstimatedFees(totalFees)
             lastPnlRef.current = netPnl // Store NET PNL for stats
             lastPositionCountRef.current = currentPositionCount
+            lastBalanceRef.current = currentBalance
             
-            // Check break-even mode (volume farming)
-            if (settings.breakEvenMode && netPnl >= 0) {
+            // Update peak PNL tracking for trailing stop
+            if (netPnl > peakPnlRef.current) {
+              peakPnlRef.current = netPnl
+            }
+            
+            // Check trailing break-even stop loss
+            if (settings.trailingBreakEven) {
+              // Calculate activation threshold
+              let activationThreshold = 0
+              if (settings.trailingActivation === '2x_fees') {
+                activationThreshold = totalFees * 2
+              } else if (settings.trailingActivation === '3x_fees') {
+                activationThreshold = totalFees * 3
+              } else if (settings.trailingActivation === '5x_fees') {
+                activationThreshold = totalFees * 5
+              } else if (settings.trailingActivation === '$50') {
+                activationThreshold = 50
+              } else if (settings.trailingActivation === '$100') {
+                activationThreshold = 100
+              }
+              
+              // Check if trailing is activated (peak exceeded threshold)
+              if (peakPnlRef.current >= activationThreshold) {
+                // Calculate trailing stop level
+                const trailPercent = parseFloat(settings.trailingDistance) / 100
+                const trailingStop = peakPnlRef.current * (1 - trailPercent)
+                trailingStopRef.current = Math.max(trailingStop, 0) // Never go below break-even
+                
+                // Check if current PNL dropped below trailing stop
+                if (netPnl <= trailingStopRef.current) {
+                  console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStopRef.current.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)})`)
+                  // Close all positions
+                  for (const position of status.activePositions) {
+                    await closePosition(orderManager, position.symbol)
+                  }
+                }
+              }
+            }
+            // Check simple break-even mode (volume farming)
+            else if (settings.breakEvenMode && netPnl >= 0) {
               console.log(`Break-even hit: Net PNL $${netPnl.toFixed(2)} >= $0 (after fees)`)
               // Close all positions at break-even
               for (const position of status.activePositions) {
@@ -345,35 +418,58 @@ function PerpFarming() {
             }
           } else {
             // Check if position was just closed (count went from >0 to 0)
-            if (lastPositionCountRef.current > 0) {
-              const realizedPnl = lastPnlRef.current
-              console.log(`[Stats] Position closed with PnL: $${realizedPnl.toFixed(2)}`)
-              
-              // Update overall stats atomically
-              setOverallPnl(prev => prev + realizedPnl)
-              setTotalTrades(prev => {
-                const newTradeCount = prev + 1
-                // Save to localStorage after both values are calculated
-                setTimeout(() => {
-                  setOverallPnl(current => {
-                    const stats = {
-                      overallPnl: current,
-                      totalTrades: newTradeCount
-                    }
-                    localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(stats))
-                    console.log(`[Stats] Saved to localStorage:`, stats)
-                    return current
+            if (lastPositionCountRef.current > 0 && positionOpenBalanceRef.current > 0) {
+              // Wait a moment for the close order to settle, then get actual realized PNL
+              setTimeout(async () => {
+                try {
+                  const accountBalance = await orderManager.dexService.getAccountBalance()
+                  const finalBalance = parseFloat(accountBalance.availableBalance || '0')
+                  
+                  // ACTUAL realized PNL = balance change (includes all fees and slippage)
+                  const actualRealizedPnl = finalBalance - positionOpenBalanceRef.current
+                  
+                  console.log(`[Stats] Position closed:`, {
+                    openBalance: positionOpenBalanceRef.current.toFixed(2),
+                    closeBalance: finalBalance.toFixed(2),
+                    actualRealizedPnl: actualRealizedPnl.toFixed(2),
+                    estimatedNetPnl: lastPnlRef.current.toFixed(2)
                   })
-                }, 0)
-                return newTradeCount
-              })
+                  
+                  // Update overall stats with ACTUAL realized PNL
+                  setOverallPnl(prev => {
+                    const newValue = prev + actualRealizedPnl
+                    setTotalTrades(currentTrades => {
+                      const newTradeCount = currentTrades + 1
+                      saveStats(newValue, newTradeCount)
+                      return newTradeCount
+                    })
+                    return newValue
+                  })
+                  
+                  // Reset balance tracking
+                  positionOpenBalanceRef.current = 0
+                } catch (error) {
+                  console.error('[Stats] Error calculating realized PNL:', error)
+                  // Fallback to estimated PNL if balance query fails
+                  const realizedPnl = lastPnlRef.current
+                  setOverallPnl(prev => prev + realizedPnl)
+                  setTotalTrades(prev => {
+                    const newValue = prev + 1
+                    saveStats(overallPnl + realizedPnl, newValue)
+                    return newValue
+                  })
+                }
+              }, 2000) // Wait 2 seconds for order to settle
             }
             
-            // No active positions, reset PNL
+            // No active positions, reset PNL and trailing tracking
             setPrevPnl(pnl)
             setPnl(0)
+            setEstimatedFees(0)
             lastPnlRef.current = 0
             lastPositionCountRef.current = 0
+            peakPnlRef.current = 0
+            trailingStopRef.current = 0
           }
         } catch (error) {
           console.error('Error polling PNL:', error)
@@ -535,6 +631,17 @@ function PerpFarming() {
     }
   }, [])
 
+  // Periodically save stats to localStorage as backup (every 30 seconds)
+  useEffect(() => {
+    if (!isRunning) return
+    
+    const saveInterval = setInterval(() => {
+      saveStats(overallPnl, totalTrades)
+    }, 30000)
+    
+    return () => clearInterval(saveInterval)
+  }, [isRunning, overallPnl, totalTrades])
+
   const handleCloseModal = () => {
     setShowModal(false)
     setValidationError('') // Clear error when closing modal
@@ -565,6 +672,8 @@ function PerpFarming() {
     setPnl(0)
     setPrevPnl(0)
     setEstimatedFees(0)
+    peakPnlRef.current = 0
+    trailingStopRef.current = 0
   }
 
   const handleCircleClick = () => {
@@ -748,10 +857,7 @@ function PerpFarming() {
                 if (window.confirm('Reset all trading statistics?')) {
                   setOverallPnl(0)
                   setTotalTrades(0)
-                  localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify({
-                    overallPnl: 0,
-                    totalTrades: 0
-                  }))
+                  saveStats(0, 0)
                 }
               }}
             >
@@ -979,22 +1085,99 @@ function PerpFarming() {
               </div>
 
               <div className="risk-form-group">
-                <div className="breakeven-toggle-container">
-                  <label className="breakeven-label">
-                    <input
-                      type="checkbox"
-                      checked={breakEvenMode}
-                      onChange={(e) => setBreakEvenMode(e.target.checked)}
-                      className="breakeven-checkbox"
-                    />
-                    <span className="breakeven-text">
-                      Volume Farming Mode (Auto-close at break-even)
-                    </span>
-                  </label>
+                <label className="risk-label">Exit Strategy</label>
+                
+                {/* Simple Break-Even Option */}
+                <label className="breakeven-option">
+                  <input
+                    type="radio"
+                    name="exitStrategy"
+                    checked={breakEvenMode && !trailingBreakEven}
+                    onChange={() => {
+                      setBreakEvenMode(true)
+                      setTrailingBreakEven(false)
+                    }}
+                    className="breakeven-radio"
+                  />
+                  <span className="breakeven-option-text">
+                    Simple Break-Even (Volume Farming)
+                  </span>
+                </label>
+                {breakEvenMode && !trailingBreakEven && (
                   <div className="breakeven-description">
-                    💰 Automatically closes positions when Net PNL ≥ $0 (after fees). Perfect for farming trading volume while minimizing risk.
+                    💰 Closes at Net PNL ≥ $0. Minimizes risk, maximizes volume.
                   </div>
-                </div>
+                )}
+
+                {/* Trailing Break-Even Option */}
+                <label className="breakeven-option">
+                  <input
+                    type="radio"
+                    name="exitStrategy"
+                    checked={trailingBreakEven}
+                    onChange={() => {
+                      setBreakEvenMode(false)
+                      setTrailingBreakEven(true)
+                    }}
+                    className="breakeven-radio"
+                  />
+                  <span className="breakeven-option-text">
+                    Trailing Break-Even Stop Loss
+                  </span>
+                </label>
+                {trailingBreakEven && (
+                  <div className="trailing-config">
+                    <div className="breakeven-description">
+                      🎯 Locks in profits by trailing stop loss behind peak. Normal TP still applies.
+                    </div>
+                    
+                    <div className="trailing-setting">
+                      <label className="trailing-setting-label">Activate After Peak:</label>
+                      <select
+                        className="trailing-select"
+                        value={trailingActivation}
+                        onChange={(e) => setTrailingActivation(e.target.value)}
+                      >
+                        <option value="2x_fees">2x Fees (~$80)</option>
+                        <option value="3x_fees">3x Fees (~$120)</option>
+                        <option value="5x_fees">5x Fees (~$200)</option>
+                        <option value="$50">$50</option>
+                        <option value="$100">$100</option>
+                      </select>
+                    </div>
+                    
+                    <div className="trailing-setting">
+                      <label className="trailing-setting-label">Trail Distance:</label>
+                      <select
+                        className="trailing-select"
+                        value={trailingDistance}
+                        onChange={(e) => setTrailingDistance(e.target.value)}
+                      >
+                        <option value="5">5% (Tight - lock profits fast)</option>
+                        <option value="10">10% (Balanced)</option>
+                        <option value="15">15% (Medium)</option>
+                        <option value="20">20% (Loose - ride winners)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Standard TP/SL Option */}
+                <label className="breakeven-option">
+                  <input
+                    type="radio"
+                    name="exitStrategy"
+                    checked={!breakEvenMode && !trailingBreakEven}
+                    onChange={() => {
+                      setBreakEvenMode(false)
+                      setTrailingBreakEven(false)
+                    }}
+                    className="breakeven-radio"
+                  />
+                  <span className="breakeven-option-text">
+                    Standard TP/SL (Manual Settings Above)
+                  </span>
+                </label>
               </div>
 
               {validationError && (

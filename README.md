@@ -490,6 +490,7 @@ The `OrderManager` service handles:
 - **WebSocket Integration**: Listens to server recommendations via WebSocket
 - **Order Placement**: Places LIMIT orders when server recommends entry
 - **Status Polling**: Checks order status every 4 seconds (within rate limits)
+- **Order Timeout**: Automatically cancels unfilled orders after 2 minutes to allow new signals
 - **Position Monitoring**: Monitors positions for TP/SL triggers every 5 seconds
 - **Position Size Limits**: Enforces user-defined position size percentages
 - **Capital Limits**: Respects user-defined capital limits

@@ -15,6 +15,7 @@ import AsterDexService from './dex/aster/AsterDexService'
 // Aster limit: 2400 requests/minute, so we can poll many orders safely
 const ORDER_POLL_INTERVAL = 4000 // 4 seconds
 const POSITION_CHECK_INTERVAL = 5000 // 5 seconds
+const ORDER_TIMEOUT = 120000 // 2 minutes - cancel unfilled orders after this time
 
 export class OrderManager {
   constructor() {
@@ -333,6 +334,7 @@ export class OrderManager {
 
       // Update tracked orders
       const trackedOrderIds = new Set(this.activeOrders.keys())
+      const now = Date.now()
       
       for (const order of openOrders) {
         const orderId = order.orderId
@@ -347,6 +349,17 @@ export class OrderManager {
           if (order.status === 'FILLED') {
             // Move to position tracking
             await this.handleOrderFilled(orderId, order)
+          }
+          // Check if order has timed out (unfilled for too long)
+          else if (order.status === 'NEW' && (now - trackedOrder.createdAt) > ORDER_TIMEOUT) {
+            console.log(`[OrderManager] Order ${orderId} timed out after ${Math.floor((now - trackedOrder.createdAt) / 1000)}s - cancelling`)
+            try {
+              await this.dexService.cancelOrder(trackedOrder.symbol, orderId)
+              this.activeOrders.delete(orderId)
+              console.log(`[OrderManager] Order ${orderId} cancelled successfully`)
+            } catch (error) {
+              console.error(`[OrderManager] Failed to cancel order ${orderId}:`, error)
+            }
           }
         }
       }

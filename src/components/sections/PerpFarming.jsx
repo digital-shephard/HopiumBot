@@ -350,8 +350,11 @@ function PerpFarming() {
               activePositions: status.activePositions
             })
             
-            if (!hasActivePosition && scalpData.confidence === 'high') {
-              console.log(`[PerpFarming] 🎯 Processing ${scalpData.side} signal @ $${scalpData.limit_price}`)
+            // Accept both high and medium confidence signals
+            const shouldTrade = scalpData.confidence === 'high' || scalpData.confidence === 'medium'
+            
+            if (!hasActivePosition && shouldTrade) {
+              console.log(`[PerpFarming] 🎯 Processing ${scalpData.confidence.toUpperCase()} confidence ${scalpData.side} signal @ $${scalpData.limit_price}`)
               if (typeof orderManager.handleScalpSignal === 'function') {
                 await orderManager.handleScalpSignal(scalpData)
                 console.log('[PerpFarming] ✅ Order placement attempted')

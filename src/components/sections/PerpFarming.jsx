@@ -220,8 +220,8 @@ function PerpFarming() {
     }
   }
 
-  // Helper function to close a position
-  const closePosition = async (orderManager, symbol) => {
+  // Helper function to close a position and update stats
+  const closePosition = async (orderManager, symbol, currentNetPnl) => {
     try {
       const position = await orderManager.dexService.getPosition(symbol)
       const positionAmtRaw = position.positionAmt || '0'
@@ -237,7 +237,7 @@ function PerpFarming() {
       // Use absolute value of RAW string to preserve exact precision
       const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
       
-      console.log(`[ClosePosition] Closing ${symbol}:`, {
+      console.log(`[ClosePosition] Closing ${symbol} with Net PNL: $${currentNetPnl.toFixed(2)}`, {
         rawPositionAmt: positionAmtRaw,
         quantityToClose: quantityStr,
         side: oppositeSide
@@ -253,6 +253,20 @@ function PerpFarming() {
       })
       
       console.log(`[ClosePosition] Order placed:`, result)
+      
+      // IMMEDIATELY update overall stats with the Net PNL we have right now
+      setOverallPnl(prev => {
+        const newValue = prev + currentNetPnl
+        console.log(`[Stats] IMMEDIATE UPDATE: Overall PNL: $${prev.toFixed(2)} + $${currentNetPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
+        
+        setTotalTrades(currentTrades => {
+          const newTradeCount = currentTrades + 1
+          saveStats(newValue, newTradeCount)
+          return newTradeCount
+        })
+        
+        return newValue
+      })
       
       // Verify position is fully closed
       setTimeout(async () => {
@@ -350,7 +364,7 @@ function PerpFarming() {
                 console.log(`Take Profit hit: $${totalPnlDollars.toFixed(2)} >= $${takeProfitDollars.toFixed(2)} (gross, before fees)`)
                 // Close all positions
                 for (const position of status.activePositions) {
-                  await closePosition(orderManager, position.symbol)
+                  await closePosition(orderManager, position.symbol, netPnl)
                 }
                 positionsClosed = true
               }
@@ -360,7 +374,7 @@ function PerpFarming() {
                 console.log(`Stop Loss hit: $${totalPnlDollars.toFixed(2)} <= -$${stopLossDollars.toFixed(2)} (gross, before fees)`)
                 // Close all positions
                 for (const position of status.activePositions) {
-                  await closePosition(orderManager, position.symbol)
+                  await closePosition(orderManager, position.symbol, netPnl)
                 }
                 positionsClosed = true
               }
@@ -396,7 +410,7 @@ function PerpFarming() {
                     console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStopRef.current.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)})`)
                     // Close all positions
                     for (const position of status.activePositions) {
-                      await closePosition(orderManager, position.symbol)
+                      await closePosition(orderManager, position.symbol, netPnl)
                     }
                   }
                 }
@@ -406,34 +420,13 @@ function PerpFarming() {
                 console.log(`Break-even hit: Net PNL $${netPnl.toFixed(2)} >= $0 (after fees)`)
                 // Close all positions at break-even
                 for (const position of status.activePositions) {
-                  await closePosition(orderManager, position.symbol)
+                  await closePosition(orderManager, position.symbol, netPnl)
                 }
               }
             }
           } else {
-            // Check if position was just closed (count went from >0 to 0)
-            if (lastPositionCountRef.current > 0) {
-              // Use the last captured Net PNL (already includes fees and is accurate)
-              const realizedPnl = lastPnlRef.current
-              
-              console.log(`[Stats] Position closed with realized Net PNL: $${realizedPnl.toFixed(2)}`)
-              
-              // Update overall stats immediately with realized Net PNL
-              setOverallPnl(prev => {
-                const newValue = prev + realizedPnl
-                console.log(`[Stats] Overall PNL: $${prev.toFixed(2)} + $${realizedPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
-                
-                setTotalTrades(currentTrades => {
-                  const newTradeCount = currentTrades + 1
-                  saveStats(newValue, newTradeCount)
-                  return newTradeCount
-                })
-                
-                return newValue
-              })
-            }
-            
             // No active positions, reset PNL and trailing tracking
+            // (Stats are already updated in closePosition function)
             setPrevPnl(pnl)
             setPnl(0)
             setEstimatedFees(0)

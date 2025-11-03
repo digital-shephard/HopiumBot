@@ -7,6 +7,7 @@ import AsterDexService from '../../services/dex/aster/AsterDexService'
 import { useAuth } from '../../contexts/AuthContext'
 
 const STORAGE_KEY = 'perp_farming_settings'
+const STATS_STORAGE_KEY = 'perp_farming_stats'
 
 function PerpFarming() {
   // Get auth context for WebSocket authentication
@@ -32,6 +33,8 @@ function PerpFarming() {
   const [allowedEquity, setAllowedEquity] = useState('')
   const [pnl, setPnl] = useState(0)
   const [prevPnl, setPrevPnl] = useState(0)
+  const [overallPnl, setOverallPnl] = useState(0)
+  const [totalTrades, setTotalTrades] = useState(0)
   
   const orderManagerRef = useRef(null)
   const wsClientRef = useRef(null)
@@ -40,6 +43,8 @@ function PerpFarming() {
   const previousSpeedRef = useRef(1)
   const lineStartTimesRef = useRef(new Map())
   const pnlPollIntervalRef = useRef(null)
+  const lastPositionCountRef = useRef(0)
+  const lastPnlRef = useRef(0)
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -58,6 +63,18 @@ function PerpFarming() {
         setStrategy(settings.strategy || 'range_trading')
       } catch (error) {
         console.error('Error loading settings:', error)
+      }
+    }
+
+    // Load stats from localStorage
+    const savedStats = localStorage.getItem(STATS_STORAGE_KEY)
+    if (savedStats) {
+      try {
+        const stats = JSON.parse(savedStats)
+        setOverallPnl(stats.overallPnl || 0)
+        setTotalTrades(stats.totalTrades || 0)
+      } catch (error) {
+        console.error('Error loading stats:', error)
       }
     }
   }, [])
@@ -248,6 +265,8 @@ function PerpFarming() {
       pnlPollIntervalRef.current = setInterval(async () => {
         try {
           const status = orderManager.getStatus()
+          const currentPositionCount = status.activePositions ? status.activePositions.length : 0
+          
           if (status.activePositions && status.activePositions.length > 0) {
             // Calculate total PNL in dollars from all positions
             let totalPnlDollars = 0
@@ -261,6 +280,8 @@ function PerpFarming() {
             // Update PNL with animation trigger
             setPrevPnl(pnl)
             setPnl(totalPnlDollars)
+            lastPnlRef.current = totalPnlDollars
+            lastPositionCountRef.current = currentPositionCount
             
             // Check dollar-based TP/SL if in dollar mode
             if (settings.tpSlMode === 'dollar') {
@@ -286,9 +307,30 @@ function PerpFarming() {
               }
             }
           } else {
+            // Check if position was just closed (count went from >0 to 0)
+            if (lastPositionCountRef.current > 0) {
+              const realizedPnl = lastPnlRef.current
+              console.log(`[Stats] Position closed with PnL: $${realizedPnl.toFixed(2)}`)
+              
+              // Update overall stats
+              setOverallPnl(prev => {
+                const newOverall = prev + realizedPnl
+                // Save to localStorage
+                const stats = {
+                  overallPnl: newOverall,
+                  totalTrades: totalTrades + 1
+                }
+                localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(stats))
+                return newOverall
+              })
+              setTotalTrades(prev => prev + 1)
+            }
+            
             // No active positions, reset PNL
             setPrevPnl(pnl)
             setPnl(0)
+            lastPnlRef.current = 0
+            lastPositionCountRef.current = 0
           }
         } catch (error) {
           console.error('Error polling PNL:', error)
@@ -636,6 +678,37 @@ function PerpFarming() {
           >
             {isRunning ? 'Stop' : 'Setup'}
           </button>
+          
+          {/* Overall Stats Display */}
+          <div className="overall-stats">
+            <div className="stats-row">
+              <div className="stat-item">
+                <div className="stat-label">Overall P/L</div>
+                <div className={`stat-value ${overallPnl > 0 ? 'positive' : overallPnl < 0 ? 'negative' : 'neutral'}`}>
+                  {overallPnl > 0 ? '+' : ''}{overallPnl < 0 ? '-' : ''}${Math.abs(overallPnl).toFixed(2)}
+                </div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-label">Total Trades</div>
+                <div className="stat-value">{totalTrades}</div>
+              </div>
+            </div>
+            <button 
+              className="reset-stats-button"
+              onClick={() => {
+                if (window.confirm('Reset all trading statistics?')) {
+                  setOverallPnl(0)
+                  setTotalTrades(0)
+                  localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify({
+                    overallPnl: 0,
+                    totalTrades: 0
+                  }))
+                }
+              }}
+            >
+              Reset Stats
+            </button>
+          </div>
         </div>
       </div>
 

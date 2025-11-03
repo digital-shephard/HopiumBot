@@ -437,7 +437,14 @@ export class HopiumWebSocketClient {
     // Log all incoming WebSocket messages
     console.log('[WebSocket] Received message:', {
       type: message.type,
-      message: message
+      fullMessage: message
+    })
+    
+    console.log('[WebSocket] Message structure check:', {
+      hasMessageProp: 'message' in message,
+      hasPayloadProp: 'payload' in message,
+      hasDataProp: 'data' in message,
+      keys: Object.keys(message)
     })
 
     switch (message.type) {

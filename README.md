@@ -444,6 +444,14 @@ The WebSocket client supports multiple trading strategies when subscribing to a 
   - Signal frequency: Every 5 minutes or on significant market changes
   - Best for: Trending markets with clear momentum
 
+- **Aggressive Reversion Scalping** (`scalp`):
+  - Ultra-fast mean reversion strategy optimized for high leverage (75x recommended)
+  - Uses 1-minute EMA and 5-minute range indicators
+  - Signal frequency: Every 30 seconds when high-confidence opportunities detected
+  - Expected hold time: 2-5 minutes per position
+  - Best for: Volatile markets with quick reversions
+  - Features automatic TP/SL based on volatility
+
 Strategy is selected when subscribing to a symbol and can be changed by unsubscribing and resubscribing with a different strategy. All WebSocket messages are logged to the console for debugging.
 
 ## DEX Integration Architecture

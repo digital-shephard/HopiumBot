@@ -312,23 +312,29 @@ function PerpFarming() {
         }
         
         // Handle scalp strategy signals
-        wsClient.onScalpIndicator = async (data) => {
+        wsClient.onScalpIndicator = async (message) => {
           try {
-            console.log('[PerpFarming] Received scalp data:', data)
+            console.log('[PerpFarming] Received scalp message:', message)
+            
+            // Extract the actual scalp data from nested structure
+            // WebSocket sends: { type: "scalp_indicator", message: { data: {...} } }
+            const scalpData = message?.message?.data || message?.data || message
             
             // Defensive: ignore if malformed
-            if (!data) {
-              console.log('[PerpFarming] No data received, skipping')
+            if (!scalpData) {
+              console.log('[PerpFarming] No scalp data found in message')
               return
             }
+            
+            console.log('[PerpFarming] Extracted scalp data:', scalpData)
 
             // Update symbol
-            if (data.symbol) {
-              setTradingSymbol(data.symbol)
+            if (scalpData.symbol) {
+              setTradingSymbol(scalpData.symbol)
             }
             
             // Only process LONG/SHORT signals (skip NEUTRAL)
-            if (data.side === 'NEUTRAL') {
+            if (scalpData.side === 'NEUTRAL') {
               console.log('[PerpFarming] NEUTRAL signal, skipping')
               return
             }
@@ -339,15 +345,15 @@ function PerpFarming() {
             
             console.log('[PerpFarming] Position check:', {
               hasActivePosition,
-              confidence: data.confidence,
-              side: data.side,
+              confidence: scalpData.confidence,
+              side: scalpData.side,
               activePositions: status.activePositions
             })
             
-            if (!hasActivePosition && data.confidence === 'high') {
-              console.log(`[PerpFarming] 🎯 Processing ${data.side} signal @ $${data.limit_price}`)
+            if (!hasActivePosition && scalpData.confidence === 'high') {
+              console.log(`[PerpFarming] 🎯 Processing ${scalpData.side} signal @ $${scalpData.limit_price}`)
               if (typeof orderManager.handleScalpSignal === 'function') {
-                await orderManager.handleScalpSignal(data)
+                await orderManager.handleScalpSignal(scalpData)
                 console.log('[PerpFarming] ✅ Order placement attempted')
               } else {
                 console.error('[PerpFarming] handleScalpSignal is not a function!')
@@ -355,7 +361,7 @@ function PerpFarming() {
             } else if (hasActivePosition) {
               console.log('[PerpFarming] ⏭️ Skipping scalp signal - active position exists')
             } else {
-              console.log(`[PerpFarming] ⏭️ Skipping scalp signal - low confidence (${data.confidence})`)
+              console.log(`[PerpFarming] ⏭️ Skipping scalp signal - low confidence (${scalpData.confidence})`)
             }
           } catch (error) {
             handleError(`Failed to handle scalp signal: ${error.message}`)

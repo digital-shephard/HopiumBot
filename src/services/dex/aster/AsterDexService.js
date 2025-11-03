@@ -13,6 +13,7 @@ export class AsterDexService extends DexService {
     this.apiClient = null
     this.initialized = false
     this.exchangeInfo = null // Cache exchange info
+    this.positionMode = null // Cache position mode (hedge vs one-way)
   }
 
   /**
@@ -147,6 +148,34 @@ export class AsterDexService extends DexService {
   }
 
   /**
+   * Get position mode (hedge vs one-way)
+   * Caches the result to avoid repeated API calls
+   */
+  async getPositionMode() {
+    if (this.positionMode !== null) {
+      return this.positionMode
+    }
+
+    if (!this.initialized || !this.apiClient) {
+      throw new Error('Service not initialized')
+    }
+
+    try {
+      const response = await this.apiClient.get('/fapi/v1/positionSide/dual', {}, { signed: true })
+      // Response format: { dualSidePosition: true/false }
+      // true = Hedge Mode, false = One-way Mode
+      this.positionMode = response.dualSidePosition === true
+      console.log(`[AsterDexService] Position mode detected: ${this.positionMode ? 'HEDGE' : 'ONE-WAY'}`)
+      return this.positionMode
+    } catch (error) {
+      console.error('[AsterDexService] Failed to get position mode:', error)
+      // Default to one-way mode if we can't determine (safer assumption)
+      this.positionMode = false
+      return false
+    }
+  }
+
+  /**
    * Place a new order
    */
   async placeOrder(orderParams) {
@@ -163,7 +192,8 @@ export class AsterDexService extends DexService {
       timeInForce = 'GTC',
       newClientOrderId,
       reduceOnly,
-      rawQuantity // If true, skip quantity formatting (for closing positions)
+      rawQuantity, // If true, skip quantity formatting (for closing positions)
+      positionSide // Optional: explicit position side override
     } = orderParams
 
     // Validate required parameters
@@ -175,6 +205,9 @@ export class AsterDexService extends DexService {
     if (type === 'LIMIT' && !price) {
       throw new Error('LIMIT orders require a price')
     }
+
+    // Get position mode to determine if we need positionSide parameter
+    const isHedgeMode = await this.getPositionMode()
 
     // Get symbol precision and format values
     const precision = await this.getSymbolPrecision(symbol)
@@ -189,7 +222,8 @@ export class AsterDexService extends DexService {
       stepSize: precision.stepSize,
       rawPrice: price,
       formattedPrice,
-      tickSize: precision.tickSize
+      tickSize: precision.tickSize,
+      positionMode: isHedgeMode ? 'HEDGE' : 'ONE-WAY'
     })
 
     const params = {
@@ -198,6 +232,24 @@ export class AsterDexService extends DexService {
       type,
       quantity: formattedQuantity,
       newOrderRespType: 'RESULT' // Get full order response
+    }
+
+    // Handle positionSide parameter based on position mode
+    // In Hedge Mode: positionSide MUST be sent (LONG or SHORT)
+    // In One-way Mode: positionSide defaults to BOTH, but we'll set it explicitly to avoid API issues
+    if (isHedgeMode) {
+      // Hedge mode requires positionSide
+      if (positionSide) {
+        // Use explicit positionSide if provided
+        params.positionSide = positionSide.toUpperCase()
+      } else {
+        // Map BUY -> LONG, SELL -> SHORT for hedge mode
+        params.positionSide = side === 'BUY' ? 'LONG' : 'SHORT'
+      }
+    } else {
+      // One-way mode: explicitly set to BOTH (even though API docs say it defaults)
+      // Some API implementations may require this to be explicit
+      params.positionSide = 'BOTH'
     }
 
     // Only add timeInForce for LIMIT orders (MARKET orders don't need it)
@@ -213,7 +265,9 @@ export class AsterDexService extends DexService {
       params.newClientOrderId = newClientOrderId
     }
 
-    if (reduceOnly) {
+    // reduceOnly cannot be sent in Hedge Mode per API docs
+    // In Hedge Mode, closing positions is done by specifying the correct positionSide
+    if (reduceOnly && !isHedgeMode) {
       params.reduceOnly = true
     }
 
@@ -221,8 +275,16 @@ export class AsterDexService extends DexService {
       const response = await this.apiClient.post('/fapi/v1/order', params, { signed: true })
       return response
     } catch (error) {
-      // Simplify error messages
+      // Handle position side errors specifically
       const errorMsg = error.message
+      if (errorMsg.includes('position side') || errorMsg.includes('positionSide') || errorMsg.includes('-4061')) {
+        // Clear cached position mode to force re-check on next order
+        console.warn('[AsterDexService] Position side error detected, clearing cache')
+        this.positionMode = null
+        throw new Error('Order position side mismatch. Please check your account position mode settings.')
+      }
+      
+      // Simplify error messages
       if (errorMsg.includes('Insufficient balance')) {
         throw new Error('Insufficient balance')
       } else if (errorMsg.includes('MIN_NOTIONAL')) {

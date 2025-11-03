@@ -456,31 +456,39 @@ export class HopiumWebSocketClient {
 
       case 'subscriptions':
         // Update local subscriptions from server response
-        if (message.payload && Array.isArray(message.payload.subscribed)) {
-          this.subscriptions = new Set(message.payload.subscribed)
+        const subsData = message.message || message.payload
+        if (subsData && Array.isArray(subsData.subscribed)) {
+          this.subscriptions = new Set(subsData.subscribed)
         }
         break
 
       case 'summary':
         if (this.onSummary) {
-          this.onSummary(message.payload)
+          // Server may send summary in message.message or message.payload
+          const summaryData = message.message || message.payload
+          this.onSummary(summaryData)
         }
         break
 
       case 'scalp_indicator':
         if (this.onScalpIndicator) {
-          this.onScalpIndicator(message.payload?.data || message.payload)
+          // Server sends scalp data in message.message.data or message.payload.data
+          const scalpData = message.message?.data || message.payload?.data || message.message || message.payload
+          this.onScalpIndicator(scalpData)
         }
         break
 
       case 'alert':
         if (this.onAlert) {
-          this.onAlert(message.payload)
+          // Server may send alert in message.message or message.payload
+          const alertData = message.message || message.payload
+          this.onAlert(alertData)
         }
         break
 
       case 'error':
-        const errorMsg = message.payload?.error || 'Unknown error'
+        const errorPayload = message.message || message.payload || {}
+        const errorMsg = errorPayload?.error || 'Unknown error'
         
         // Categorize errors for better handling
         if (errorMsg.includes('rate limit')) {
@@ -494,7 +502,11 @@ export class HopiumWebSocketClient {
         }
         
         if (this.onError) {
-          this.onError(message)
+          // Pass the original message structure for error handler
+          this.onError({
+            type: 'error',
+            payload: errorPayload
+          })
         }
         break
 

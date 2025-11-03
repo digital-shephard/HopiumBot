@@ -199,12 +199,21 @@ export class OrderManager {
    * @param {number} scalpData.limit_price - Recommended limit entry
    */
   async handleScalpSignal(scalpData) {
+    console.log('[OrderManager] handleScalpSignal called with:', scalpData)
+    
     if (!this.isRunning || !this.dexService) {
+      console.log('[OrderManager] Not running or no dexService')
       return
     }
 
     // Defensive guards
     if (!scalpData || !scalpData.symbol || !scalpData.side || !scalpData.limit_price) {
+      console.log('[OrderManager] Missing required fields:', {
+        hasData: !!scalpData,
+        hasSymbol: !!scalpData?.symbol,
+        hasSide: !!scalpData?.side,
+        hasLimitPrice: !!scalpData?.limit_price
+      })
       return
     }
 
@@ -214,6 +223,7 @@ export class OrderManager {
 
     // Ignore NEUTRAL
     if (side === 'NEUTRAL') {
+      console.log('[OrderManager] NEUTRAL side, skipping')
       return
     }
 
@@ -221,13 +231,17 @@ export class OrderManager {
       // Skip if a position already exists
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
+      console.log('[OrderManager] Position check:', { symbol, positionAmt })
       if (positionAmt !== 0) {
+        console.log('[OrderManager] Position already exists, skipping')
         return
       }
 
       // Skip if there are already open orders
       const openOrders = await this.dexService.getOpenOrders(symbol)
+      console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
       if (openOrders.length > 0) {
+        console.log('[OrderManager] Open orders exist, skipping')
         return
       }
 
@@ -250,6 +264,17 @@ export class OrderManager {
       const quantity = maxPositionValue / entryPrice
       const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
 
+      console.log('[OrderManager] Placing scalp order:', {
+        symbol,
+        side,
+        asterSide,
+        entryPrice,
+        quantity,
+        maxPositionValue,
+        availableBalance,
+        positionSizePercent
+      })
+
       const orderParams = {
         symbol,
         side: asterSide,
@@ -260,7 +285,9 @@ export class OrderManager {
         newClientOrderId: `hopium_scalp_${Date.now()}`
       }
 
+      console.log('[OrderManager] Order params:', orderParams)
       const orderResponse = await this.dexService.placeOrder(orderParams)
+      console.log('[OrderManager] Order placed successfully:', orderResponse)
 
       // Track order for management
       this.activeOrders.set(orderResponse.orderId, {
@@ -275,6 +302,7 @@ export class OrderManager {
         createdAt: Date.now()
       })
     } catch (error) {
+      console.error('[OrderManager] Failed to place scalp order:', error)
       this.handleError('Failed to place scalp order', error)
     }
   }

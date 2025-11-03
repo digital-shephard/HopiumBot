@@ -314,8 +314,11 @@ function PerpFarming() {
         // Handle scalp strategy signals
         wsClient.onScalpIndicator = async (data) => {
           try {
+            console.log('[PerpFarming] Received scalp data:', data)
+            
             // Defensive: ignore if malformed
             if (!data) {
+              console.log('[PerpFarming] No data received, skipping')
               return
             }
 
@@ -326,6 +329,7 @@ function PerpFarming() {
             
             // Only process LONG/SHORT signals (skip NEUTRAL)
             if (data.side === 'NEUTRAL') {
+              console.log('[PerpFarming] NEUTRAL signal, skipping')
               return
             }
             
@@ -333,15 +337,25 @@ function PerpFarming() {
             const status = orderManager.getStatus()
             const hasActivePosition = status.activePositions && status.activePositions.length > 0
             
+            console.log('[PerpFarming] Position check:', {
+              hasActivePosition,
+              confidence: data.confidence,
+              side: data.side,
+              activePositions: status.activePositions
+            })
+            
             if (!hasActivePosition && data.confidence === 'high') {
-              console.log(`Scalp signal: ${data.side} @ $${data.limit_price}`)
+              console.log(`[PerpFarming] 🎯 Processing ${data.side} signal @ $${data.limit_price}`)
               if (typeof orderManager.handleScalpSignal === 'function') {
                 await orderManager.handleScalpSignal(data)
+                console.log('[PerpFarming] ✅ Order placement attempted')
+              } else {
+                console.error('[PerpFarming] handleScalpSignal is not a function!')
               }
             } else if (hasActivePosition) {
-              console.log('Skipping scalp signal - active position exists')
+              console.log('[PerpFarming] ⏭️ Skipping scalp signal - active position exists')
             } else {
-              console.log(`Skipping scalp signal - low confidence (${data.confidence})`)
+              console.log(`[PerpFarming] ⏭️ Skipping scalp signal - low confidence (${data.confidence})`)
             }
           } catch (error) {
             handleError(`Failed to handle scalp signal: ${error.message}`)

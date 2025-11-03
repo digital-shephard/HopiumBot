@@ -465,7 +465,8 @@ export class OrderManager {
         symbol,
         side: closeSide,
         type: 'MARKET',
-        quantity: quantity // DexService will format to correct precision
+        quantity: quantity, // DexService will format to correct precision
+        reduceOnly: true
       }
 
       await this.dexService.placeOrder(orderParams)

@@ -159,7 +159,8 @@ export class AsterDexService extends DexService {
       quantity,
       price,
       timeInForce = 'GTC',
-      newClientOrderId
+      newClientOrderId,
+      reduceOnly
     } = orderParams
 
     // Validate required parameters
@@ -191,8 +192,12 @@ export class AsterDexService extends DexService {
       side,
       type,
       quantity: formattedQuantity,
-      timeInForce,
       newOrderRespType: 'RESULT' // Get full order response
+    }
+
+    // Only add timeInForce for LIMIT orders (MARKET orders don't need it)
+    if (type === 'LIMIT') {
+      params.timeInForce = timeInForce
     }
 
     if (formattedPrice) {
@@ -201,6 +206,10 @@ export class AsterDexService extends DexService {
 
     if (newClientOrderId) {
       params.newClientOrderId = newClientOrderId
+    }
+
+    if (reduceOnly) {
+      params.reduceOnly = true
     }
 
     try {

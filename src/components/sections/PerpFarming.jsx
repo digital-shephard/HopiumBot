@@ -16,8 +16,10 @@ function PerpFarming() {
   const [asterApiKey, setAsterApiKey] = useState('')
   const [asterSecretKey, setAsterSecretKey] = useState('')
   const [capital, setCapital] = useState('')
+  const [leverage, setLeverage] = useState(75)
   const [takeProfit, setTakeProfit] = useState(10)
   const [stopLoss, setStopLoss] = useState(10)
+  const [tpSlMode, setTpSlMode] = useState('percent') // 'percent' or 'dollar'
   const [positionSize, setPositionSize] = useState(10)
   const [strategy, setStrategy] = useState('range_trading')
   const [shakeApiKey, setShakeApiKey] = useState(false)
@@ -48,8 +50,10 @@ function PerpFarming() {
         setAsterApiKey(settings.asterApiKey || '')
         setAsterSecretKey(settings.asterSecretKey || '')
         setCapital(settings.capital || '')
+        setLeverage(settings.leverage !== undefined ? settings.leverage : 75)
         setTakeProfit(settings.takeProfit !== undefined ? settings.takeProfit : 10)
         setStopLoss(settings.stopLoss !== undefined ? settings.stopLoss : 10)
+        setTpSlMode(settings.tpSlMode || 'percent')
         setPositionSize(settings.positionSize !== undefined ? settings.positionSize : 10)
         setStrategy(settings.strategy || 'range_trading')
       } catch (error) {
@@ -115,8 +119,10 @@ function PerpFarming() {
         asterApiKey: asterApiKey.trim(),
         asterSecretKey: asterSecretKey.trim(),
         capital,
+        leverage,
         takeProfit,
         stopLoss,
+        tpSlMode,
         positionSize,
         strategy
       }
@@ -165,6 +171,35 @@ function PerpFarming() {
     }
   }
 
+  // Helper function to close a position
+  const closePosition = async (orderManager, symbol) => {
+    try {
+      const position = await orderManager.dexService.getPosition(symbol)
+      const positionAmt = Math.abs(parseFloat(position.positionAmt))
+      
+      if (positionAmt === 0) {
+        console.log(`No position to close for ${symbol}`)
+        return
+      }
+      
+      const oppositeSide = parseFloat(position.positionAmt) > 0 ? 'SELL' : 'BUY'
+      
+      console.log(`Closing position: ${symbol} ${oppositeSide} ${positionAmt}`)
+      
+      await orderManager.dexService.placeOrder({
+        symbol: symbol,
+        side: oppositeSide,
+        type: 'MARKET',
+        quantity: positionAmt,
+        reduceOnly: true
+      })
+      
+      console.log(`Position closed successfully: ${symbol}`)
+    } catch (error) {
+      handleError(`Failed to close position for ${symbol}: ${error.message}`)
+    }
+  }
+
   const startTrading = async (settings) => {
     // Initialize OrderManager
     const orderManager = new OrderManager()
@@ -175,8 +210,10 @@ function PerpFarming() {
         apiKey: settings.asterApiKey,
         secretKey: settings.asterSecretKey,
         capital: parseFloat(settings.capital),
+        leverage: settings.leverage,
         takeProfit: settings.takeProfit,
         stopLoss: settings.stopLoss,
+        tpSlMode: settings.tpSlMode,
         positionSize: settings.positionSize
       })
       
@@ -204,6 +241,30 @@ function PerpFarming() {
             // Update PNL with animation trigger
             setPrevPnl(pnl)
             setPnl(totalPnlDollars)
+            
+            // Check dollar-based TP/SL if in dollar mode
+            if (settings.tpSlMode === 'dollar') {
+              const takeProfitDollars = parseFloat(settings.takeProfit)
+              const stopLossDollars = parseFloat(settings.stopLoss)
+              
+              // Check Take Profit
+              if (takeProfitDollars > 0 && totalPnlDollars >= takeProfitDollars) {
+                console.log(`Take Profit hit: $${totalPnlDollars.toFixed(2)} >= $${takeProfitDollars.toFixed(2)}`)
+                // Close all positions
+                for (const position of status.activePositions) {
+                  await closePosition(orderManager, position.symbol)
+                }
+              }
+              
+              // Check Stop Loss
+              if (stopLossDollars > 0 && totalPnlDollars <= -stopLossDollars) {
+                console.log(`Stop Loss hit: $${totalPnlDollars.toFixed(2)} <= -$${stopLossDollars.toFixed(2)}`)
+                // Close all positions
+                for (const position of status.activePositions) {
+                  await closePosition(orderManager, position.symbol)
+                }
+              }
+            }
           } else {
             // No active positions, reset PNL
             setPrevPnl(pnl)
@@ -235,9 +296,48 @@ function PerpFarming() {
             if (data.symbol) {
               setTradingSymbol(data.symbol)
             }
-            await orderManager.handleSummary(data)
+            
+            // Check if position exists before opening new one
+            const status = orderManager.getStatus()
+            const hasActivePosition = status.activePositions && status.activePositions.length > 0
+            
+            if (!hasActivePosition) {
+              await orderManager.handleSummary(data)
+            } else {
+              console.log('Skipping signal - active position exists')
+            }
           } catch (error) {
             handleError(`Failed to handle summary: ${error.message}`)
+          }
+        }
+        
+        // Handle scalp strategy signals
+        wsClient.onScalpIndicator = async (data) => {
+          try {
+            // Update symbol
+            if (data.symbol) {
+              setTradingSymbol(data.symbol)
+            }
+            
+            // Only process LONG/SHORT signals (skip NEUTRAL)
+            if (data.side === 'NEUTRAL') {
+              return
+            }
+            
+            // Check if position exists before opening new one
+            const status = orderManager.getStatus()
+            const hasActivePosition = status.activePositions && status.activePositions.length > 0
+            
+            if (!hasActivePosition && data.confidence === 'high') {
+              console.log(`Scalp signal: ${data.side} @ $${data.limit_price}`)
+              await orderManager.handleScalpSignal(data)
+            } else if (hasActivePosition) {
+              console.log('Skipping scalp signal - active position exists')
+            } else {
+              console.log(`Skipping scalp signal - low confidence (${data.confidence})`)
+            }
+          } catch (error) {
+            handleError(`Failed to handle scalp signal: ${error.message}`)
           }
         }
         
@@ -540,42 +640,120 @@ function PerpFarming() {
 
               <div className="risk-form-group">
                 <label className="risk-label">
-                  Take Profit: {formatPercentage(takeProfit)}
+                  Leverage: {leverage}x
                 </label>
                 <div className="risk-slider-container">
                   <input
                     type="range"
-                    min="0"
+                    min="1"
                     max="100"
-                    value={takeProfit}
-                    onChange={(e) => setTakeProfit(Number(e.target.value))}
-                    className="risk-slider"
+                    value={leverage}
+                    onChange={(e) => setLeverage(Number(e.target.value))}
+                    className="risk-slider leverage-slider"
+                    style={{
+                      background: `linear-gradient(to right, 
+                        #00ff00 0%, 
+                        #00ff00 25%, 
+                        #ffff00 25%, 
+                        #ffff00 50%, 
+                        #ff9900 50%, 
+                        #ff9900 75%, 
+                        #ff0000 75%, 
+                        #ff0000 100%)`
+                    }}
                   />
                   <div className="risk-slider-labels">
-                    <span>None</span>
-                    <span>100%</span>
+                    <span>1x</span>
+                    <span>25x</span>
+                    <span>50x</span>
+                    <span>75x</span>
+                    <span>100x</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="risk-form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label className="risk-label" style={{ margin: 0 }}>TP/SL Mode</label>
+                  <div className="tpsl-toggle">
+                    <button 
+                      className={`toggle-option ${tpSlMode === 'percent' ? 'active' : ''}`}
+                      onClick={() => setTpSlMode('percent')}
+                    >
+                      %
+                    </button>
+                    <button 
+                      className={`toggle-option ${tpSlMode === 'dollar' ? 'active' : ''}`}
+                      onClick={() => setTpSlMode('dollar')}
+                    >
+                      $
+                    </button>
                   </div>
                 </div>
               </div>
 
               <div className="risk-form-group">
                 <label className="risk-label">
-                  Stop Loss: {formatPercentage(stopLoss)}
+                  Take Profit: {tpSlMode === 'percent' ? formatPercentage(takeProfit) : `$${takeProfit}`}
                 </label>
-                <div className="risk-slider-container">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={stopLoss}
-                    onChange={(e) => setStopLoss(Number(e.target.value))}
-                    className="risk-slider"
-                  />
-                  <div className="risk-slider-labels">
-                    <span>None</span>
-                    <span>100%</span>
+                {tpSlMode === 'percent' ? (
+                  <div className="risk-slider-container">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={takeProfit}
+                      onChange={(e) => setTakeProfit(Number(e.target.value))}
+                      className="risk-slider"
+                    />
+                    <div className="risk-slider-labels">
+                      <span>None</span>
+                      <span>100%</span>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="risk-input"
+                    value={takeProfit}
+                    onChange={(e) => setTakeProfit(e.target.value)}
+                    placeholder="Enter dollar amount"
+                  />
+                )}
+              </div>
+
+              <div className="risk-form-group">
+                <label className="risk-label">
+                  Stop Loss: {tpSlMode === 'percent' ? formatPercentage(stopLoss) : `$${stopLoss}`}
+                </label>
+                {tpSlMode === 'percent' ? (
+                  <div className="risk-slider-container">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={stopLoss}
+                      onChange={(e) => setStopLoss(Number(e.target.value))}
+                      className="risk-slider"
+                    />
+                    <div className="risk-slider-labels">
+                      <span>None</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="risk-input"
+                    value={stopLoss}
+                    onChange={(e) => setStopLoss(e.target.value)}
+                    placeholder="Enter dollar amount"
+                  />
+                )}
               </div>
 
               <div className="risk-form-group">
@@ -616,11 +794,14 @@ function PerpFarming() {
                 >
                   <option value="range_trading">Range Trading (Mean Reversion)</option>
                   <option value="momentum">Momentum (LLM-Powered)</option>
+                  <option value="scalp">Aggressive Reversion Scalping ⚡</option>
                 </select>
                 <div className="strategy-description">
                   {strategy === 'range_trading' 
                     ? '📊 Trades bounces off 24h support/resistance levels'
-                    : '🤖 AI-powered trend-following using GPT-5 analysis'
+                    : strategy === 'momentum'
+                    ? '🤖 AI-powered trend-following using GPT-5 analysis'
+                    : '⚡ Ultra-fast 30-second signals, optimized for 75x leverage'
                   }
                 </div>
               </div>

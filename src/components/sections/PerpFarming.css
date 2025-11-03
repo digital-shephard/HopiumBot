@@ -663,6 +663,46 @@
   letter-spacing: 1px;
 }
 
+/* Toggle button styles */
+.tpsl-toggle {
+  display: flex;
+  gap: 8px;
+  background: rgba(255, 215, 0, 0.05);
+  border: 2px solid rgba(255, 215, 0, 0.3);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.toggle-option {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  font-weight: bold;
+  color: rgba(255, 215, 0, 0.6);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 16px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.3s ease;
+}
+
+.toggle-option:hover {
+  color: rgba(255, 215, 0, 0.8);
+  background: rgba(255, 215, 0, 0.05);
+}
+
+.toggle-option.active {
+  color: #000;
+  background: #ffd700;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* Leverage slider with color gradient */
+.leverage-slider {
+  /* Gradient is applied inline via style attribute */
+}
+
 .risk-save-button {
   font-family: 'Courier New', monospace;
   font-size: 18px;

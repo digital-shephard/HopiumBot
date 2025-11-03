@@ -196,6 +196,114 @@ fetch('https://api.hopiumbot.com/api/perps/order?symbol=BTCUSDT&orderId=12345&si
 
 ---
 
+### Scalp Strategy Indicator (High-Frequency Volume Farming)
+
+Get real-time scalp trading signal optimized for 75x leverage and volume farming.
+
+**Endpoint**: `GET /api/perps/scalp-indicator`
+
+**Query Parameters**:
+- `symbol` (optional): Trading pair symbol (default: `BTCUSDT`)
+
+**Example Request**:
+```javascript
+// Using BASE_URL configuration
+fetch(`${BASE_URL}/api/perps/scalp-indicator?symbol=BTCUSDT`)
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// Or hardcoded (not recommended)
+// Development: fetch('http://localhost:8080/api/perps/scalp-indicator?symbol=BTCUSDT')
+// Production: fetch('https://api.hopiumbot.com/api/perps/scalp-indicator?symbol=BTCUSDT')
+```
+
+**Response Structure**:
+```typescript
+interface ScalpIndicator {
+  symbol: string;              // Trading pair symbol
+  timestamp: string;           // ISO 8601 timestamp
+  current_price: number;       // Current market price
+  ema_1min: number;           // 1-minute EMA
+  side: "LONG" | "SHORT" | "NEUTRAL";  // Trading direction
+  limit_price: number;         // Recommended limit order price (0.02% better than market)
+  tp_price: number;           // Take profit price (+0.15% from entry)
+  sl_price: number;           // Stop loss price (-0.10% from entry)
+  tp_percent: number;         // Take profit percentage (0.15 = 0.15%)
+  sl_percent: number;         // Stop loss percentage (0.10 = 0.10%)
+  confidence: "high" | "medium" | "low";
+  reasoning: string;          // Strategy reasoning
+  expected_hold_minutes: number;  // Expected hold time (1-3 minutes)
+  range_high_5min?: number;   // 5-minute range high (optional)
+  range_low_5min?: number;    // 5-minute range low (optional)
+  position_in_range?: number; // Position in 5-min range 0.0-1.0 (optional)
+}
+```
+
+**Strategy Details**:
+- **Algorithm**: Mean reversion based on 1-minute EMA
+- **Entry Trigger**: Price deviates ±0.05% from EMA
+- **Signal Logic**:
+  - `LONG`: Price drops below EMA (expect bounce back)
+  - `SHORT`: Price spikes above EMA (expect pullback)
+  - `NEUTRAL`: Price trading near EMA (no edge)
+- **Optimized For**: 75x leverage, high-frequency volume farming
+- **Expected Performance**: 20-40+ signals/hour, 85-95% fill rate
+
+**Example Response**:
+```json
+{
+  "symbol": "BTCUSDT",
+  "timestamp": "2025-11-03T10:30:00Z",
+  "current_price": 68500.00,
+  "ema_1min": 68535.00,
+  "side": "LONG",
+  "limit_price": 68486.30,
+  "tp_price": 68602.75,
+  "sl_price": 68431.50,
+  "tp_percent": 0.15,
+  "sl_percent": 0.10,
+  "confidence": "high",
+  "reasoning": "Price 0.05% below EMA (68535.00). Mean reversion opportunity. Price in bottom 30% of 5min range.",
+  "expected_hold_minutes": 2,
+  "range_high_5min": 68650.00,
+  "range_low_5min": 68420.00,
+  "position_in_range": 0.23
+}
+```
+
+**Frontend Integration Example**:
+```javascript
+async function getScalpSignal() {
+  const response = await fetch(`${BASE_URL}/api/perps/scalp-indicator?symbol=BTCUSDT`);
+  const signal = await response.json();
+  
+  if (signal.side === 'LONG' && signal.confidence === 'high') {
+    // Place limit buy order
+    await placeLimitOrder({
+      symbol: 'BTCUSDT',
+      side: 'BUY',
+      price: signal.limit_price,
+      tp: signal.tp_price,
+      sl: signal.sl_price
+    });
+  } else if (signal.side === 'SHORT' && signal.confidence === 'high') {
+    // Place limit sell order
+    await placeLimitOrder({
+      symbol: 'BTCUSDT',
+      side: 'SELL',
+      price: signal.limit_price,
+      tp: signal.tp_price,
+      sl: signal.sl_price
+    });
+  }
+}
+
+// Poll every 30 seconds or use WebSocket for real-time updates
+setInterval(getScalpSignal, 30000);
+```
+
+---
+
 ### Aggregated Snapshot (Main Endpoint)
 
 Get comprehensive market snapshot with trends, indicators, and LLM analysis.
@@ -435,6 +543,19 @@ HopiumCore supports multiple trading strategies. When subscribing to a symbol, y
 - **Order Type**: LIMIT or MARKET (based on volatility)
 - **Best For**: Trending markets with clear momentum
 
+**3. Scalp (High-Frequency Volume Farming)** ⚡ **NEW**
+- **ID**: `"scalp"`
+- **Description**: Ultra-fast mean-reversion strategy optimized for 75x leverage
+- **Signal Frequency**: Every 30 seconds (always provides signal, including NEUTRAL)
+- **Entry Logic**:
+  - LONG: Price ≥0.05% below 1-min EMA
+  - SHORT: Price ≥0.05% above 1-min EMA
+  - NEUTRAL: Price near EMA (no edge)
+- **Order Type**: Aggressive LIMIT orders (0.02% better than market)
+- **TP/SL**: +0.15% TP, -0.10% SL (11% gain / 7.5% loss @ 75x)
+- **Expected Hold**: 1-3 minutes per trade
+- **Best For**: Volume farming, high-frequency scalping, maximizing trade count
+
 #### Strategy Selection
 
 - **Default**: If no strategy is specified, `range_trading` is used
@@ -656,6 +777,99 @@ interface SummaryMessage {
 
 ---
 
+#### Scalp Indicator Update
+
+Pushed automatically every 30 seconds when subscribed to the `scalp` strategy.
+
+**Message Structure**:
+```typescript
+interface ScalpIndicatorMessage {
+  type: "scalp_indicator";
+  symbol: string;
+  strategy: "scalp";
+  data: {
+    symbol: string;
+    timestamp: string;              // ISO 8601 timestamp
+    current_price: number;
+    ema_1min: number;
+    side: "LONG" | "SHORT" | "NEUTRAL";
+    limit_price: number;
+    tp_price: number;
+    sl_price: number;
+    tp_percent: number;
+    sl_percent: number;
+    confidence: "high" | "medium" | "low";
+    reasoning: string;
+    expected_hold_minutes: number;
+    range_high_5min: number;
+    range_low_5min: number;
+    position_in_range: number;
+  };
+}
+```
+
+**Example (LONG Signal)**:
+```json
+{
+  "type": "scalp_indicator",
+  "symbol": "BTCUSDT",
+  "strategy": "scalp",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-03T10:30:00Z",
+    "current_price": 68500.00,
+    "ema_1min": 68535.00,
+    "side": "LONG",
+    "limit_price": 68486.30,
+    "tp_price": 68602.75,
+    "sl_price": 68431.50,
+    "tp_percent": 0.15,
+    "sl_percent": 0.10,
+    "confidence": "high",
+    "reasoning": "Price 0.05% below EMA (68535.00). Mean reversion opportunity. Price in bottom 30% of 5min range.",
+    "expected_hold_minutes": 2,
+    "range_high_5min": 68650.00,
+    "range_low_5min": 68420.00,
+    "position_in_range": 0.23
+  }
+}
+```
+
+**Example (NEUTRAL Signal)**:
+```json
+{
+  "type": "scalp_indicator",
+  "symbol": "BTCUSDT",
+  "strategy": "scalp",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-03T10:30:30Z",
+    "current_price": 68520.00,
+    "ema_1min": 68522.00,
+    "side": "NEUTRAL",
+    "limit_price": 0,
+    "tp_price": 0,
+    "sl_price": 0,
+    "tp_percent": 0.15,
+    "sl_percent": 0.10,
+    "confidence": "low",
+    "reasoning": "Price trading at EMA (deviation: 0.03%). Waiting for clearer setup.",
+    "expected_hold_minutes": 2,
+    "range_high_5min": 68650.00,
+    "range_low_5min": 68420.00,
+    "position_in_range": 0.45
+  }
+}
+```
+
+**Notes**:
+- Updates **every 30 seconds** (unlike other strategies that update every 1-5 minutes)
+- **Always broadcasts** a signal (LONG/SHORT/NEUTRAL) so frontend knows current state
+- NEUTRAL signals have `limit_price`, `tp_price`, `sl_price` set to 0
+- High confidence typically when price is also in extreme 5-min range positions
+
+---
+
 #### Alert Message
 
 Pushed immediately when a significant market change is detected.
@@ -764,7 +978,7 @@ class HopiumWebSocketClient {
     switch (message.type) {
       case 'subscribed':
         this.subscriptions.add(message.symbol);
-        console.log('Subscribed to:', message.symbol);
+        console.log('Subscribed to:', message.symbol, 'with strategy:', message.strategy);
         break;
       
       case 'unsubscribed':
@@ -774,6 +988,10 @@ class HopiumWebSocketClient {
       
       case 'summary':
         this.onSummary?.(message.data);
+        break;
+      
+      case 'scalp_indicator':
+        this.onScalpIndicator?.(message.data);
         break;
       
       case 'alert':
@@ -789,7 +1007,7 @@ class HopiumWebSocketClient {
     }
   }
 
-  subscribe(symbol: string): void {
+  subscribe(symbol: string, strategy: string = 'range_trading'): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket not connected');
     }
@@ -797,6 +1015,7 @@ class HopiumWebSocketClient {
     this.ws.send(JSON.stringify({
       type: 'subscribe',
       symbol: symbol,
+      strategy: strategy,
       id: ++this.messageId
     }));
   }
@@ -826,6 +1045,7 @@ class HopiumWebSocketClient {
 
   // Event handlers (set by caller)
   onSummary?: (data: any) => void;
+  onScalpIndicator?: (data: any) => void;
   onAlert?: (data: any) => void;
 
   disconnect(): void {
@@ -836,12 +1056,8 @@ class HopiumWebSocketClient {
   }
 }
 
-// Usage
-const client = new HopiumWebSocketClient(WS_URL); // Uses configured WS_URL
-
-// Or hardcoded (not recommended)
-// Development: const client = new HopiumWebSocketClient('ws://localhost:8080/ws');
-// Production: const client = new HopiumWebSocketClient('wss://api.hopiumbot.com/ws');
+// Usage Example 1: Range Trading Strategy (Default)
+const client = new HopiumWebSocketClient(WS_URL);
 
 client.onSummary = (data) => {
   console.log('New summary:', data.summary);
@@ -853,7 +1069,41 @@ client.onAlert = (data) => {
 };
 
 await client.connect();
-client.subscribe('BTCUSDT');
+client.subscribe('BTCUSDT', 'range_trading');
+
+// Usage Example 2: Scalp Strategy (High-Frequency)
+const scalpClient = new HopiumWebSocketClient(WS_URL);
+
+scalpClient.onScalpIndicator = (data) => {
+  console.log(`[${data.side}] ${data.symbol} @ $${data.current_price}`);
+  
+  if (data.side === 'LONG' && data.confidence === 'high') {
+    console.log(`🟢 LONG Signal: Entry $${data.limit_price} | TP: $${data.tp_price} | SL: $${data.sl_price}`);
+    // Place limit buy order
+    placeLimitOrder({
+      symbol: data.symbol,
+      side: 'BUY',
+      price: data.limit_price,
+      stopLoss: data.sl_price,
+      takeProfit: data.tp_price
+    });
+  } else if (data.side === 'SHORT' && data.confidence === 'high') {
+    console.log(`🔴 SHORT Signal: Entry $${data.limit_price} | TP: $${data.tp_price} | SL: $${data.sl_price}`);
+    // Place limit sell order
+    placeLimitOrder({
+      symbol: data.symbol,
+      side: 'SELL',
+      price: data.limit_price,
+      stopLoss: data.sl_price,
+      takeProfit: data.tp_price
+    });
+  } else {
+    console.log(`⚪ NEUTRAL: Waiting for setup (${data.reasoning})`);
+  }
+};
+
+await scalpClient.connect();
+scalpClient.subscribe('BTCUSDT', 'scalp'); // Subscribe to scalp strategy
 ```
 
 ---
@@ -1283,7 +1533,7 @@ const TWITTER_URL = 'https://x.com/hopiumbot';
 async function completeTwitterFollowTask(jwtToken) {
   // 1. Open Twitter page in new tab
   window.open(TWITTER_URL, '_blank');
-  
+  le
   // 2. Complete the task
   try {
     const response = await fetch(`${BASE_URL}/api/tasks/twitter/follow`, {

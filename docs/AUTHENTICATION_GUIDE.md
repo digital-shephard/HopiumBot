@@ -253,11 +253,11 @@ const ws = new WebSocket(`ws://localhost:8080/ws?token=${auth.token}`);
 ws.onopen = () => {
   console.log('✅ WebSocket connected and authenticated!');
   
-  // Subscribe to BTCUSDT
+  // Subscribe to BTCUSDT with range trading strategy
   ws.send(JSON.stringify({
     type: 'subscribe',
     symbol: 'BTCUSDT',
-    strategy: 'range_trading'
+    strategy: 'range_trading'  // or 'scalp' for high-frequency trading
   }));
 };
 
@@ -438,7 +438,7 @@ class HopiumWebSocket {
     this.ws.send(JSON.stringify({
       type: 'subscribe',
       symbol: symbol,
-      strategy: strategy
+      strategy: strategy  // 'range_trading', 'momentum', or 'scalp'
     }));
   }
 
@@ -472,10 +472,47 @@ async function setupWebSocket() {
   // OR Method 2: Token in message
   // await wsClient.connectWithMessage();
 
-  // 3. Subscribe to symbols
-  wsClient.subscribe('BTCUSDT', 'range_trading');
+  // 3. Subscribe to symbols with different strategies
+  wsClient.subscribe('BTCUSDT', 'range_trading');  // Default: 1-min updates
+  
+  // OR for high-frequency scalping (30-second updates)
+  // wsClient.subscribe('BTCUSDT', 'scalp');
 
   // 4. Listen for updates (handled by setupMessageHandlers)
+}
+
+// Advanced Example: Scalp Strategy for Volume Farming
+async function setupScalpTrading() {
+  // 1. Authenticate
+  const auth = new HopiumCoreAuth('http://localhost:8080');
+  const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+  await auth.authenticate(accounts[0]);
+
+  // 2. Connect WebSocket with scalp indicator handler
+  const wsClient = new HopiumWebSocket('http://localhost:8080', auth.token);
+  
+  // Override handleMessage to handle scalp_indicator
+  const originalHandler = wsClient.handleMessage.bind(wsClient);
+  wsClient.handleMessage = (data) => {
+    if (data.type === 'scalp_indicator') {
+      console.log(`[SCALP] ${data.data.side} @ $${data.data.current_price} | EMA: $${data.data.ema_1min}`);
+      
+      if (data.data.side === 'LONG' && data.data.confidence === 'high') {
+        console.log(`🟢 Place LONG: Entry $${data.data.limit_price} | TP: $${data.data.tp_price} | SL: $${data.data.sl_price}`);
+        // Your order placement logic here
+      } else if (data.data.side === 'SHORT' && data.data.confidence === 'high') {
+        console.log(`🔴 Place SHORT: Entry $${data.data.limit_price} | TP: $${data.data.tp_price} | SL: $${data.data.sl_price}`);
+        // Your order placement logic here
+      }
+    } else {
+      originalHandler(data);
+    }
+  };
+
+  await wsClient.connectWithToken();
+  wsClient.subscribe('BTCUSDT', 'scalp');  // Subscribe to scalp strategy
+  
+  console.log('✅ Scalp strategy active - receiving updates every 30 seconds');
 }
 ```
 

@@ -192,6 +192,94 @@ export class OrderManager {
   }
 
   /**
+   * Handle scalp indicator signal (high-frequency strategy)
+   * @param {Object} scalpData - Normalized scalp indicator data
+   * @param {string} scalpData.symbol - Trading pair symbol
+   * @param {string} scalpData.side - 'LONG' | 'SHORT' | 'NEUTRAL'
+   * @param {number} scalpData.limit_price - Recommended limit entry
+   */
+  async handleScalpSignal(scalpData) {
+    if (!this.isRunning || !this.dexService) {
+      return
+    }
+
+    // Defensive guards
+    if (!scalpData || !scalpData.symbol || !scalpData.side || !scalpData.limit_price) {
+      return
+    }
+
+    const symbol = scalpData.symbol
+    const side = scalpData.side
+    const entryPrice = parseFloat(scalpData.limit_price)
+
+    // Ignore NEUTRAL
+    if (side === 'NEUTRAL') {
+      return
+    }
+
+    try {
+      // Skip if a position already exists
+      const existingPosition = await this.dexService.getPosition(symbol)
+      const positionAmt = parseFloat(existingPosition.positionAmt || '0')
+      if (positionAmt !== 0) {
+        return
+      }
+
+      // Skip if there are already open orders
+      const openOrders = await this.dexService.getOpenOrders(symbol)
+      if (openOrders.length > 0) {
+        return
+      }
+
+      // Calculate position size
+      const accountBalance = await this.dexService.getAccountBalance()
+      const availableBalance = parseFloat(accountBalance.availableBalance || '0')
+      const positionSizePercent = this.settings.positionSize || 10
+      const positionValue = (availableBalance * positionSizePercent) / 100
+
+      // Respect capital limit if set
+      const capitalLimit = parseFloat(this.settings.capital || '0')
+      const maxPositionValue = isNaN(capitalLimit) || capitalLimit <= 0
+        ? positionValue
+        : Math.min(positionValue, capitalLimit)
+
+      if (entryPrice <= 0) {
+        return
+      }
+
+      const quantity = maxPositionValue / entryPrice
+      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+
+      const orderParams = {
+        symbol,
+        side: asterSide,
+        type: 'LIMIT',
+        quantity: quantity,
+        price: entryPrice,
+        timeInForce: 'GTC',
+        newClientOrderId: `hopium_scalp_${Date.now()}`
+      }
+
+      const orderResponse = await this.dexService.placeOrder(orderParams)
+
+      // Track order for management
+      this.activeOrders.set(orderResponse.orderId, {
+        orderId: orderResponse.orderId,
+        symbol,
+        side,
+        entryPrice: entryPrice,
+        quantity: orderResponse.executedQty || orderResponse.origQty,
+        status: orderResponse.status,
+        takeProfit: this.settings.takeProfit,
+        stopLoss: this.settings.stopLoss,
+        createdAt: Date.now()
+      })
+    } catch (error) {
+      this.handleError('Failed to place scalp order', error)
+    }
+  }
+
+  /**
    * Poll open orders to check status
    */
   async pollOpenOrders() {

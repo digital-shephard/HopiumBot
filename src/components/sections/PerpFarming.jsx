@@ -314,6 +314,11 @@ function PerpFarming() {
         // Handle scalp strategy signals
         wsClient.onScalpIndicator = async (data) => {
           try {
+            // Defensive: ignore if malformed
+            if (!data) {
+              return
+            }
+
             // Update symbol
             if (data.symbol) {
               setTradingSymbol(data.symbol)
@@ -330,7 +335,9 @@ function PerpFarming() {
             
             if (!hasActivePosition && data.confidence === 'high') {
               console.log(`Scalp signal: ${data.side} @ $${data.limit_price}`)
-              await orderManager.handleScalpSignal(data)
+              if (typeof orderManager.handleScalpSignal === 'function') {
+                await orderManager.handleScalpSignal(data)
+              }
             } else if (hasActivePosition) {
               console.log('Skipping scalp signal - active position exists')
             } else {

@@ -762,6 +762,34 @@ function PerpFarming() {
         </p>
         
         <div className="aster-circle-container">
+          {/* Overall Stats Display - Above Circle */}
+          <div className="overall-stats">
+            <div className="stats-row">
+              <div className="stat-item">
+                <div className="stat-label">Overall P/L</div>
+                <div className={`stat-value ${overallPnl > 0 ? 'positive' : overallPnl < 0 ? 'negative' : 'neutral'}`}>
+                  {overallPnl > 0 ? '+' : ''}{overallPnl < 0 ? '-' : ''}${Math.abs(overallPnl).toFixed(2)}
+                </div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-label">Total Trades</div>
+                <div className="stat-value">{totalTrades}</div>
+              </div>
+            </div>
+            <button 
+              className="reset-stats-button"
+              onClick={() => {
+                if (window.confirm('Reset all trading statistics?')) {
+                  setOverallPnl(0)
+                  setTotalTrades(0)
+                  saveStats(0, 0)
+                }
+              }}
+            >
+              Reset Stats
+            </button>
+          </div>
+
           {isRunning && tradingSymbol && (
             <div className="trading-status">
               Trading {tradingSymbol}
@@ -800,34 +828,6 @@ function PerpFarming() {
           >
             {isRunning ? 'Stop' : 'Setup'}
           </button>
-          
-          {/* Overall Stats Display */}
-          <div className="overall-stats">
-            <div className="stats-row">
-              <div className="stat-item">
-                <div className="stat-label">Overall P/L</div>
-                <div className={`stat-value ${overallPnl > 0 ? 'positive' : overallPnl < 0 ? 'negative' : 'neutral'}`}>
-                  {overallPnl > 0 ? '+' : ''}{overallPnl < 0 ? '-' : ''}${Math.abs(overallPnl).toFixed(2)}
-                </div>
-              </div>
-              <div className="stat-item">
-                <div className="stat-label">Total Trades</div>
-                <div className="stat-value">{totalTrades}</div>
-              </div>
-            </div>
-            <button 
-              className="reset-stats-button"
-              onClick={() => {
-                if (window.confirm('Reset all trading statistics?')) {
-                  setOverallPnl(0)
-                  setTotalTrades(0)
-                  saveStats(0, 0)
-                }
-              }}
-            >
-              Reset Stats
-            </button>
-          </div>
         </div>
       </div>
 

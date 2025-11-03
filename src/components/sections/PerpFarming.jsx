@@ -224,7 +224,7 @@ function PerpFarming() {
       const defaultSymbol = 'BTCUSDT'
       setTradingSymbol(defaultSymbol)
       
-      // Start polling PNL every 5 seconds
+      // Start polling PNL every 2 seconds for real-time updates
       pnlPollIntervalRef.current = setInterval(async () => {
         try {
           const status = orderManager.getStatus()
@@ -273,7 +273,7 @@ function PerpFarming() {
         } catch (error) {
           console.error('Error polling PNL:', error)
         }
-      }, 5000)
+      }, 2000)
       
       // Connect WebSocket (non-blocking - if it fails, we still allow trading)
       try {

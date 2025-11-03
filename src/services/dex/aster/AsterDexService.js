@@ -162,7 +162,8 @@ export class AsterDexService extends DexService {
       price,
       timeInForce = 'GTC',
       newClientOrderId,
-      reduceOnly
+      reduceOnly,
+      rawQuantity // If true, skip quantity formatting (for closing positions)
     } = orderParams
 
     // Validate required parameters
@@ -177,7 +178,9 @@ export class AsterDexService extends DexService {
 
     // Get symbol precision and format values
     const precision = await this.getSymbolPrecision(symbol)
-    const formattedQuantity = this.formatQuantity(quantity, precision.stepSize)
+    // If rawQuantity is true, use quantity as-is (it's already formatted from positionAmt)
+    // Otherwise format it according to stepSize
+    const formattedQuantity = rawQuantity ? String(quantity) : this.formatQuantity(quantity, precision.stepSize)
     const formattedPrice = price ? this.formatPrice(price, precision.tickSize) : undefined
 
     console.log('[AsterDexService] Formatting order:', {

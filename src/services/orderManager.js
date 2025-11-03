@@ -460,7 +460,8 @@ export class OrderManager {
     try {
       // Get current position to determine quantity
       const currentPosition = await this.dexService.getPosition(symbol)
-      const positionAmt = parseFloat(currentPosition.positionAmt || '0')
+      const positionAmtRaw = currentPosition.positionAmt || '0'
+      const positionAmt = parseFloat(positionAmtRaw)
 
       if (positionAmt === 0) {
         // Already closed
@@ -470,22 +471,25 @@ export class OrderManager {
 
       // Determine opposite side
       const closeSide = position.side === 'LONG' ? 'SELL' : 'BUY'
-      const quantity = Math.abs(positionAmt)
+      
+      // Use absolute value of the RAW string to preserve exact precision
+      const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
 
       console.log(`[OrderManager] Closing position ${symbol} (${reason}):`, {
-        rawPositionAmt: currentPosition.positionAmt,
-        absQuantity: quantity,
+        rawPositionAmt: positionAmtRaw,
+        quantityToClose: quantityStr,
         side: closeSide
       })
 
-      // Place MARKET order to close (for immediate execution)
-      // Note: DexService will handle precision formatting with Math.round (not floor)
+      // Place MARKET order to close - use rawQuantity flag to skip formatting
+      // The positionAmt from API is already formatted correctly
       const orderParams = {
         symbol,
         side: closeSide,
         type: 'MARKET',
-        quantity: quantity,
-        reduceOnly: true
+        quantity: quantityStr,
+        reduceOnly: true,
+        rawQuantity: true // Skip formatting - use exact positionAmt
       }
 
       const result = await this.dexService.placeOrder(orderParams)

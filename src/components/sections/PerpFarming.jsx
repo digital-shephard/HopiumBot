@@ -175,18 +175,22 @@ function PerpFarming() {
   const closePosition = async (orderManager, symbol) => {
     try {
       const position = await orderManager.dexService.getPosition(symbol)
-      const positionAmt = Math.abs(parseFloat(position.positionAmt))
+      const positionAmtRaw = position.positionAmt || '0'
+      const positionAmt = parseFloat(positionAmtRaw)
       
       if (positionAmt === 0) {
         console.log(`No position to close for ${symbol}`)
         return
       }
       
-      const oppositeSide = parseFloat(position.positionAmt) > 0 ? 'SELL' : 'BUY'
+      const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
+      
+      // Use absolute value of RAW string to preserve exact precision
+      const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
       
       console.log(`[ClosePosition] Closing ${symbol}:`, {
-        rawPositionAmt: position.positionAmt,
-        absPositionAmt: positionAmt,
+        rawPositionAmt: positionAmtRaw,
+        quantityToClose: quantityStr,
         side: oppositeSide
       })
       
@@ -194,8 +198,9 @@ function PerpFarming() {
         symbol: symbol,
         side: oppositeSide,
         type: 'MARKET',
-        quantity: positionAmt,
-        reduceOnly: true
+        quantity: quantityStr,
+        reduceOnly: true,
+        rawQuantity: true // Skip formatting - use exact positionAmt
       })
       
       console.log(`[ClosePosition] Order placed:`, result)
@@ -204,8 +209,8 @@ function PerpFarming() {
       setTimeout(async () => {
         const updatedPosition = await orderManager.dexService.getPosition(symbol)
         const remainingAmt = parseFloat(updatedPosition.positionAmt)
-        if (remainingAmt !== 0) {
-          console.warn(`[ClosePosition] WARNING: Position not fully closed! Remaining: ${remainingAmt}`)
+        if (Math.abs(remainingAmt) > 0.00001) { // Use small tolerance for floating point
+          console.warn(`[ClosePosition] ⚠️ WARNING: Position not fully closed! Remaining: ${remainingAmt}`)
         } else {
           console.log(`[ClosePosition] ✅ Position fully closed`)
         }

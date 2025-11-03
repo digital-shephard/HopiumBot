@@ -472,17 +472,24 @@ export class OrderManager {
       const closeSide = position.side === 'LONG' ? 'SELL' : 'BUY'
       const quantity = Math.abs(positionAmt)
 
+      console.log(`[OrderManager] Closing position ${symbol} (${reason}):`, {
+        rawPositionAmt: currentPosition.positionAmt,
+        absQuantity: quantity,
+        side: closeSide
+      })
+
       // Place MARKET order to close (for immediate execution)
-      // Note: DexService will handle precision formatting
+      // Note: DexService will handle precision formatting with Math.round (not floor)
       const orderParams = {
         symbol,
         side: closeSide,
         type: 'MARKET',
-        quantity: quantity, // DexService will format to correct precision
+        quantity: quantity,
         reduceOnly: true
       }
 
-      await this.dexService.placeOrder(orderParams)
+      const result = await this.dexService.placeOrder(orderParams)
+      console.log(`[OrderManager] Close order placed:`, result)
 
       // Remove from active positions
       this.activePositions.delete(symbol)

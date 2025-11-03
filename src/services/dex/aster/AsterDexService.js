@@ -123,7 +123,9 @@ export class AsterDexService extends DexService {
    */
   formatQuantity(quantity, stepSize) {
     const step = parseFloat(stepSize)
-    const rounded = Math.floor(quantity / step) * step
+    // Use Math.round instead of Math.floor to properly close positions
+    // Math.floor would leave small amounts open when closing
+    const rounded = Math.round(quantity / step) * step
     
     // Determine decimal places from stepSize
     const decimals = stepSize.includes('.') ? stepSize.split('.')[1].length : 0

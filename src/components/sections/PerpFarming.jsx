@@ -184,9 +184,13 @@ function PerpFarming() {
       
       const oppositeSide = parseFloat(position.positionAmt) > 0 ? 'SELL' : 'BUY'
       
-      console.log(`Closing position: ${symbol} ${oppositeSide} ${positionAmt}`)
+      console.log(`[ClosePosition] Closing ${symbol}:`, {
+        rawPositionAmt: position.positionAmt,
+        absPositionAmt: positionAmt,
+        side: oppositeSide
+      })
       
-      await orderManager.dexService.placeOrder({
+      const result = await orderManager.dexService.placeOrder({
         symbol: symbol,
         side: oppositeSide,
         type: 'MARKET',
@@ -194,7 +198,18 @@ function PerpFarming() {
         reduceOnly: true
       })
       
-      console.log(`Position closed successfully: ${symbol}`)
+      console.log(`[ClosePosition] Order placed:`, result)
+      
+      // Verify position is fully closed
+      setTimeout(async () => {
+        const updatedPosition = await orderManager.dexService.getPosition(symbol)
+        const remainingAmt = parseFloat(updatedPosition.positionAmt)
+        if (remainingAmt !== 0) {
+          console.warn(`[ClosePosition] WARNING: Position not fully closed! Remaining: ${remainingAmt}`)
+        } else {
+          console.log(`[ClosePosition] ✅ Position fully closed`)
+        }
+      }, 1000)
     } catch (error) {
       handleError(`Failed to close position for ${symbol}: ${error.message}`)
     }

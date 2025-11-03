@@ -9,6 +9,12 @@ import { useAuth } from '../../contexts/AuthContext'
 const STORAGE_KEY = 'perp_farming_settings'
 const STATS_STORAGE_KEY = 'perp_farming_stats'
 
+// Aster Finance Fee Structure
+const MAKER_FEE = 0.00005 // 0.005% (LIMIT orders that make liquidity)
+const TAKER_FEE = 0.0004  // 0.04% (MARKET orders or LIMIT orders that take liquidity)
+const ENTRY_FEE = TAKER_FEE // Conservative estimate - assume taker
+const EXIT_FEE = TAKER_FEE  // MARKET orders are always taker
+
 function PerpFarming() {
   // Get auth context for WebSocket authentication
   const { authService } = useAuth()
@@ -35,6 +41,7 @@ function PerpFarming() {
   const [prevPnl, setPrevPnl] = useState(0)
   const [overallPnl, setOverallPnl] = useState(0)
   const [totalTrades, setTotalTrades] = useState(0)
+  const [estimatedFees, setEstimatedFees] = useState(0)
   
   const orderManagerRef = useRef(null)
   const wsClientRef = useRef(null)
@@ -270,36 +277,55 @@ function PerpFarming() {
           if (status.activePositions && status.activePositions.length > 0) {
             // Calculate total PNL in dollars from all positions
             let totalPnlDollars = 0
+            let totalFees = 0
+            
             for (const position of status.activePositions) {
               const currentPosition = await orderManager.dexService.getPosition(position.symbol)
-              // unRealizedProfit is the actual dollar amount
+              // unRealizedProfit is the actual dollar amount (before fees)
               const unrealizedProfit = parseFloat(currentPosition.unRealizedProfit || '0')
+              const entryPrice = parseFloat(currentPosition.entryPrice || '0')
+              const positionAmt = Math.abs(parseFloat(currentPosition.positionAmt || '0'))
+              const markPrice = parseFloat(currentPosition.markPrice || '0')
+              
+              // Calculate fees
+              const entryNotional = positionAmt * entryPrice
+              const exitNotional = positionAmt * markPrice
+              const entryFee = entryNotional * ENTRY_FEE
+              const exitFee = exitNotional * EXIT_FEE
+              const totalPosFees = entryFee + exitFee
+              
               totalPnlDollars += unrealizedProfit
+              totalFees += totalPosFees
             }
             
-            // Update PNL with animation trigger
+            // Net PNL = Unrealized PNL - Fees
+            const netPnl = totalPnlDollars - totalFees
+            
+            // Update PNL with animation trigger (show NET PNL)
             setPrevPnl(pnl)
-            setPnl(totalPnlDollars)
-            lastPnlRef.current = totalPnlDollars
+            setPnl(netPnl)
+            setEstimatedFees(totalFees)
+            lastPnlRef.current = netPnl // Store NET PNL for stats
             lastPositionCountRef.current = currentPositionCount
             
             // Check dollar-based TP/SL if in dollar mode
+            // NOTE: TP/SL based on GROSS PNL (before fees) - fees are fixed cost, not price risk
             if (settings.tpSlMode === 'dollar') {
               const takeProfitDollars = parseFloat(settings.takeProfit)
               const stopLossDollars = parseFloat(settings.stopLoss)
               
-              // Check Take Profit
+              // Check Take Profit (use gross PNL before fees)
               if (takeProfitDollars > 0 && totalPnlDollars >= takeProfitDollars) {
-                console.log(`Take Profit hit: $${totalPnlDollars.toFixed(2)} >= $${takeProfitDollars.toFixed(2)}`)
+                console.log(`Take Profit hit: $${totalPnlDollars.toFixed(2)} >= $${takeProfitDollars.toFixed(2)} (gross, before fees)`)
                 // Close all positions
                 for (const position of status.activePositions) {
                   await closePosition(orderManager, position.symbol)
                 }
               }
               
-              // Check Stop Loss
+              // Check Stop Loss (use gross PNL before fees)
               if (stopLossDollars > 0 && totalPnlDollars <= -stopLossDollars) {
-                console.log(`Stop Loss hit: $${totalPnlDollars.toFixed(2)} <= -$${stopLossDollars.toFixed(2)}`)
+                console.log(`Stop Loss hit: $${totalPnlDollars.toFixed(2)} <= -$${stopLossDollars.toFixed(2)} (gross, before fees)`)
                 // Close all positions
                 for (const position of status.activePositions) {
                   await closePosition(orderManager, position.symbol)
@@ -312,18 +338,24 @@ function PerpFarming() {
               const realizedPnl = lastPnlRef.current
               console.log(`[Stats] Position closed with PnL: $${realizedPnl.toFixed(2)}`)
               
-              // Update overall stats
-              setOverallPnl(prev => {
-                const newOverall = prev + realizedPnl
-                // Save to localStorage
-                const stats = {
-                  overallPnl: newOverall,
-                  totalTrades: totalTrades + 1
-                }
-                localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(stats))
-                return newOverall
+              // Update overall stats atomically
+              setOverallPnl(prev => prev + realizedPnl)
+              setTotalTrades(prev => {
+                const newTradeCount = prev + 1
+                // Save to localStorage after both values are calculated
+                setTimeout(() => {
+                  setOverallPnl(current => {
+                    const stats = {
+                      overallPnl: current,
+                      totalTrades: newTradeCount
+                    }
+                    localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(stats))
+                    console.log(`[Stats] Saved to localStorage:`, stats)
+                    return current
+                  })
+                }, 0)
+                return newTradeCount
               })
-              setTotalTrades(prev => prev + 1)
             }
             
             // No active positions, reset PNL
@@ -521,6 +553,7 @@ function PerpFarming() {
     setAllowedEquity('')
     setPnl(0)
     setPrevPnl(0)
+    setEstimatedFees(0)
   }
 
   const handleCircleClick = () => {
@@ -658,10 +691,15 @@ function PerpFarming() {
           )}
           {isRunning && (
             <div className="pnl-display">
-              <div className="pnl-label">PNL</div>
+              <div className="pnl-label">Net PNL</div>
               <div className={`pnl-amount ${pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral'} ${prevPnl !== pnl ? 'animate' : ''}`}>
                 {pnl > 0 ? '+' : ''}{pnl < 0 ? '-' : ''}${Math.abs(pnl).toFixed(2)}
               </div>
+              {estimatedFees > 0 && (
+                <div className="fees-display">
+                  Fees: ${estimatedFees.toFixed(2)}
+                </div>
+              )}
             </div>
           )}
           <div 

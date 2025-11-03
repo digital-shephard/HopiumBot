@@ -351,50 +351,10 @@ function PerpFarming() {
               peakPnlRef.current = netPnl
             }
             
-            // Check trailing break-even stop loss
-            if (settings.trailingBreakEven) {
-              // Calculate activation threshold
-              let activationThreshold = 0
-              if (settings.trailingActivation === '2x_fees') {
-                activationThreshold = totalFees * 2
-              } else if (settings.trailingActivation === '3x_fees') {
-                activationThreshold = totalFees * 3
-              } else if (settings.trailingActivation === '5x_fees') {
-                activationThreshold = totalFees * 5
-              } else if (settings.trailingActivation === '$50') {
-                activationThreshold = 50
-              } else if (settings.trailingActivation === '$100') {
-                activationThreshold = 100
-              }
-              
-              // Check if trailing is activated (peak exceeded threshold)
-              if (peakPnlRef.current >= activationThreshold) {
-                // Calculate trailing stop level
-                const trailPercent = parseFloat(settings.trailingDistance) / 100
-                const trailingStop = peakPnlRef.current * (1 - trailPercent)
-                trailingStopRef.current = Math.max(trailingStop, 0) // Never go below break-even
-                
-                // Check if current PNL dropped below trailing stop
-                if (netPnl <= trailingStopRef.current) {
-                  console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStopRef.current.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)})`)
-                  // Close all positions
-                  for (const position of status.activePositions) {
-                    await closePosition(orderManager, position.symbol)
-                  }
-                }
-              }
-            }
-            // Check simple break-even mode (volume farming)
-            else if (settings.breakEvenMode && netPnl >= 0) {
-              console.log(`Break-even hit: Net PNL $${netPnl.toFixed(2)} >= $0 (after fees)`)
-              // Close all positions at break-even
-              for (const position of status.activePositions) {
-                await closePosition(orderManager, position.symbol)
-              }
-            }
-            // Check dollar-based TP/SL if in dollar mode
+            // ALWAYS check dollar-based TP/SL first (regardless of exit strategy)
             // NOTE: TP/SL based on GROSS PNL (before fees) - fees are fixed cost, not price risk
-            else if (settings.tpSlMode === 'dollar') {
+            let positionsClosed = false
+            if (settings.tpSlMode === 'dollar') {
               const takeProfitDollars = parseFloat(settings.takeProfit)
               const stopLossDollars = parseFloat(settings.stopLoss)
               
@@ -405,12 +365,59 @@ function PerpFarming() {
                 for (const position of status.activePositions) {
                   await closePosition(orderManager, position.symbol)
                 }
+                positionsClosed = true
               }
               
               // Check Stop Loss (use gross PNL before fees)
-              if (stopLossDollars > 0 && totalPnlDollars <= -stopLossDollars) {
+              if (!positionsClosed && stopLossDollars > 0 && totalPnlDollars <= -stopLossDollars) {
                 console.log(`Stop Loss hit: $${totalPnlDollars.toFixed(2)} <= -$${stopLossDollars.toFixed(2)} (gross, before fees)`)
                 // Close all positions
+                for (const position of status.activePositions) {
+                  await closePosition(orderManager, position.symbol)
+                }
+                positionsClosed = true
+              }
+            }
+            
+            // If positions weren't closed by TP/SL, check exit strategy modes
+            if (!positionsClosed) {
+              // Check trailing break-even stop loss
+              if (settings.trailingBreakEven) {
+                // Calculate activation threshold
+                let activationThreshold = 0
+                if (settings.trailingActivation === '2x_fees') {
+                  activationThreshold = totalFees * 2
+                } else if (settings.trailingActivation === '3x_fees') {
+                  activationThreshold = totalFees * 3
+                } else if (settings.trailingActivation === '5x_fees') {
+                  activationThreshold = totalFees * 5
+                } else if (settings.trailingActivation === '$50') {
+                  activationThreshold = 50
+                } else if (settings.trailingActivation === '$100') {
+                  activationThreshold = 100
+                }
+                
+                // Check if trailing is activated (peak exceeded threshold)
+                if (peakPnlRef.current >= activationThreshold) {
+                  // Calculate trailing stop level
+                  const trailPercent = parseFloat(settings.trailingDistance) / 100
+                  const trailingStop = peakPnlRef.current * (1 - trailPercent)
+                  trailingStopRef.current = Math.max(trailingStop, 0) // Never go below break-even
+                  
+                  // Check if current PNL dropped below trailing stop
+                  if (netPnl <= trailingStopRef.current) {
+                    console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStopRef.current.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)})`)
+                    // Close all positions
+                    for (const position of status.activePositions) {
+                      await closePosition(orderManager, position.symbol)
+                    }
+                  }
+                }
+              }
+              // Check simple break-even mode (volume farming)
+              else if (settings.breakEvenMode && netPnl >= 0) {
+                console.log(`Break-even hit: Net PNL $${netPnl.toFixed(2)} >= $0 (after fees)`)
+                // Close all positions at break-even
                 for (const position of status.activePositions) {
                   await closePosition(orderManager, position.symbol)
                 }

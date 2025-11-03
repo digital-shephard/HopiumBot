@@ -414,9 +414,9 @@
   transform: translateY(-2px);
 }
 
-/* Overall Stats Display - Absolutely positioned at top */
+/* Overall Stats Display - Fixed at top of viewport */
 .overall-stats {
-  position: absolute;
+  position: fixed;
   top: 20px;
   left: 50%;
   transform: translateX(-50%);
@@ -428,8 +428,15 @@
   box-shadow: 
     0 0 20px rgba(255, 215, 0, 0.2),
     inset 0 0 15px rgba(255, 215, 0, 0.05);
-  z-index: 12;
+  z-index: 999;
   animation: fadeInDown 0.5s ease-out;
+}
+
+/* On wider screens, ensure it doesn't overlap with RobotWidget */
+@media (min-width: 1200px) {
+  .overall-stats {
+    top: 30px;
+  }
 }
 
 @keyframes fadeInDown {

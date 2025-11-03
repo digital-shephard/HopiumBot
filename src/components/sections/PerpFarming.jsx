@@ -58,8 +58,6 @@ function PerpFarming() {
   const lastPnlRef = useRef(0)
   const peakPnlRef = useRef(0)
   const trailingStopRef = useRef(0)
-  const lastBalanceRef = useRef(0)
-  const positionOpenBalanceRef = useRef(0)
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -301,17 +299,7 @@ function PerpFarming() {
           const status = orderManager.getStatus()
           const currentPositionCount = status.activePositions ? status.activePositions.length : 0
           
-          // Get current account balance for realized PNL tracking
-          const accountBalance = await orderManager.dexService.getAccountBalance()
-          const currentBalance = parseFloat(accountBalance.availableBalance || '0')
-          
           if (status.activePositions && status.activePositions.length > 0) {
-            // Track balance when position first opens (count 0 -> 1)
-            if (lastPositionCountRef.current === 0) {
-              positionOpenBalanceRef.current = currentBalance
-              console.log(`[Stats] Position opened - balance snapshot: $${currentBalance.toFixed(2)}`)
-            }
-            
             // Calculate total PNL in dollars from all positions
             let totalPnlDollars = 0
             let totalFees = 0
@@ -344,7 +332,6 @@ function PerpFarming() {
             setEstimatedFees(totalFees)
             lastPnlRef.current = netPnl // Store NET PNL for stats
             lastPositionCountRef.current = currentPositionCount
-            lastBalanceRef.current = currentBalance
             
             // Update peak PNL tracking for trailing stop
             if (netPnl > peakPnlRef.current) {
@@ -425,48 +412,25 @@ function PerpFarming() {
             }
           } else {
             // Check if position was just closed (count went from >0 to 0)
-            if (lastPositionCountRef.current > 0 && positionOpenBalanceRef.current > 0) {
-              // Wait a moment for the close order to settle, then get actual realized PNL
-              setTimeout(async () => {
-                try {
-                  const accountBalance = await orderManager.dexService.getAccountBalance()
-                  const finalBalance = parseFloat(accountBalance.availableBalance || '0')
-                  
-                  // ACTUAL realized PNL = balance change (includes all fees and slippage)
-                  const actualRealizedPnl = finalBalance - positionOpenBalanceRef.current
-                  
-                  console.log(`[Stats] Position closed:`, {
-                    openBalance: positionOpenBalanceRef.current.toFixed(2),
-                    closeBalance: finalBalance.toFixed(2),
-                    actualRealizedPnl: actualRealizedPnl.toFixed(2),
-                    estimatedNetPnl: lastPnlRef.current.toFixed(2)
-                  })
-                  
-                  // Update overall stats with ACTUAL realized PNL
-                  setOverallPnl(prev => {
-                    const newValue = prev + actualRealizedPnl
-                    setTotalTrades(currentTrades => {
-                      const newTradeCount = currentTrades + 1
-                      saveStats(newValue, newTradeCount)
-                      return newTradeCount
-                    })
-                    return newValue
-                  })
-                  
-                  // Reset balance tracking
-                  positionOpenBalanceRef.current = 0
-                } catch (error) {
-                  console.error('[Stats] Error calculating realized PNL:', error)
-                  // Fallback to estimated PNL if balance query fails
-                  const realizedPnl = lastPnlRef.current
-                  setOverallPnl(prev => prev + realizedPnl)
-                  setTotalTrades(prev => {
-                    const newValue = prev + 1
-                    saveStats(overallPnl + realizedPnl, newValue)
-                    return newValue
-                  })
-                }
-              }, 2000) // Wait 2 seconds for order to settle
+            if (lastPositionCountRef.current > 0) {
+              // Use the last captured Net PNL (already includes fees and is accurate)
+              const realizedPnl = lastPnlRef.current
+              
+              console.log(`[Stats] Position closed with realized Net PNL: $${realizedPnl.toFixed(2)}`)
+              
+              // Update overall stats immediately with realized Net PNL
+              setOverallPnl(prev => {
+                const newValue = prev + realizedPnl
+                console.log(`[Stats] Overall PNL: $${prev.toFixed(2)} + $${realizedPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
+                
+                setTotalTrades(currentTrades => {
+                  const newTradeCount = currentTrades + 1
+                  saveStats(newValue, newTradeCount)
+                  return newTradeCount
+                })
+                
+                return newValue
+              })
             }
             
             // No active positions, reset PNL and trailing tracking

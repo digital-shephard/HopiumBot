@@ -42,9 +42,13 @@ export class OrderManager {
    * @param {number} settings.takeProfit - Take profit percentage
    * @param {number} settings.stopLoss - Stop loss percentage
    * @param {number} settings.positionSize - Position size percentage (1-100)
+   * @param {string} settings.orderType - Order type ('LIMIT' or 'MARKET')
    */
   async initialize(settings) {
-    this.settings = settings
+    this.settings = {
+      ...settings,
+      orderType: settings.orderType || 'LIMIT' // Default to LIMIT for safety
+    }
 
     // Initialize DEX service
     this.dexService = new AsterDexService()
@@ -164,18 +168,23 @@ export class OrderManager {
 
       // Convert LONG/SHORT to BUY/SELL for Aster API
       const asterSide = entry.side === 'LONG' ? 'BUY' : entry.side === 'SHORT' ? 'SELL' : entry.side
-      console.log(`[OrderManager] Converting side: ${entry.side} → ${asterSide}`)
+      const orderType = this.settings.orderType || 'LIMIT'
+      console.log(`[OrderManager] Converting side: ${entry.side} → ${asterSide}, order type: ${orderType}`)
 
-      // Place LIMIT order (always use LIMIT for safety)
+      // Place order based on user setting
       // Note: DexService will handle precision formatting
       const orderParams = {
         symbol,
         side: asterSide,
-        type: 'LIMIT', // Always LIMIT for safety
+        type: orderType,
         quantity: quantity, // DexService will format to correct precision
-        price: entry.price,
-        timeInForce: 'GTC',
         newClientOrderId: `hopium_${Date.now()}`
+      }
+
+      // Only add price and timeInForce for LIMIT orders
+      if (orderType === 'LIMIT') {
+        orderParams.price = entry.price
+        orderParams.timeInForce = 'GTC'
       }
 
       const orderResponse = await this.dexService.placeOrder(orderParams)
@@ -275,10 +284,13 @@ export class OrderManager {
       const quantity = maxPositionValue / entryPrice
       const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
 
+      const orderType = this.settings.orderType || 'LIMIT'
+
       console.log('[OrderManager] Placing scalp order:', {
         symbol,
         side,
         asterSide,
+        orderType,
         entryPrice,
         quantity,
         targetPositionValue,
@@ -293,11 +305,15 @@ export class OrderManager {
       const orderParams = {
         symbol,
         side: asterSide,
-        type: 'LIMIT',
+        type: orderType,
         quantity: quantity,
-        price: entryPrice,
-        timeInForce: 'GTC',
         newClientOrderId: `hopium_scalp_${Date.now()}`
+      }
+
+      // Only add price and timeInForce for LIMIT orders
+      if (orderType === 'LIMIT') {
+        orderParams.price = entryPrice
+        orderParams.timeInForce = 'GTC'
       }
 
       console.log('[OrderManager] Order params:', orderParams)

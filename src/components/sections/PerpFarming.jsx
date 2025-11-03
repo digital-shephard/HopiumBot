@@ -29,6 +29,7 @@ function PerpFarming() {
   const [tpSlMode, setTpSlMode] = useState('percent') // 'percent' or 'dollar'
   const [positionSize, setPositionSize] = useState(10)
   const [strategy, setStrategy] = useState('range_trading')
+  const [orderType, setOrderType] = useState('LIMIT') // 'LIMIT' or 'MARKET'
   const [breakEvenMode, setBreakEvenMode] = useState(false)
   const [trailingBreakEven, setTrailingBreakEven] = useState(false)
   const [trailingActivation, setTrailingActivation] = useState('3x_fees') // '2x_fees', '3x_fees', '5x_fees', '$50', '$100'
@@ -74,6 +75,7 @@ function PerpFarming() {
         setTpSlMode(settings.tpSlMode || 'percent')
         setPositionSize(settings.positionSize !== undefined ? settings.positionSize : 10)
         setStrategy(settings.strategy || 'range_trading')
+        setOrderType(settings.orderType || 'LIMIT')
         setBreakEvenMode(settings.breakEvenMode || false)
         setTrailingBreakEven(settings.trailingBreakEven || false)
         setTrailingActivation(settings.trailingActivation || '3x_fees')
@@ -170,6 +172,7 @@ function PerpFarming() {
         tpSlMode,
         positionSize,
         strategy,
+        orderType,
         breakEvenMode,
         trailingBreakEven,
         trailingActivation,
@@ -297,7 +300,8 @@ function PerpFarming() {
         takeProfit: settings.takeProfit,
         stopLoss: settings.stopLoss,
         tpSlMode: settings.tpSlMode,
-        positionSize: settings.positionSize
+        positionSize: settings.positionSize,
+        orderType: settings.orderType
       })
       
       orderManager.start()
@@ -1024,6 +1028,30 @@ function PerpFarming() {
                     <span>1%</span>
                     <span>100%</span>
                   </div>
+                </div>
+              </div>
+
+              <div className="risk-form-group">
+                <label className="risk-label">Order Type</label>
+                <div className="order-type-toggle">
+                  <button 
+                    className={`toggle-option ${orderType === 'LIMIT' ? 'active' : ''}`}
+                    onClick={() => setOrderType('LIMIT')}
+                  >
+                    LIMIT
+                  </button>
+                  <button 
+                    className={`toggle-option ${orderType === 'MARKET' ? 'active' : ''}`}
+                    onClick={() => setOrderType('MARKET')}
+                  >
+                    MARKET
+                  </button>
+                </div>
+                <div className="strategy-description">
+                  {orderType === 'LIMIT'
+                    ? '📍 Uses server limit price. May not fill if price moves away.'
+                    : '⚡ Instant fill at market price. Ignores server limit price and APEs in!'
+                  }
                 </div>
               </div>
 

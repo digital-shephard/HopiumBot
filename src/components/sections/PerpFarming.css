@@ -838,7 +838,8 @@
 }
 
 /* Toggle button styles */
-.tpsl-toggle {
+.tpsl-toggle,
+.order-type-toggle {
   display: flex;
   gap: 8px;
   background: rgba(255, 215, 0, 0.05);

@@ -141,19 +141,21 @@ export class OrderManager {
         return
       }
 
-      // Calculate position size based on capital setting
+      // Calculate position size - USE CAPITAL % AS MARGIN
       const accountBalance = await this.dexService.getAccountBalance()
       const availableBalance = parseFloat(accountBalance.availableBalance || '0')
       const positionSizePercent = this.settings.positionSize || 10
       const capitalLimit = parseFloat(this.settings.capital || '0')
       const leverage = this.settings.leverage || 1
       
-      // Use capital limit as base for position size calculation
-      const targetPositionValue = (capitalLimit * positionSizePercent) / 100
+      // Position size % of capital IS the margin we want to use
+      const marginToUse = (capitalLimit * positionSizePercent) / 100
       
-      // Check if we have enough margin (position value / leverage must be <= available balance)
-      const requiredMargin = targetPositionValue / leverage
-      const maxPositionValue = availableBalance >= requiredMargin ? targetPositionValue : availableBalance * leverage
+      // Actual position value = margin * leverage
+      const targetPositionValue = marginToUse * leverage
+      
+      // Make sure we have enough balance for the margin
+      const maxPositionValue = availableBalance >= marginToUse ? targetPositionValue : availableBalance * leverage
 
       // Calculate quantity
       const entryPrice = parseFloat(entry.price)
@@ -249,19 +251,21 @@ export class OrderManager {
         return
       }
 
-      // Calculate position size based on capital setting
+      // Calculate position size - USE CAPITAL % AS MARGIN
       const accountBalance = await this.dexService.getAccountBalance()
       const availableBalance = parseFloat(accountBalance.availableBalance || '0')
       const positionSizePercent = this.settings.positionSize || 10
       const capitalLimit = parseFloat(this.settings.capital || '0')
       const leverage = this.settings.leverage || 1
       
-      // Use capital limit as base for position size calculation
-      const targetPositionValue = (capitalLimit * positionSizePercent) / 100
+      // Position size % of capital IS the margin we want to use
+      const marginToUse = (capitalLimit * positionSizePercent) / 100
       
-      // Check if we have enough margin (position value / leverage must be <= available balance)
-      const requiredMargin = targetPositionValue / leverage
-      const maxPositionValue = availableBalance >= requiredMargin ? targetPositionValue : availableBalance * leverage
+      // Actual position value = margin * leverage
+      const targetPositionValue = marginToUse * leverage
+      
+      // Make sure we have enough balance for the margin
+      const maxPositionValue = availableBalance >= marginToUse ? targetPositionValue : availableBalance * leverage
 
       if (entryPrice <= 0) {
         return
@@ -278,7 +282,7 @@ export class OrderManager {
         quantity,
         targetPositionValue,
         maxPositionValue,
-        requiredMargin,
+        marginToUse,
         availableBalance,
         positionSizePercent,
         leverage,

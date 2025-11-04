@@ -84,8 +84,7 @@ function PerpFarming({ onBotMessageChange }) {
   const [breakEvenMode, setBreakEvenMode] = useState(false)
   const [breakEvenLossTolerance, setBreakEvenLossTolerance] = useState(20) // Loss tolerance in dollars for breakeven mode
   const [trailingBreakEven, setTrailingBreakEven] = useState(false)
-  const [trailingActivation, setTrailingActivation] = useState('3x_fees') // '2x_fees', '3x_fees', '5x_fees', '$50', '$100'
-  const [trailingDistance, setTrailingDistance] = useState('10') // '5', '10', '15', '20' (percentage)
+  const [trailingIncrement, setTrailingIncrement] = useState(20) // Dollar increment for trailing stop (default $20)
   const [shakeApiKey, setShakeApiKey] = useState(false)
   const [shakeSecretKey, setShakeSecretKey] = useState(false)
   const [shakeCapital, setShakeCapital] = useState(false)
@@ -137,8 +136,7 @@ function PerpFarming({ onBotMessageChange }) {
         setBreakEvenMode(settings.breakEvenMode || false)
         setBreakEvenLossTolerance(settings.breakEvenLossTolerance !== undefined ? settings.breakEvenLossTolerance : 20)
         setTrailingBreakEven(settings.trailingBreakEven || false)
-        setTrailingActivation(settings.trailingActivation || '3x_fees')
-        setTrailingDistance(settings.trailingDistance || '10')
+        setTrailingIncrement(settings.trailingIncrement !== undefined ? settings.trailingIncrement : 20)
       } catch (error) {
         console.error('Error loading settings:', error)
       }
@@ -239,8 +237,7 @@ function PerpFarming({ onBotMessageChange }) {
         breakEvenMode,
         breakEvenLossTolerance,
         trailingBreakEven,
-        trailingActivation,
-        trailingDistance
+        trailingIncrement
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
       setShowModal(false)
@@ -450,36 +447,30 @@ function PerpFarming({ onBotMessageChange }) {
             
             // If positions weren't closed by TP/SL, check exit strategy modes
             if (!positionsClosed) {
-              // Check trailing break-even stop loss
+              // Check trailing stop loss (dollar increment based)
               if (settings.trailingBreakEven) {
-                // Calculate activation threshold
-                let activationThreshold = 0
-                if (settings.trailingActivation === '2x_fees') {
-                  activationThreshold = totalFees * 2
-                } else if (settings.trailingActivation === '3x_fees') {
-                  activationThreshold = totalFees * 3
-                } else if (settings.trailingActivation === '5x_fees') {
-                  activationThreshold = totalFees * 5
-                } else if (settings.trailingActivation === '$50') {
-                  activationThreshold = 50
-                } else if (settings.trailingActivation === '$100') {
-                  activationThreshold = 100
-                }
+                const increment = parseFloat(settings.trailingIncrement) || 20
                 
-                // Check if trailing is activated (peak exceeded threshold)
-                if (peakPnlRef.current >= activationThreshold) {
-                  // Calculate trailing stop level
-                  const trailPercent = parseFloat(settings.trailingDistance) / 100
-                  const trailingStop = peakPnlRef.current * (1 - trailPercent)
-                  trailingStopRef.current = Math.max(trailingStop, 0) // Never go below break-even
+                // Calculate how many increments of profit we've achieved
+                // For every $X profit, stop loss moves up by $X
+                if (peakPnlRef.current >= increment) {
+                  // Calculate trailing stop: floor(peak / increment) * increment - increment
+                  // Example: If increment is $20 and peak is $65:
+                  // - We've hit 3 increments ($20, $40, $60)
+                  // - Stop loss is at $40 (2 increments, leaving room for 1 increment pullback)
+                  const incrementsAchieved = Math.floor(peakPnlRef.current / increment)
+                  const trailingStop = Math.max((incrementsAchieved - 1) * increment, 0)
+                  trailingStopRef.current = trailingStop
                   
                   // Check if current PNL dropped below trailing stop
-                  if (netPnl <= trailingStopRef.current) {
-                    console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStopRef.current.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)})`)
+                  if (netPnl <= trailingStop) {
+                    console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStop.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)}, Increment: $${increment})`)
                     // Close all positions
                     for (const position of status.activePositions) {
                       await closePosition(orderManager, position.symbol, netPnl)
                     }
+                  } else {
+                    console.log(`[Trailing] Peak: $${peakPnlRef.current.toFixed(2)}, Stop: $${trailingStop.toFixed(2)}, Current: $${netPnl.toFixed(2)} (Increment: $${increment})`)
                   }
                 }
               }
@@ -1489,36 +1480,30 @@ function PerpFarming({ onBotMessageChange }) {
                 {trailingBreakEven && (
                   <div className="trailing-config">
                     <div className="breakeven-description">
-                      🎯 Locks in profits by trailing stop loss behind peak. Normal TP still applies.
+                      🎯 For every ${trailingIncrement} profit, stop loss moves up ${trailingIncrement}. Normal TP still applies.
                     </div>
                     
                     <div className="trailing-setting">
-                      <label className="trailing-setting-label">Activate After Peak:</label>
-                      <select
-                        className="trailing-select"
-                        value={trailingActivation}
-                        onChange={(e) => setTrailingActivation(e.target.value)}
-                      >
-                        <option value="2x_fees">2x Fees (~$80)</option>
-                        <option value="3x_fees">3x Fees (~$120)</option>
-                        <option value="5x_fees">5x Fees (~$200)</option>
-                        <option value="$50">$50</option>
-                        <option value="$100">$100</option>
-                      </select>
-                    </div>
-                    
-                    <div className="trailing-setting">
-                      <label className="trailing-setting-label">Trail Distance:</label>
-                      <select
-                        className="trailing-select"
-                        value={trailingDistance}
-                        onChange={(e) => setTrailingDistance(e.target.value)}
-                      >
-                        <option value="5">5% (Tight - lock profits fast)</option>
-                        <option value="10">10% (Balanced)</option>
-                        <option value="15">15% (Medium)</option>
-                        <option value="20">20% (Loose - ride winners)</option>
-                      </select>
+                      <label className="risk-label">Trailing Increment: ${trailingIncrement}</label>
+                      <div className="risk-slider-container">
+                        <input
+                          type="range"
+                          min="5"
+                          max="100"
+                          step="5"
+                          value={trailingIncrement}
+                          onChange={(e) => setTrailingIncrement(Number(e.target.value))}
+                          className="risk-slider"
+                        />
+                        <div className="risk-slider-labels">
+                          <span>$5</span>
+                          <span>$50</span>
+                          <span>$100</span>
+                        </div>
+                      </div>
+                      <div className="breakeven-description">
+                        Example: At ${trailingIncrement} increment, reaching $60 profit sets stop at $40 (allows one ${trailingIncrement} pullback)
+                      </div>
                     </div>
                   </div>
                 )}

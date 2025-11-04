@@ -471,8 +471,10 @@ export class HopiumWebSocketClient {
 
       case 'summary':
         if (this.onSummary) {
-          // Server may send summary in message.message or message.payload
-          const summaryData = message.message || message.payload
+          // Server sends summary in message.fullMessage (similar to scalp_indicator)
+          // Also check message.message or message.payload for backwards compatibility
+          const summaryData = message.fullMessage || message.message || message.payload || message
+          console.log('[WebSocket] Extracted summary data for callback:', summaryData)
           this.onSummary(summaryData)
         }
         break

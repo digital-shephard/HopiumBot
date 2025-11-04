@@ -538,39 +538,23 @@ function PerpFarming({ onBotMessageChange }) {
           setTradingSymbol(symbol)
         }
         
-        wsClient.onSummary = async (message) => {
+        wsClient.onSummary = async (summaryData) => {
           try {
-            console.log('[PerpFarming] Received range trading message:', message)
+            console.log('[PerpFarming] Received range trading data:', summaryData)
             
-            // Handle two different message formats:
-            // Format 1 (subscription): { message, range_data, summary, symbol, timestamp }
-            // Format 2 (updates): { type: "summary", fullMessage: { symbol, strategy, data: {...} } }
+            // WebSocket client already extracted the data from fullMessage
+            // Now it's in format: { symbol, strategy, data: { range_data, summary } }
             
-            let summaryData
-            let rangeData
-            let summaryInfo
-            let symbol
-            
-            // Check if this is the wrapped format with fullMessage.data
-            if (message?.fullMessage?.data) {
-              summaryData = message.fullMessage
-              symbol = summaryData.symbol
-              rangeData = summaryData.data.range_data
-              summaryInfo = summaryData.data.summary
-            }
-            // Otherwise, assume direct format (subscription response)
-            else if (message?.summary) {
-              summaryData = message
-              symbol = message.symbol
-              rangeData = message.range_data
-              summaryInfo = message.summary
-            }
-            else {
-              console.log('[PerpFarming] Unrecognized message format:', message)
+            // Defensive: ignore if malformed
+            if (!summaryData || !summaryData.data) {
+              console.log('[PerpFarming] No data found in summary message')
               return
             }
             
-            console.log('[PerpFarming] Extracted summary data:', { symbol, rangeData, summaryInfo })
+            const { symbol, data } = summaryData
+            const { range_data, summary } = data
+            
+            console.log('[PerpFarming] Parsed summary:', { symbol, range_data, summary })
             
             // Update symbol
             if (symbol) {
@@ -578,7 +562,7 @@ function PerpFarming({ onBotMessageChange }) {
             }
             
             // Update bot message with reasoning if available
-            const reasoning = summaryInfo?.entry?.reasoning || 'Analyzing market conditions...'
+            const reasoning = summary?.entry?.reasoning || 'Analyzing market conditions...'
             setBotMessage(reasoning)
             if (onBotMessageChange) onBotMessageChange(reasoning)
             

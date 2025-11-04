@@ -80,6 +80,7 @@ function PerpFarming({ onBotMessageChange }) {
   const [orderTimeout, setOrderTimeout] = useState(120) // Order timeout in seconds (default 120)
   const [smartMode, setSmartMode] = useState(true) // Smart Mode - active position management
   const [smartModeMinPnl, setSmartModeMinPnl] = useState(-50) // Minimum PNL before Smart Mode can exit (default -$50)
+  const [trustLowConfidence, setTrustLowConfidence] = useState(false) // Allow trading on low confidence signals
   const [breakEvenMode, setBreakEvenMode] = useState(false)
   const [breakEvenLossTolerance, setBreakEvenLossTolerance] = useState(20) // Loss tolerance in dollars for breakeven mode
   const [trailingBreakEven, setTrailingBreakEven] = useState(false)
@@ -132,6 +133,7 @@ function PerpFarming({ onBotMessageChange }) {
         setOrderTimeout(settings.orderTimeout !== undefined ? settings.orderTimeout : 120)
         setSmartMode(settings.smartMode !== undefined ? settings.smartMode : true) // Default enabled
         setSmartModeMinPnl(settings.smartModeMinPnl !== undefined ? settings.smartModeMinPnl : -50)
+        setTrustLowConfidence(settings.trustLowConfidence || false)
         setBreakEvenMode(settings.breakEvenMode || false)
         setBreakEvenLossTolerance(settings.breakEvenLossTolerance !== undefined ? settings.breakEvenLossTolerance : 20)
         setTrailingBreakEven(settings.trailingBreakEven || false)
@@ -233,6 +235,7 @@ function PerpFarming({ onBotMessageChange }) {
         orderTimeout,
         smartMode,
         smartModeMinPnl,
+        trustLowConfidence,
         breakEvenMode,
         breakEvenLossTolerance,
         trailingBreakEven,
@@ -678,8 +681,10 @@ function PerpFarming({ onBotMessageChange }) {
               }
             }
             
-            // Accept both high and medium confidence signals for entry
-            const shouldTrade = scalpData.confidence === 'high' || scalpData.confidence === 'medium'
+            // Accept high and medium confidence signals, or low if user trusts them
+            const shouldTrade = scalpData.confidence === 'high' || 
+                                scalpData.confidence === 'medium' || 
+                                (scalpData.confidence === 'low' && settings.trustLowConfidence)
             
             if (!hasActivePosition && shouldTrade) {
               console.log(`[PerpFarming] 🎯 Processing ${scalpData.confidence.toUpperCase()} confidence ${scalpData.side} signal @ $${scalpData.limit_price}`)
@@ -692,7 +697,7 @@ function PerpFarming({ onBotMessageChange }) {
             } else if (hasActivePosition) {
               console.log('[PerpFarming] ⏭️ Skipping scalp signal - active position exists')
             } else {
-              console.log(`[PerpFarming] ⏭️ Skipping scalp signal - low confidence (${scalpData.confidence})`)
+              console.log(`[PerpFarming] ⏭️ Skipping scalp signal - low confidence (${scalpData.confidence}) ${settings.trustLowConfidence ? '(trust enabled but still skipped)' : '(trust low confidence disabled)'}`)
             }
           } catch (error) {
             handleError(`Failed to handle scalp signal: ${error.message}`)
@@ -785,8 +790,10 @@ function PerpFarming({ onBotMessageChange }) {
               }
             }
             
-            // Accept both high and medium confidence signals for entry
-            const shouldTrade = momentumData.confidence === 'high' || momentumData.confidence === 'medium'
+            // Accept high and medium confidence signals, or low if user trusts them
+            const shouldTrade = momentumData.confidence === 'high' || 
+                                momentumData.confidence === 'medium' || 
+                                (momentumData.confidence === 'low' && settings.trustLowConfidence)
             
             if (!hasActivePosition && shouldTrade) {
               console.log(`[PerpFarming] 🎯 Processing ${momentumData.confidence.toUpperCase()} confidence ${momentumData.side} momentum signal @ $${momentumData.limit_price}`)
@@ -799,7 +806,7 @@ function PerpFarming({ onBotMessageChange }) {
             } else if (hasActivePosition) {
               console.log('[PerpFarming] ⏭️ Skipping momentum signal - active position exists')
             } else {
-              console.log(`[PerpFarming] ⏭️ Skipping momentum signal - low confidence (${momentumData.confidence})`)
+              console.log(`[PerpFarming] ⏭️ Skipping momentum signal - low confidence (${momentumData.confidence}) ${settings.trustLowConfidence ? '(trust enabled but still skipped)' : '(trust low confidence disabled)'}`)
             }
           } catch (error) {
             handleError(`Failed to handle momentum signal: ${error.message}`)
@@ -1146,6 +1153,25 @@ function PerpFarming({ onBotMessageChange }) {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Trust Low Confidence Checkbox */}
+              <div className="risk-form-group">
+                <label className="risk-label">Signal Confidence</label>
+                <label className="breakeven-option">
+                  <input
+                    type="checkbox"
+                    checked={trustLowConfidence}
+                    onChange={(e) => setTrustLowConfidence(e.target.checked)}
+                    className="breakeven-radio"
+                  />
+                  <span className="breakeven-option-text">
+                    ⚠️ Trust Low Confidence Signals
+                  </span>
+                </label>
+                <div className="breakeven-description">
+                  By default, only high and medium confidence signals are traded. Enable this to also trade low confidence signals. Warning: May increase losses.
+                </div>
               </div>
 
               <div className="risk-form-group">

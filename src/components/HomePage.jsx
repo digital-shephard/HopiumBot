@@ -13,6 +13,7 @@ function HomePage() {
   const [direction, setDirection] = useState(0)
   const [slideDistance, setSlideDistance] = useState(300)
   const [isInitialMount, setIsInitialMount] = useState(true)
+  const [perpBotMessage, setPerpBotMessage] = useState('Analyzing perpetual funding rates across exchanges...')
   const touchStartX = useRef(null)
   const touchEndX = useRef(null)
 
@@ -29,14 +30,14 @@ function HomePage() {
   
   // Create section components once and keep them mounted
   const sectionComponents = useMemo(() => [
-    <PerpFarming key="perp" />,
+    <PerpFarming key="perp" onBotMessageChange={setPerpBotMessage} />,
     <HopiumFarming key="hopium" isActive={currentIndex === 1} />,
     <AirdropAlpha key="airdrop" onNavigateToHopium={() => goToIndex(1)} />,
     <VaultFarming key="vault" />
   ], [currentIndex])
   
   const sections = [
-    { id: 0, title: 'Perps Bot', name: 'Perps Bot', message: 'Analyzing perpetual funding rates across exchanges...' },
+    { id: 0, title: 'Perps Bot', name: 'Perps Bot', message: perpBotMessage }, // Dynamic message from PerpFarming
     { id: 1, title: 'Airdrop', name: 'Airdrop', message: 'Complete tasks to earn HOPIUM tokens and climb the leaderboard...' },
     { id: 2, title: 'Alpha', name: 'Alpha', message: 'Scanning for high-value airdrop opportunities...' },
     { id: 3, title: 'Vault', name: 'Vault', message: 'Secure vault system - Coming soon...' }

@@ -27,7 +27,7 @@ HopiumBot/
    ├── services/
    │   ├── auth.js           # Authentication service (wallet signature-based)
    │   ├── websocket.js      # WebSocket client service (with JWT auth)
-   │   ├── orderManager.js   # Order lifecycle management service
+   │   ├── orderManager.js   # Order lifecycle management service (includes Smart Mode logic)
    │   ├── airdrop.js        # Airdrop service for fetching opportunities
    │   └── dex/              # DEX service abstraction layer
    │       ├── DexService.js         # Abstract DEX service interface
@@ -109,6 +109,19 @@ npm run preview
   - **Perps Bot**: Automated perpetual futures trading
     - **Risk Settings Modal**: Configure Aster API credentials, capital limits, Take Profit, Stop Loss, and Position Size
       - Fixed scrollbar clipping issue with proper container structure and overflow handling
+    - **Smart Mode** 🧠: Active position management for capital preservation (enabled by default)
+      - **Confidence Monitoring**: Continuously monitors server confidence (high/medium/low) for open positions
+      - **Early Exit Conditions**:
+        1. **Signal Reversal**: Exits immediately if market direction flips (LONG→SHORT or SHORT→LONG)
+        2. **Low Confidence + 50% to Stop Loss**: Exits when confidence drops to low AND position is >50% toward stop loss
+        3. **2 Consecutive Low Signals**: Exits after receiving 2 consecutive low confidence signals
+      - **PNL Calculation**: Uses net PNL after fees (0.02% entry + 0.02% exit) for accurate risk assessment
+      - **Bot Widget Integration**: Displays server reasoning and Smart Mode exit statements
+        - Shows reasoning from server during normal operation
+        - Displays random exit statement (24 variations) when Smart Mode triggers
+        - Statements persist until next signal for clarity
+      - **Signal History Tracking**: Tracks last 5 signals per position for pattern detection
+      - **Disable Option**: Can be toggled off for manual TP/SL-only management
     - **Automated Trading**: Connects to WebSocket for real-time market recommendations
     - **Order Management**: Automatically places orders, monitors positions, and enforces TP/SL
     - Settings are saved to localStorage and persist across sessions
@@ -142,6 +155,10 @@ npm run preview
   - **Sentiment Analysis**: In the Perp Farming section, users can click "Give me the sentiment" to fetch real-time BTC sentiment analysis from the HopiumCore API
   - Shows animated "Lemme think about this..." loading state while fetching
   - Streams LLM-generated market summaries and entry recommendations
+  - **Smart Mode Integration**: Displays server reasoning and Smart Mode exit statements in real-time
+    - Normal operation: Shows reasoning from WebSocket signals
+    - Smart exit: Shows random statement explaining why position was closed early
+    - Statements persist until next signal arrives
 - **Connect Wallet**: WalletConnect integration widget in the top right corner
 - **Buttery Smooth Animations**: Powered by Framer Motion for silky transitions
 - **Mobile Responsive**: Fully responsive design with touch swipe gestures for carousel navigation

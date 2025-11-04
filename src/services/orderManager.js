@@ -17,6 +17,10 @@ const ORDER_POLL_INTERVAL = 4000 // 4 seconds
 const POSITION_CHECK_INTERVAL = 5000 // 5 seconds
 const ORDER_TIMEOUT = 120000 // 2 minutes - cancel unfilled orders after this time
 
+// Fees for PNL calculation
+const ENTRY_FEE = 0.0002 // 0.02%
+const EXIT_FEE = 0.0002 // 0.02%
+
 export class OrderManager {
   constructor() {
     this.dexService = null
@@ -330,7 +334,8 @@ export class OrderManager {
         status: orderResponse.status,
         takeProfit: this.settings.takeProfit,
         stopLoss: this.settings.stopLoss,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        entryConfidence: scalpData.confidence || 'unknown'
       })
     } catch (error) {
       console.error('[OrderManager] Failed to place scalp order:', error)
@@ -411,7 +416,7 @@ export class OrderManager {
     // Remove from active orders
     this.activeOrders.delete(orderId)
 
-    // Add to active positions
+    // Add to active positions with Smart Mode tracking
     const positionData = {
       symbol: order.symbol,
       side: order.side,
@@ -419,7 +424,9 @@ export class OrderManager {
       quantity: parseFloat(order.quantity),
       takeProfit: order.takeProfit,
       stopLoss: order.stopLoss,
-      filledAt: Date.now()
+      filledAt: Date.now(),
+      entryConfidence: order.entryConfidence || 'unknown',
+      signalHistory: [] // Track incoming signals for Smart Mode
     }
 
     this.activePositions.set(order.symbol, positionData)
@@ -554,6 +561,146 @@ export class OrderManager {
       activeOrders: Array.from(this.activeOrders.values()),
       activePositions: Array.from(this.activePositions.values())
     }
+  }
+
+  /**
+   * Add signal to position history (Smart Mode)
+   * @param {string} symbol - Trading symbol
+   * @param {Object} signal - Signal data with confidence, side, timestamp
+   */
+  addSignalToHistory(symbol, signal) {
+    const position = this.activePositions.get(symbol)
+    if (!position) return
+
+    // Add signal to history
+    position.signalHistory.push({
+      confidence: signal.confidence,
+      side: signal.side,
+      timestamp: Date.now()
+    })
+
+    // Keep only last 5 signals
+    if (position.signalHistory.length > 5) {
+      position.signalHistory.shift()
+    }
+  }
+
+  /**
+   * Get net PNL percentage after fees for a position (Smart Mode)
+   * @param {string} symbol - Trading symbol
+   * @returns {Promise<number>} Net PNL percentage after fees
+   */
+  async getNetPNLPercentage(symbol) {
+    if (!this.dexService) return 0
+
+    try {
+      const position = this.activePositions.get(symbol)
+      if (!position) return 0
+
+      const currentPosition = await this.dexService.getPosition(symbol)
+      const unrealizedProfit = parseFloat(currentPosition.unRealizedProfit || '0')
+      const entryPrice = parseFloat(currentPosition.entryPrice || '0')
+      const positionAmt = Math.abs(parseFloat(currentPosition.positionAmt || '0'))
+      const markPrice = parseFloat(currentPosition.markPrice || '0')
+
+      if (positionAmt === 0 || entryPrice === 0) return 0
+
+      // Calculate fees
+      const entryNotional = positionAmt * entryPrice
+      const exitNotional = positionAmt * markPrice
+      const entryFee = entryNotional * ENTRY_FEE
+      const exitFee = exitNotional * EXIT_FEE
+      const totalFees = entryFee + exitFee
+
+      // Net PNL = Unrealized PNL - Fees
+      const netPnl = unrealizedProfit - totalFees
+
+      // PNL as percentage of entry value
+      const pnlPercentage = (netPnl / entryNotional) * 100
+
+      return pnlPercentage
+    } catch (error) {
+      console.error('[OrderManager] Error calculating net PNL:', error)
+      return 0
+    }
+  }
+
+  /**
+   * Check if position should exit based on Smart Mode rules
+   * @param {string} symbol - Trading symbol
+   * @param {Object} signal - Current signal with confidence and side
+   * @returns {Promise<Object>} { shouldExit: boolean, reason: string }
+   */
+  async checkSmartModeExit(symbol, signal) {
+    const position = this.activePositions.get(symbol)
+    if (!position) {
+      return { shouldExit: false, reason: null }
+    }
+
+    // Condition A: Signal Reversal (Highest Priority)
+    if (
+      (position.side === 'LONG' && signal.side === 'SHORT') ||
+      (position.side === 'SHORT' && signal.side === 'LONG')
+    ) {
+      return { 
+        shouldExit: true, 
+        reason: 'reversal',
+        details: `Position ${position.side} but signal is ${signal.side}`
+      }
+    }
+
+    // Only check low confidence conditions if signal is low
+    if (signal.confidence === 'low') {
+      // Condition B: Low Confidence + 50% to Stop Loss
+      const netPnlPercent = await this.getNetPNLPercentage(symbol)
+      const stopLossThreshold = -Math.abs(position.stopLoss || 0.1) // Negative value
+      
+      if (stopLossThreshold !== 0) {
+        const distanceRatio = netPnlPercent / stopLossThreshold
+        
+        console.log('[OrderManager] Smart Mode Check:', {
+          symbol,
+          netPnlPercent: netPnlPercent.toFixed(4),
+          stopLossThreshold: stopLossThreshold.toFixed(4),
+          distanceRatio: distanceRatio.toFixed(2),
+          confidence: signal.confidence
+        })
+
+        if (distanceRatio > 0.5) {
+          return { 
+            shouldExit: true, 
+            reason: 'low_confidence_threshold',
+            details: `${(distanceRatio * 100).toFixed(0)}% to SL with low confidence`
+          }
+        }
+      }
+
+      // Condition C: 2 Consecutive Low Confidence Signals
+      const recentSignals = position.signalHistory.slice(-2)
+      if (recentSignals.length >= 2 && 
+          recentSignals.every(s => s.confidence === 'low')) {
+        return { 
+          shouldExit: true, 
+          reason: 'consecutive_low_confidence',
+          details: '2 consecutive low confidence signals'
+        }
+      }
+    }
+
+    return { shouldExit: false, reason: null }
+  }
+
+  /**
+   * Close position for Smart Mode (with specific logging)
+   * @param {string} symbol - Trading symbol
+   * @param {string} reason - Reason for Smart Mode exit
+   */
+  async closePositionSmartMode(symbol, reason) {
+    const position = this.activePositions.get(symbol)
+    if (!position) return
+
+    console.log(`[OrderManager] 🧠 Smart Mode Exit: ${symbol} - ${reason}`)
+    await this.closePosition(symbol, position, `Smart Mode: ${reason}`)
   }
 }
 

@@ -15,7 +15,54 @@ const TAKER_FEE = 0.0004  // 0.04% (MARKET orders or LIMIT orders that take liqu
 const ENTRY_FEE = TAKER_FEE // Conservative estimate - assume taker
 const EXIT_FEE = TAKER_FEE  // MARKET orders are always taker
 
-function PerpFarming() {
+// Smart Mode exit statements
+const SMART_MODE_STATEMENTS = {
+  low_confidence: [
+    "Confidence dropped, cutting losses early",
+    "Market looking shaky, taking the small loss",
+    "Signal weakening, protecting capital",
+    "Better safe than sorry, exiting position",
+    "Trade not playing out, minimizing damage",
+    "Confidence fading, preserving funds",
+    "Smart exit - avoiding deeper losses",
+    "Early exit activated, capital protected",
+    "Signal deteriorating, closing position",
+    "Not worth the risk, exiting early",
+    "Confidence too low, cutting losses",
+    "Protecting the bag, closing position",
+    "Trade losing steam, smart exit triggered",
+    "Risk management activated",
+    "Better to exit now than wait for SL",
+    "Confidence dropped, damage control mode",
+    "Smart mode saved you from a bigger loss",
+    "Early detection, early exit",
+    "Capital preservation > holding hope",
+    "Trade invalidated, closing early"
+  ],
+  reversal: [
+    "Market direction flipped, exiting",
+    "Signal reversed, closing position",
+    "Direction changed, taking the exit",
+    "Market switched sides, closing out"
+  ]
+}
+
+// Get random Smart Mode statement based on exit reason
+function getSmartModeStatement(reason) {
+  let statements
+  
+  if (reason === 'reversal') {
+    statements = SMART_MODE_STATEMENTS.reversal
+  } else {
+    // low_confidence_threshold or consecutive_low_confidence
+    statements = SMART_MODE_STATEMENTS.low_confidence
+  }
+  
+  const randomIndex = Math.floor(Math.random() * statements.length)
+  return statements[randomIndex]
+}
+
+function PerpFarming({ onBotMessageChange }) {
   // Get auth context for WebSocket authentication
   const { authService } = useAuth()
   
@@ -30,6 +77,7 @@ function PerpFarming() {
   const [positionSize, setPositionSize] = useState(10)
   const [strategy, setStrategy] = useState('range_trading')
   const [orderType, setOrderType] = useState('LIMIT') // 'LIMIT' or 'MARKET'
+  const [smartMode, setSmartMode] = useState(true) // Smart Mode - active position management
   const [breakEvenMode, setBreakEvenMode] = useState(false)
   const [trailingBreakEven, setTrailingBreakEven] = useState(false)
   const [trailingActivation, setTrailingActivation] = useState('3x_fees') // '2x_fees', '3x_fees', '5x_fees', '$50', '$100'
@@ -47,6 +95,7 @@ function PerpFarming() {
   const [overallPnl, setOverallPnl] = useState(0)
   const [totalTrades, setTotalTrades] = useState(0)
   const [estimatedFees, setEstimatedFees] = useState(0)
+  const [botMessage, setBotMessage] = useState('Initializing...')
   
   const orderManagerRef = useRef(null)
   const wsClientRef = useRef(null)
@@ -76,6 +125,7 @@ function PerpFarming() {
         setPositionSize(settings.positionSize !== undefined ? settings.positionSize : 10)
         setStrategy(settings.strategy || 'range_trading')
         setOrderType(settings.orderType || 'LIMIT')
+        setSmartMode(settings.smartMode !== undefined ? settings.smartMode : true) // Default enabled
         setBreakEvenMode(settings.breakEvenMode || false)
         setTrailingBreakEven(settings.trailingBreakEven || false)
         setTrailingActivation(settings.trailingActivation || '3x_fees')
@@ -173,6 +223,7 @@ function PerpFarming() {
         positionSize,
         strategy,
         orderType,
+        smartMode,
         breakEvenMode,
         trailingBreakEven,
         trailingActivation,
@@ -497,6 +548,11 @@ function PerpFarming() {
             
             console.log('[PerpFarming] Extracted scalp data:', scalpData)
 
+            // Update bot message with server reasoning (always)
+            const reasoning = scalpData.reasoning || 'Calling home for some data...'
+            setBotMessage(reasoning)
+            if (onBotMessageChange) onBotMessageChange(reasoning)
+
             // Update symbol
             if (scalpData.symbol) {
               setTradingSymbol(scalpData.symbol)
@@ -518,8 +574,40 @@ function PerpFarming() {
               side: scalpData.side,
               activePositions: status.activePositions
             })
+
+            // If position exists, check Smart Mode exit conditions
+            if (hasActivePosition && settings.smartMode) {
+              console.log('[PerpFarming] 🧠 Smart Mode: Checking exit conditions')
+              
+              // Add signal to position history
+              const symbol = scalpData.symbol
+              orderManager.addSignalToHistory(symbol, {
+                confidence: scalpData.confidence,
+                side: scalpData.side
+              })
+
+              // Check Smart Mode exit conditions
+              const exitDecision = await orderManager.checkSmartModeExit(symbol, {
+                confidence: scalpData.confidence,
+                side: scalpData.side
+              })
+
+              if (exitDecision.shouldExit) {
+                console.log(`[PerpFarming] 🧠 Smart Mode EXIT triggered: ${exitDecision.reason}`)
+                
+                // Select random statement based on reason
+                const statement = getSmartModeStatement(exitDecision.reason)
+                setBotMessage(statement)
+                if (onBotMessageChange) onBotMessageChange(statement)
+                
+                // Close position
+                await orderManager.closePositionSmartMode(symbol, exitDecision.details)
+                
+                return // Exit early, don't process new entry
+              }
+            }
             
-            // Accept both high and medium confidence signals
+            // Accept both high and medium confidence signals for entry
             const shouldTrade = scalpData.confidence === 'high' || scalpData.confidence === 'medium'
             
             if (!hasActivePosition && shouldTrade) {
@@ -846,6 +934,25 @@ function PerpFarming() {
             <div className="risk-modal-wrapper">
               <h2 className="risk-modal-title">Risk Settings</h2>
               <div className="risk-modal-content">
+              
+              {/* Smart Mode Checkbox - At the very top */}
+              <div className="risk-form-group" style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={smartMode}
+                    onChange={(e) => setSmartMode(e.target.checked)}
+                    style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+                  />
+                  <span style={{ fontSize: '16px', fontWeight: '500' }}>
+                    🧠 Smart Mode - Actively manage positions based on confidence changes
+                  </span>
+                </label>
+                <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.6)', marginTop: '8px', marginLeft: '28px' }}>
+                  Exit positions early if confidence drops or signal reverses (capital preservation)
+                </div>
+              </div>
+
               <div className="risk-form-group">
                 <label className="risk-label">Aster API Key</label>
                 <input

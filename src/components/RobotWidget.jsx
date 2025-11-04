@@ -5,7 +5,7 @@ import logo from '../assets/logo.webp'
 import API_CONFIG from '../config/api'
 
 function RobotWidget({ message, sectionId, onError }) {
-  const [messages, setMessages] = useState([])
+  const [currentMessage, setCurrentMessage] = useState('')
   const [currentStreaming, setCurrentStreaming] = useState('')
   const [isExpanded, setIsExpanded] = useState(false)
   const [isLoadingSentiment, setIsLoadingSentiment] = useState(false)
@@ -28,7 +28,7 @@ function RobotWidget({ message, sectionId, onError }) {
   useEffect(() => {
     if (previousSectionIdRef.current !== sectionId) {
       // Section changed - reset everything
-      setMessages([])
+      setCurrentMessage('')
       setCurrentStreaming('')
       setIsLoadingSentiment(false)
       setIsStreaming(false)
@@ -78,7 +78,7 @@ function RobotWidget({ message, sectionId, onError }) {
     
     // If we were streaming, complete the previous message first
     if (isStreamingRef.current && currentMessageRef.current) {
-      setMessages(prev => [...prev, currentMessageRef.current])
+      setCurrentMessage(currentMessageRef.current)
     }
 
     // Update refs before starting new stream
@@ -100,8 +100,8 @@ function RobotWidget({ message, sectionId, onError }) {
         charIndex++
         streamingTimeoutRef.current = setTimeout(streamChars, 30) // 30ms per character
       } else {
-        // Message complete, add to history
-        setMessages(prev => [...prev, message])
+        // Message complete, replace the current message
+        setCurrentMessage(message)
         setCurrentStreaming('')
         isStreamingRef.current = false
         setIsStreaming(false)
@@ -157,7 +157,7 @@ function RobotWidget({ message, sectionId, onError }) {
     if (!userScrolledUpRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages, currentStreaming, isExpanded])
+  }, [currentMessage, currentStreaming, isExpanded])
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded)
@@ -185,8 +185,8 @@ function RobotWidget({ message, sectionId, onError }) {
         charIndex++
         streamingTimeoutRef.current = setTimeout(streamChars, 30) // 30ms per character
       } else {
-        // Message complete
-        setMessages(prev => [...prev, text])
+        // Message complete - replace the current message
+        setCurrentMessage(text)
         setCurrentStreaming('')
         isStreamingRef.current = false
         setIsStreaming(false)
@@ -236,7 +236,7 @@ function RobotWidget({ message, sectionId, onError }) {
 
     // Complete any current streaming message
     if (isStreamingRef.current && currentStreaming && !isLoadingSentiment) {
-      setMessages(prev => [...prev, currentStreaming])
+      setCurrentMessage(currentStreaming)
       setCurrentStreaming('')
       isStreamingRef.current = false
       setIsStreaming(false)
@@ -345,12 +345,11 @@ function RobotWidget({ message, sectionId, onError }) {
     }
   }, [])
 
-  // For collapsed view: show streaming text if actively streaming, otherwise show last message
+  // For collapsed view: show streaming text if actively streaming, otherwise show current message
   // Don't show the message prop if we're about to stream it (isStreaming but currentStreaming is empty)
   const displayText = currentStreaming 
     ? currentStreaming 
-    : (messages.length > 0 ? messages[messages.length - 1] : ((!isStreaming && message) || 'Initializing...'))
-  const allMessages = [...messages]
+    : (currentMessage || ((!isStreaming && message) || 'Initializing...'))
   const isPerpFarmingSection = sectionId === 0
   // Show cursor only when actively streaming (has content and not loading sentiment)
   const isCurrentlyStreaming = currentStreaming && !isLoadingSentiment && isStreaming
@@ -407,29 +406,17 @@ function RobotWidget({ message, sectionId, onError }) {
         )}
         {isExpanded ? (
           <div className="message-history" ref={messageHistoryRef}>
-            {allMessages.map((msg, index) => (
-              <motion.div
-                key={index}
-                className="message-item"
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                {msg}
-              </motion.div>
-            ))}
-            {currentStreaming && !isLoadingSentiment && (
+            {currentMessage && !currentStreaming && (
               <motion.div
                 className="message-item"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                {currentStreaming}
-                <span className="cursor">|</span>
+                {currentMessage}
               </motion.div>
             )}
-            {isLoadingSentiment && (
+            {currentStreaming && (
               <motion.div
                 className="message-item"
                 initial={{ opacity: 0, y: 5 }}

@@ -77,6 +77,7 @@ function PerpFarming({ onBotMessageChange }) {
   const [positionSize, setPositionSize] = useState(10)
   const [strategy, setStrategy] = useState('range_trading')
   const [orderType, setOrderType] = useState('LIMIT') // 'LIMIT' or 'MARKET'
+  const [orderTimeout, setOrderTimeout] = useState(120) // Order timeout in seconds (default 120)
   const [smartMode, setSmartMode] = useState(true) // Smart Mode - active position management
   const [breakEvenMode, setBreakEvenMode] = useState(false)
   const [breakEvenLossTolerance, setBreakEvenLossTolerance] = useState(20) // Loss tolerance in dollars for breakeven mode
@@ -127,6 +128,7 @@ function PerpFarming({ onBotMessageChange }) {
         setPositionSize(settings.positionSize !== undefined ? settings.positionSize : 10)
         setStrategy(settings.strategy || 'range_trading')
         setOrderType(settings.orderType || 'LIMIT')
+        setOrderTimeout(settings.orderTimeout !== undefined ? settings.orderTimeout : 120)
         setSmartMode(settings.smartMode !== undefined ? settings.smartMode : true) // Default enabled
         setBreakEvenMode(settings.breakEvenMode || false)
         setBreakEvenLossTolerance(settings.breakEvenLossTolerance !== undefined ? settings.breakEvenLossTolerance : 20)
@@ -226,6 +228,7 @@ function PerpFarming({ onBotMessageChange }) {
         positionSize,
         strategy,
         orderType,
+        orderTimeout,
         smartMode,
         breakEvenMode,
         breakEvenLossTolerance,
@@ -1188,6 +1191,27 @@ function PerpFarming({ onBotMessageChange }) {
                     ? '📍 Uses server limit price. May not fill if price moves away.'
                     : '⚡ Instant fill at market price. Ignores server limit price and APEs in!'
                   }
+                </div>
+              </div>
+
+              <div className="risk-form-group">
+                <label className="risk-label">Limit Order Timeout: {orderTimeout}s</label>
+                <input
+                  type="range"
+                  min="30"
+                  max="300"
+                  step="30"
+                  value={orderTimeout}
+                  onChange={(e) => setOrderTimeout(parseInt(e.target.value))}
+                  className="risk-slider"
+                />
+                <div className="slider-labels">
+                  <span>30s</span>
+                  <span>150s</span>
+                  <span>300s</span>
+                </div>
+                <div className="strategy-description">
+                  ⏱️ Cancel unfilled LIMIT orders after this time to allow new signals
                 </div>
               </div>
 

@@ -518,7 +518,7 @@ The `OrderManager` service handles:
 - **WebSocket Integration**: Listens to server recommendations via WebSocket
 - **Order Placement**: Places LIMIT orders when server recommends entry
 - **Status Polling**: Checks order status every 4 seconds (within rate limits)
-- **Order Timeout**: Automatically cancels unfilled orders after 2 minutes to allow new signals
+- **Order Timeout**: Automatically cancels unfilled LIMIT orders after configurable timeout (30-300 seconds, default 120s)
 - **Position Monitoring**: Monitors positions for TP/SL triggers every 5 seconds
 - **Position Size Limits**: Enforces user-defined position size percentages
 - **Capital Limits**: Respects user-defined capital limits
@@ -533,9 +533,14 @@ In the Perp Farming section, users can configure:
 - **Stop Loss**: Percentage for automatic stop loss (0-100%)
 - **Position Size**: Percentage of capital per position (1-100%, default 10%)
   - Visual indicator: Green (1-50%) → Yellow (50-75%) → Red (75-100%)
-- **Trading Strategy**: Choose between two trading strategies:
+- **Order Type**: Choose between LIMIT (wait for specific price) or MARKET (instant fill)
+- **Limit Order Timeout**: Configurable timeout for unfilled LIMIT orders (30-300 seconds, default 120s)
+  - Automatically cancels stale orders to allow new signals
+  - Only applies to LIMIT orders (MARKET orders fill instantly)
+- **Trading Strategy**: Choose between trading strategies:
   - **Range Trading** (default): Mean-reversion strategy that trades bounces off 24h support/resistance levels
   - **Momentum**: LLM-powered trend-following strategy using GPT-5 analysis
+  - **Aggressive Reversion Scalping**: Ultra-fast 30-second signals optimized for 75x leverage
 
 All settings are stored in localStorage and persist across sessions.
 

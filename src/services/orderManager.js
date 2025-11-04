@@ -15,7 +15,7 @@ import AsterDexService from './dex/aster/AsterDexService'
 // Aster limit: 2400 requests/minute, so we can poll many orders safely
 const ORDER_POLL_INTERVAL = 4000 // 4 seconds
 const POSITION_CHECK_INTERVAL = 5000 // 5 seconds
-const ORDER_TIMEOUT = 120000 // 2 minutes - cancel unfilled orders after this time
+const DEFAULT_ORDER_TIMEOUT = 120000 // 2 minutes default - cancel unfilled orders after this time
 
 // Fees for PNL calculation
 const ENTRY_FEE = 0.0002 // 0.02%
@@ -28,6 +28,7 @@ export class OrderManager {
     this.activeOrders = new Map() // orderId -> order data
     this.activePositions = new Map() // symbol -> position data
     this.settings = null
+    this.orderTimeout = DEFAULT_ORDER_TIMEOUT // Configurable order timeout (milliseconds)
     
     // Polling intervals
     this.orderPollInterval = null
@@ -47,11 +48,17 @@ export class OrderManager {
    * @param {number} settings.stopLoss - Stop loss percentage
    * @param {number} settings.positionSize - Position size percentage (1-100)
    * @param {string} settings.orderType - Order type ('LIMIT' or 'MARKET')
+   * @param {number} settings.orderTimeout - Order timeout in seconds (default 120)
    */
   async initialize(settings) {
     this.settings = {
       ...settings,
       orderType: settings.orderType || 'LIMIT' // Default to LIMIT for safety
+    }
+
+    // Set configurable order timeout (convert seconds to milliseconds)
+    if (settings.orderTimeout !== undefined) {
+      this.orderTimeout = settings.orderTimeout * 1000 // Convert to milliseconds
     }
 
     // Initialize DEX service
@@ -372,7 +379,7 @@ export class OrderManager {
             await this.handleOrderFilled(orderId, order)
           }
           // Check if order has timed out (unfilled for too long)
-          else if (order.status === 'NEW' && (now - trackedOrder.createdAt) > ORDER_TIMEOUT) {
+          else if (order.status === 'NEW' && (now - trackedOrder.createdAt) > this.orderTimeout) {
             console.log(`[OrderManager] Order ${orderId} timed out after ${Math.floor((now - trackedOrder.createdAt) / 1000)}s - cancelling`)
             try {
               await this.dexService.cancelOrder(trackedOrder.symbol, orderId)

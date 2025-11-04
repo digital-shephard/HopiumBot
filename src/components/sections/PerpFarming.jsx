@@ -79,6 +79,7 @@ function PerpFarming({ onBotMessageChange }) {
   const [orderType, setOrderType] = useState('LIMIT') // 'LIMIT' or 'MARKET'
   const [orderTimeout, setOrderTimeout] = useState(120) // Order timeout in seconds (default 120)
   const [smartMode, setSmartMode] = useState(true) // Smart Mode - active position management
+  const [smartModeMinPnl, setSmartModeMinPnl] = useState(-50) // Minimum PNL before Smart Mode can exit (default -$50)
   const [breakEvenMode, setBreakEvenMode] = useState(false)
   const [breakEvenLossTolerance, setBreakEvenLossTolerance] = useState(20) // Loss tolerance in dollars for breakeven mode
   const [trailingBreakEven, setTrailingBreakEven] = useState(false)
@@ -130,6 +131,7 @@ function PerpFarming({ onBotMessageChange }) {
         setOrderType(settings.orderType || 'LIMIT')
         setOrderTimeout(settings.orderTimeout !== undefined ? settings.orderTimeout : 120)
         setSmartMode(settings.smartMode !== undefined ? settings.smartMode : true) // Default enabled
+        setSmartModeMinPnl(settings.smartModeMinPnl !== undefined ? settings.smartModeMinPnl : -50)
         setBreakEvenMode(settings.breakEvenMode || false)
         setBreakEvenLossTolerance(settings.breakEvenLossTolerance !== undefined ? settings.breakEvenLossTolerance : 20)
         setTrailingBreakEven(settings.trailingBreakEven || false)
@@ -230,6 +232,7 @@ function PerpFarming({ onBotMessageChange }) {
         orderType,
         orderTimeout,
         smartMode,
+        smartModeMinPnl,
         breakEvenMode,
         breakEvenLossTolerance,
         trailingBreakEven,
@@ -642,17 +645,25 @@ function PerpFarming({ onBotMessageChange }) {
               })
 
               if (exitDecision.shouldExit) {
-                console.log(`[PerpFarming] 🧠 Smart Mode EXIT triggered: ${exitDecision.reason}`)
+                // Check if current PNL is above minimum threshold
+                const currentNetPnl = lastPnlRef.current || 0
+                const minPnl = parseFloat(settings.smartModeMinPnl) || -50
                 
-                // Select random statement based on reason
-                const statement = getSmartModeStatement(exitDecision.reason)
-                setBotMessage(statement)
-                if (onBotMessageChange) onBotMessageChange(statement)
-                
-                // Close position
-                await orderManager.closePositionSmartMode(symbol, exitDecision.details)
-                
-                return // Exit early, don't process new entry
+                if (currentNetPnl >= minPnl) {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT triggered: ${exitDecision.reason} (PNL: $${currentNetPnl.toFixed(2)} >= min $${minPnl.toFixed(2)})`)
+                  
+                  // Select random statement based on reason
+                  const statement = getSmartModeStatement(exitDecision.reason)
+                  setBotMessage(statement)
+                  if (onBotMessageChange) onBotMessageChange(statement)
+                  
+                  // Close position
+                  await orderManager.closePositionSmartMode(symbol, exitDecision.details)
+                  
+                  return // Exit early, don't process new entry
+                } else {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT BLOCKED: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)} - letting normal TP/SL handle it`)
+                }
               }
             }
             
@@ -1001,6 +1012,22 @@ function PerpFarming({ onBotMessageChange }) {
                 <div className="breakeven-description">
                   Monitors confidence changes and exits early when signals weaken. Exits on: (1) Signal reversal, (2) Low confidence + 50% to SL, (3) 2 consecutive low signals.
                 </div>
+                {smartMode && (
+                  <div className="breakeven-tolerance-section" style={{ marginTop: '12px' }}>
+                    <label className="risk-label">Minimum PNL for Smart Exit</label>
+                    <input
+                      type="number"
+                      value={smartModeMinPnl}
+                      onChange={(e) => setSmartModeMinPnl(parseFloat(e.target.value) || -50)}
+                      className="risk-input"
+                      placeholder="-50"
+                      step="10"
+                    />
+                    <div className="breakeven-description">
+                      Smart Mode won't exit if Net PNL is below this threshold. Set to 0 to only exit at breakeven or better. Default: -$50
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="risk-form-group">

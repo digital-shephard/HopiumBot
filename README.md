@@ -116,6 +116,10 @@ npm run preview
         1. **Signal Reversal**: Exits immediately if market direction flips (LONG→SHORT or SHORT→LONG)
         2. **Low Confidence + 50% to Stop Loss**: Exits when confidence drops to low AND position is >50% toward stop loss
         3. **2 Consecutive Low Signals**: Exits after receiving 2 consecutive low confidence signals
+      - **Minimum PNL Threshold**: Configurable minimum Net PNL required before Smart Mode can exit (default: -$50)
+        - Set to 0 to only allow Smart Mode exits at breakeven or better
+        - Prevents Smart Mode from closing positions that are too far in the red
+        - Normal TP/SL still applies regardless of this threshold
       - **PNL Calculation**: Uses net PNL after fees (0.02% entry + 0.02% exit) for accurate risk assessment
       - **Bot Widget Integration**: Displays server reasoning and Smart Mode exit statements
         - Shows reasoning from server during normal operation

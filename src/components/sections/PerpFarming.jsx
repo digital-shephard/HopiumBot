@@ -542,25 +542,43 @@ function PerpFarming({ onBotMessageChange }) {
           try {
             console.log('[PerpFarming] Received range trading message:', message)
             
-            // Extract the actual summary data from the WebSocket message
-            // WebSocket sends: { type: "summary", fullMessage: { symbol, strategy, data: {...} } }
-            const summaryData = message?.fullMessage || message
+            // Handle two different message formats:
+            // Format 1 (subscription): { message, range_data, summary, symbol, timestamp }
+            // Format 2 (updates): { type: "summary", fullMessage: { symbol, strategy, data: {...} } }
             
-            // Defensive: ignore if malformed
-            if (!summaryData || !summaryData.data) {
-              console.log('[PerpFarming] No summary data found in message')
+            let summaryData
+            let rangeData
+            let summaryInfo
+            let symbol
+            
+            // Check if this is the wrapped format with fullMessage.data
+            if (message?.fullMessage?.data) {
+              summaryData = message.fullMessage
+              symbol = summaryData.symbol
+              rangeData = summaryData.data.range_data
+              summaryInfo = summaryData.data.summary
+            }
+            // Otherwise, assume direct format (subscription response)
+            else if (message?.summary) {
+              summaryData = message
+              symbol = message.symbol
+              rangeData = message.range_data
+              summaryInfo = message.summary
+            }
+            else {
+              console.log('[PerpFarming] Unrecognized message format:', message)
               return
             }
             
-            console.log('[PerpFarming] Extracted summary data:', summaryData)
+            console.log('[PerpFarming] Extracted summary data:', { symbol, rangeData, summaryInfo })
             
-            // Update symbol from summary
-            if (summaryData.symbol) {
-              setTradingSymbol(summaryData.symbol)
+            // Update symbol
+            if (symbol) {
+              setTradingSymbol(symbol)
             }
             
             // Update bot message with reasoning if available
-            const reasoning = summaryData.data?.summary?.entry?.reasoning || 'Analyzing market conditions...'
+            const reasoning = summaryInfo?.entry?.reasoning || 'Analyzing market conditions...'
             setBotMessage(reasoning)
             if (onBotMessageChange) onBotMessageChange(reasoning)
             

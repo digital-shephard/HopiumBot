@@ -519,6 +519,7 @@ The `OrderManager` service handles:
 - **Order Placement**: Places LIMIT orders when server recommends entry
 - **Status Polling**: Checks order status every 4 seconds (within rate limits)
 - **Order Timeout**: Automatically cancels unfilled LIMIT orders after configurable timeout (30-300 seconds, default 120s)
+- **Smart Order Replacement**: When a new signal arrives with an existing unfilled order, automatically cancels the old order and places the new one (responsive to changing market conditions)
 - **Position Monitoring**: Monitors positions for TP/SL triggers every 5 seconds
 - **Position Size Limits**: Enforces user-defined position size percentages
 - **Capital Limits**: Respects user-defined capital limits
@@ -537,6 +538,7 @@ In the Perp Farming section, users can configure:
 - **Limit Order Timeout**: Configurable timeout for unfilled LIMIT orders (30-300 seconds, default 120s)
   - Automatically cancels stale orders to allow new signals
   - Only applies to LIMIT orders (MARKET orders fill instantly)
+  - Note: If a new signal arrives before timeout, old order is cancelled immediately
 - **Trading Strategy**: Choose between trading strategies:
   - **Range Trading** (default): Mean-reversion strategy that trades bounces off 24h support/resistance levels
   - **Momentum**: LLM-powered trend-following strategy using GPT-5 analysis

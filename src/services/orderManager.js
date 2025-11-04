@@ -264,12 +264,20 @@ export class OrderManager {
         return
       }
 
-      // Skip if there are already open orders
+      // Cancel any existing unfilled orders for this symbol (new signal = new conditions)
       const openOrders = await this.dexService.getOpenOrders(symbol)
       console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
       if (openOrders.length > 0) {
-        console.log('[OrderManager] Open orders exist, skipping')
-        return
+        console.log('[OrderManager] Cancelling existing unfilled orders to place new signal')
+        for (const order of openOrders) {
+          try {
+            await this.dexService.cancelOrder(symbol, order.orderId)
+            this.activeOrders.delete(order.orderId)
+            console.log(`[OrderManager] Cancelled order ${order.orderId}`)
+          } catch (error) {
+            console.error(`[OrderManager] Failed to cancel order ${order.orderId}:`, error)
+          }
+        }
       }
 
       // Calculate position size - USE CAPITAL % AS MARGIN

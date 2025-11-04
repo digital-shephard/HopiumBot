@@ -74,6 +74,25 @@ export class HopiumWebSocketClient {
   onScalpIndicator = null
 
   /**
+   * Called when a momentum indicator message is received
+   * @type {Function}
+   * @param {Object} data - Momentum indicator data
+   * @param {string} data.symbol - Trading pair symbol
+   * @param {number} data.current_price - Current market price
+   * @param {string} data.trend_1h - 1-hour trend ('UP', 'DOWN', 'NEUTRAL')
+   * @param {string} data.trend_4h - 4-hour trend ('UP', 'DOWN', 'NEUTRAL')
+   * @param {string} data.trend_alignment - Trend alignment ('ALIGNED', 'CONFLICTED', 'NEUTRAL')
+   * @param {string} data.side - Trading direction ('LONG', 'SHORT', 'NEUTRAL')
+   * @param {number} data.limit_price - Recommended limit order price
+   * @param {number} data.tp_price - Take profit price
+   * @param {number} data.sl_price - Stop loss price
+   * @param {string} data.confidence - Confidence level ('high', 'medium', 'low')
+   * @param {number} data.confluence_score - Confluence score (0-7)
+   * @param {string} data.reasoning - Strategy reasoning
+   */
+  onMomentumIndicator = null
+
+  /**
    * Called when an alert message is received
    * @type {Function}
    * @param {Object} data - Alert message data
@@ -492,6 +511,22 @@ export class HopiumWebSocketClient {
           
           // Pass the full message structure (contains symbol, strategy, and data)
           this.onScalpIndicator(scalpMessage)
+        }
+        break
+
+      case 'momentum_indicator':
+        if (this.onMomentumIndicator) {
+          // Server sends momentum data in fullMessage.data (similar to scalp_indicator)
+          console.log('[WebSocket] Received momentum_indicator:', message)
+          
+          // Extract data from fullMessage structure
+          const momentumMessage = message.fullMessage || message.message || message.payload || message
+          const momentumData = momentumMessage?.data || momentumMessage
+          
+          console.log('[WebSocket] Extracted momentum data:', momentumData)
+          
+          // Pass the full message structure (contains symbol, strategy, and data)
+          this.onMomentumIndicator(momentumMessage)
         }
         break
 

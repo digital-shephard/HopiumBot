@@ -545,19 +545,24 @@ function PerpFarming({ onBotMessageChange }) {
           try {
             console.log('[PerpFarming] Received range trading data:', summaryData)
             
-            // WebSocket client already extracted the data from fullMessage
-            // Now it's in format: { symbol, strategy, data: { range_data, summary } }
+            // New format: { symbol, strategy, payload: { summary, timestamp, range_1h, range_4h, range_24h, volume_profile, key_levels, tp_price, sl_price, risk_reward, confluence_score, range_data } }
             
             // Defensive: ignore if malformed
-            if (!summaryData || !summaryData.data) {
-              console.log('[PerpFarming] No data found in summary message')
+            if (!summaryData || !summaryData.payload) {
+              console.log('[PerpFarming] No payload found in summary message')
               return
             }
             
-            const { symbol, data } = summaryData
-            const { range_data, summary } = data
+            const { symbol, payload } = summaryData
+            const { summary, range_data, range_1h, range_4h, range_24h } = payload
             
-            console.log('[PerpFarming] Parsed summary:', { symbol, range_data, summary })
+            console.log('[PerpFarming] Parsed range trading summary:', { 
+              symbol, 
+              side: summary?.entry?.side,
+              severity: summary?.severity,
+              confluence_score: payload?.confluence_score,
+              range_24h 
+            })
             
             // Update symbol
             if (symbol) {
@@ -568,6 +573,12 @@ function PerpFarming({ onBotMessageChange }) {
             const reasoning = summary?.entry?.reasoning || 'Analyzing market conditions...'
             setBotMessage(reasoning)
             if (onBotMessageChange) onBotMessageChange(reasoning)
+            
+            // Skip NEUTRAL signals (safety filters blocked trading)
+            if (summary?.entry?.side === 'NEUTRAL') {
+              console.log('[PerpFarming] NEUTRAL signal (safety filter), skipping')
+              return
+            }
             
             // Check if position exists before opening new one
             const status = orderManager.getStatus()
@@ -685,6 +696,113 @@ function PerpFarming({ onBotMessageChange }) {
             }
           } catch (error) {
             handleError(`Failed to handle scalp signal: ${error.message}`)
+          }
+        }
+        
+        // Handle momentum strategy signals
+        wsClient.onMomentumIndicator = async (message) => {
+          try {
+            console.log('[PerpFarming] Received momentum message:', message)
+            
+            // Extract the actual momentum data
+            // WebSocket sends the data in message.data
+            const momentumData = message?.data || message
+            
+            // Defensive: ignore if malformed
+            if (!momentumData) {
+              console.log('[PerpFarming] No momentum data found in message')
+              return
+            }
+            
+            console.log('[PerpFarming] Extracted momentum data:', momentumData)
+
+            // Update bot message with server reasoning (always)
+            const reasoning = momentumData.reasoning || 'Calling home for some data...'
+            setBotMessage(reasoning)
+            if (onBotMessageChange) onBotMessageChange(reasoning)
+
+            // Update symbol
+            if (momentumData.symbol) {
+              setTradingSymbol(momentumData.symbol)
+            }
+            
+            // Only process LONG/SHORT signals when trends are ALIGNED
+            if (momentumData.side === 'NEUTRAL' || momentumData.trend_alignment === 'CONFLICTED') {
+              console.log('[PerpFarming] NEUTRAL/CONFLICTED signal, skipping')
+              return
+            }
+            
+            // Check if position exists before opening new one
+            const status = orderManager.getStatus()
+            const hasActivePosition = status.activePositions && status.activePositions.length > 0
+            
+            console.log('[PerpFarming] Momentum position check:', {
+              hasActivePosition,
+              confidence: momentumData.confidence,
+              side: momentumData.side,
+              trend_alignment: momentumData.trend_alignment,
+              confluence_score: momentumData.confluence_score,
+              activePositions: status.activePositions
+            })
+
+            // If position exists, check Smart Mode exit conditions
+            if (hasActivePosition && settings.smartMode) {
+              console.log('[PerpFarming] 🧠 Smart Mode: Checking exit conditions')
+              
+              // Add signal to position history
+              const symbol = momentumData.symbol
+              orderManager.addSignalToHistory(symbol, {
+                confidence: momentumData.confidence,
+                side: momentumData.side
+              })
+
+              // Check Smart Mode exit conditions
+              const exitDecision = await orderManager.checkSmartModeExit(symbol, {
+                confidence: momentumData.confidence,
+                side: momentumData.side
+              })
+
+              if (exitDecision.shouldExit) {
+                // Check if current PNL is above minimum threshold
+                const currentNetPnl = lastPnlRef.current || 0
+                const minPnl = parseFloat(settings.smartModeMinPnl) || -50
+                
+                if (currentNetPnl >= minPnl) {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT triggered: ${exitDecision.reason} (PNL: $${currentNetPnl.toFixed(2)} >= min $${minPnl.toFixed(2)})`)
+                  
+                  // Select random statement based on reason
+                  const statement = getSmartModeStatement(exitDecision.reason)
+                  setBotMessage(statement)
+                  if (onBotMessageChange) onBotMessageChange(statement)
+                  
+                  // Close position
+                  await orderManager.closePositionSmartMode(symbol, exitDecision.details)
+                  
+                  return // Exit early, don't process new entry
+                } else {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT BLOCKED: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)} - letting normal TP/SL handle it`)
+                }
+              }
+            }
+            
+            // Accept both high and medium confidence signals for entry
+            const shouldTrade = momentumData.confidence === 'high' || momentumData.confidence === 'medium'
+            
+            if (!hasActivePosition && shouldTrade) {
+              console.log(`[PerpFarming] 🎯 Processing ${momentumData.confidence.toUpperCase()} confidence ${momentumData.side} momentum signal @ $${momentumData.limit_price}`)
+              if (typeof orderManager.handleMomentumSignal === 'function') {
+                await orderManager.handleMomentumSignal(momentumData)
+                console.log('[PerpFarming] ✅ Momentum order placement attempted')
+              } else {
+                console.error('[PerpFarming] handleMomentumSignal is not a function!')
+              }
+            } else if (hasActivePosition) {
+              console.log('[PerpFarming] ⏭️ Skipping momentum signal - active position exists')
+            } else {
+              console.log(`[PerpFarming] ⏭️ Skipping momentum signal - low confidence (${momentumData.confidence})`)
+            }
+          } catch (error) {
+            handleError(`Failed to handle momentum signal: ${error.message}`)
           }
         }
         

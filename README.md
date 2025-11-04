@@ -109,7 +109,8 @@ npm run preview
   - **Perps Bot**: Automated perpetual futures trading
     - **Risk Settings Modal**: Configure Aster API credentials, capital limits, Take Profit, Stop Loss, and Position Size
       - Fixed scrollbar clipping issue with proper container structure and overflow handling
-    - **Smart Mode** 🧠: Active position management for capital preservation (enabled by default)
+    - **Exit Strategy Modes**:
+      - **Smart Mode** 🧠: Active position management for capital preservation (enabled by default)
       - **Confidence Monitoring**: Continuously monitors server confidence (high/medium/low) for open positions
       - **Early Exit Conditions**:
         1. **Signal Reversal**: Exits immediately if market direction flips (LONG→SHORT or SHORT→LONG)
@@ -122,6 +123,16 @@ npm run preview
         - Statements persist until next signal for clarity
       - **Signal History Tracking**: Tracks last 5 signals per position for pattern detection
       - **Disable Option**: Can be toggled off for manual TP/SL-only management
+      - **Simple Break-Even Mode** 💰: Volume farming mode with loss tolerance
+        - Closes positions when Net PNL ≥ $0 (after fees)
+        - **Loss Tolerance**: Configurable tolerance (default: $20) for accepting near-breakeven exits
+        - **Smart Exit Logic**: If PnL gets close to breakeven (e.g., -$15) then falls back into loss, it will close the position when it returns within the tolerance threshold (e.g., -$12 with -$20 tolerance)
+        - Tracks best (closest to breakeven) PnL achieved and closes if current PnL is within tolerance
+        - Perfect for minimizing risk while accumulating trading volume
+      - **Trailing Break-Even Mode** 📈: Dynamic profit protection
+        - Trails stop-loss from peak profit to lock in gains
+        - Configurable activation threshold (2x/3x/5x fees, $50, $100)
+        - Configurable trailing distance (5%, 10%, 15%, 20%)
     - **Automated Trading**: Connects to WebSocket for real-time market recommendations
     - **Order Management**: Automatically places orders, monitors positions, and enforces TP/SL
     - Settings are saved to localStorage and persist across sessions

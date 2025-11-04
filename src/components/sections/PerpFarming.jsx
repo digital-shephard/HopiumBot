@@ -79,6 +79,7 @@ function PerpFarming({ onBotMessageChange }) {
   const [orderType, setOrderType] = useState('LIMIT') // 'LIMIT' or 'MARKET'
   const [smartMode, setSmartMode] = useState(true) // Smart Mode - active position management
   const [breakEvenMode, setBreakEvenMode] = useState(false)
+  const [breakEvenLossTolerance, setBreakEvenLossTolerance] = useState(20) // Loss tolerance in dollars for breakeven mode
   const [trailingBreakEven, setTrailingBreakEven] = useState(false)
   const [trailingActivation, setTrailingActivation] = useState('3x_fees') // '2x_fees', '3x_fees', '5x_fees', '$50', '$100'
   const [trailingDistance, setTrailingDistance] = useState('10') // '5', '10', '15', '20' (percentage)
@@ -108,6 +109,7 @@ function PerpFarming({ onBotMessageChange }) {
   const lastPnlRef = useRef(0)
   const peakPnlRef = useRef(0)
   const trailingStopRef = useRef(0)
+  const bestBreakEvenPnlRef = useRef(Number.NEGATIVE_INFINITY) // Track best (closest to 0) PnL for breakeven loss tolerance
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -127,6 +129,7 @@ function PerpFarming({ onBotMessageChange }) {
         setOrderType(settings.orderType || 'LIMIT')
         setSmartMode(settings.smartMode !== undefined ? settings.smartMode : true) // Default enabled
         setBreakEvenMode(settings.breakEvenMode || false)
+        setBreakEvenLossTolerance(settings.breakEvenLossTolerance !== undefined ? settings.breakEvenLossTolerance : 20)
         setTrailingBreakEven(settings.trailingBreakEven || false)
         setTrailingActivation(settings.trailingActivation || '3x_fees')
         setTrailingDistance(settings.trailingDistance || '10')
@@ -225,6 +228,7 @@ function PerpFarming({ onBotMessageChange }) {
         orderType,
         smartMode,
         breakEvenMode,
+        breakEvenLossTolerance,
         trailingBreakEven,
         trailingActivation,
         trailingDistance
@@ -471,11 +475,31 @@ function PerpFarming({ onBotMessageChange }) {
                 }
               }
               // Check simple break-even mode (volume farming)
-              else if (settings.breakEvenMode && netPnl >= 0) {
-                console.log(`Break-even hit: Net PNL $${netPnl.toFixed(2)} >= $0 (after fees)`)
-                // Close all positions at break-even
-                for (const position of status.activePositions) {
-                  await closePosition(orderManager, position.symbol, netPnl)
+              else if (settings.breakEvenMode) {
+                // Track the best (closest to 0 or positive) PnL achieved
+                if (netPnl > bestBreakEvenPnlRef.current) {
+                  bestBreakEvenPnlRef.current = netPnl
+                }
+                
+                // Close if:
+                // 1. PnL is positive (at or above breakeven), OR
+                // 2. PnL is within loss tolerance AND we've previously been closer to breakeven
+                const lossTolerance = parseFloat(settings.breakEvenLossTolerance) || 20
+                const withinTolerance = netPnl >= -lossTolerance
+                const previouslyWasCloser = bestBreakEvenPnlRef.current > netPnl
+                
+                if (netPnl >= 0) {
+                  console.log(`Break-even hit: Net PNL $${netPnl.toFixed(2)} >= $0 (after fees)`)
+                  // Close all positions at break-even
+                  for (const position of status.activePositions) {
+                    await closePosition(orderManager, position.symbol, netPnl)
+                  }
+                } else if (withinTolerance && previouslyWasCloser) {
+                  console.log(`Break-even loss tolerance hit: Net PNL $${netPnl.toFixed(2)} (was $${bestBreakEvenPnlRef.current.toFixed(2)}) within tolerance -$${lossTolerance}`)
+                  // Close all positions - we were closer to breakeven before and are now within acceptable loss
+                  for (const position of status.activePositions) {
+                    await closePosition(orderManager, position.symbol, netPnl)
+                  }
                 }
               }
             }
@@ -489,6 +513,7 @@ function PerpFarming({ onBotMessageChange }) {
             lastPositionCountRef.current = 0
             peakPnlRef.current = 0
             trailingStopRef.current = 0
+            bestBreakEvenPnlRef.current = Number.NEGATIVE_INFINITY
           }
         } catch (error) {
           console.error('Error polling PNL:', error)
@@ -1207,9 +1232,26 @@ function PerpFarming({ onBotMessageChange }) {
                   </span>
                 </label>
                 {breakEvenMode && !trailingBreakEven && (
-                  <div className="breakeven-description">
-                    💰 Closes at Net PNL ≥ $0. Minimizes risk, maximizes volume.
-                  </div>
+                  <>
+                    <div className="breakeven-description">
+                      💰 Closes at Net PNL ≥ $0. Minimizes risk, maximizes volume.
+                    </div>
+                    <div className="breakeven-tolerance-section">
+                      <label className="risk-label">Loss Tolerance</label>
+                      <input
+                        type="number"
+                        value={breakEvenLossTolerance}
+                        onChange={(e) => setBreakEvenLossTolerance(parseFloat(e.target.value) || 0)}
+                        className="risk-input"
+                        placeholder="20"
+                        min="0"
+                        step="5"
+                      />
+                      <div className="breakeven-description">
+                        If PnL gets close to breakeven then falls back, will close when it returns within -${breakEvenLossTolerance}
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 {/* Trailing Break-Even Option */}

@@ -936,20 +936,21 @@ function PerpFarming({ onBotMessageChange }) {
               <div className="risk-modal-content">
               
               {/* Smart Mode Checkbox - At the very top */}
-              <div className="risk-form-group" style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+              <div className="risk-form-group smart-mode-section">
+                <label className="risk-label">Smart Mode</label>
+                <label className="breakeven-option">
                   <input
                     type="checkbox"
                     checked={smartMode}
                     onChange={(e) => setSmartMode(e.target.checked)}
-                    style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+                    className="breakeven-radio"
                   />
-                  <span style={{ fontSize: '16px', fontWeight: '500' }}>
-                    🧠 Smart Mode - Actively manage positions based on confidence changes
+                  <span className="breakeven-option-text">
+                    🧠 Active Position Management
                   </span>
                 </label>
-                <div style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.6)', marginTop: '8px', marginLeft: '28px' }}>
-                  Exit positions early if confidence drops or signal reverses (capital preservation)
+                <div className="breakeven-description">
+                  Monitors confidence changes and exits early when signals weaken. Exits on: (1) Signal reversal, (2) Low confidence + 50% to SL, (3) 2 consecutive low signals.
                 </div>
               </div>
 

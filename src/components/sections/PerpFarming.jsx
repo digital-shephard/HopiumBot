@@ -538,19 +538,38 @@ function PerpFarming({ onBotMessageChange }) {
           setTradingSymbol(symbol)
         }
         
-        wsClient.onSummary = async (data) => {
+        wsClient.onSummary = async (message) => {
           try {
-            // Update symbol from summary if available (fallback)
-            if (data.symbol) {
-              setTradingSymbol(data.symbol)
+            console.log('[PerpFarming] Received range trading message:', message)
+            
+            // Extract the actual summary data from the WebSocket message
+            // WebSocket sends: { type: "summary", fullMessage: { symbol, strategy, data: {...} } }
+            const summaryData = message?.fullMessage || message
+            
+            // Defensive: ignore if malformed
+            if (!summaryData || !summaryData.data) {
+              console.log('[PerpFarming] No summary data found in message')
+              return
             }
+            
+            console.log('[PerpFarming] Extracted summary data:', summaryData)
+            
+            // Update symbol from summary
+            if (summaryData.symbol) {
+              setTradingSymbol(summaryData.symbol)
+            }
+            
+            // Update bot message with reasoning if available
+            const reasoning = summaryData.data?.summary?.entry?.reasoning || 'Analyzing market conditions...'
+            setBotMessage(reasoning)
+            if (onBotMessageChange) onBotMessageChange(reasoning)
             
             // Check if position exists before opening new one
             const status = orderManager.getStatus()
             const hasActivePosition = status.activePositions && status.activePositions.length > 0
             
             if (!hasActivePosition) {
-              await orderManager.handleSummary(data)
+              await orderManager.handleSummary(summaryData)
             } else {
               console.log('Skipping signal - active position exists')
             }

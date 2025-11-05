@@ -11,9 +11,9 @@
 
 import AsterDexService from './dex/aster/AsterDexService'
 
-// Rate limiting: Poll every 4 seconds (15 requests/minute per order)
+// Rate limiting: Poll every 2 seconds (30 requests/minute per order)
 // Aster limit: 2400 requests/minute, so we can poll many orders safely
-const ORDER_POLL_INTERVAL = 4000 // 4 seconds
+const ORDER_POLL_INTERVAL = 2000 // 2 seconds (faster for order timeout checks)
 const POSITION_CHECK_INTERVAL = 5000 // 5 seconds
 const DEFAULT_ORDER_TIMEOUT = 120000 // 2 minutes default - cancel unfilled orders after this time
 
@@ -528,14 +528,24 @@ export class OrderManager {
             await this.handleOrderFilled(orderId, order)
           }
           // Check if order has timed out (unfilled for too long)
-          else if (order.status === 'NEW' && (now - trackedOrder.createdAt) > this.orderTimeout) {
-            console.log(`[OrderManager] Order ${orderId} timed out after ${Math.floor((now - trackedOrder.createdAt) / 1000)}s - cancelling`)
-            try {
-              await this.dexService.cancelOrder(trackedOrder.symbol, orderId)
-              this.activeOrders.delete(orderId)
-              console.log(`[OrderManager] Order ${orderId} cancelled successfully`)
-            } catch (error) {
-              console.error(`[OrderManager] Failed to cancel order ${orderId}:`, error)
+          else if (order.status === 'NEW') {
+            const ageSeconds = Math.floor((now - trackedOrder.createdAt) / 1000)
+            const timeoutSeconds = Math.floor(this.orderTimeout / 1000)
+            
+            if ((now - trackedOrder.createdAt) > this.orderTimeout) {
+              console.log(`[OrderManager] ⏱️ Order ${orderId} TIMED OUT: ${ageSeconds}s elapsed (timeout: ${timeoutSeconds}s) - cancelling`)
+              try {
+                await this.dexService.cancelOrder(trackedOrder.symbol, orderId)
+                this.activeOrders.delete(orderId)
+                console.log(`[OrderManager] ✅ Order ${orderId} cancelled successfully`)
+              } catch (error) {
+                console.error(`[OrderManager] ❌ Failed to cancel order ${orderId}:`, error)
+              }
+            } else {
+              // Log occasionally to show it's being monitored
+              if (ageSeconds % 10 === 0 && ageSeconds > 0) {
+                console.log(`[OrderManager] ⏳ Order ${orderId} waiting: ${ageSeconds}s / ${timeoutSeconds}s`)
+              }
             }
           }
         }

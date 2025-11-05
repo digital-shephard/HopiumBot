@@ -289,6 +289,67 @@
   }
 }
 
+/* Adjust positioning on landscape/wide screens with short height (iPad Air landscape, etc) */
+@media (min-width: 481px) and (max-height: 849px) {
+  .equity-display {
+    margin-left: -100%;
+    left: 10px;
+  }
+}
+
+/* Adjust positioning on tall narrow screens (iPhone XR, 12 Pro, etc with height > 850px) */
+@media (max-width: 480px) and (min-height: 850px) {
+  .equity-display {
+    top: 75%;
+    margin-left: -60%;
+    align-items: flex-start;
+  }
+  
+  .equity-label {
+    font-size: 11px;
+  }
+  
+  .equity-amount {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+}
+
+/* Adjust positioning on short narrow screens */
+@media (max-width: 480px) and (max-height: 849px) {
+  .equity-display {
+    top: 70%;
+    left: 10px;
+    align-items: flex-start;
+  }
+  
+  .equity-label {
+    font-size: 11px;
+  }
+  
+  .equity-amount {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+}
+
+/* Extra small screens (iPhone SE) */
+@media (max-width: 375px) {
+  .equity-display {
+    margin-left: -30%;
+    left: 5px;
+  }
+  
+  .equity-label {
+    font-size: 10px;
+  }
+  
+  .equity-amount {
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+}
+
 .equity-label {
   font-size: 16px;
   font-weight: bold;
@@ -365,6 +426,67 @@
   }
 }
 
+/* Adjust positioning on landscape/wide screens with short height (iPad Air landscape, etc) */
+@media (min-width: 481px) and (max-height: 849px) {
+  .pnl-display {
+    margin-right: -100%;
+    right: 10px;
+  }
+}
+
+/* Adjust positioning on tall narrow screens (iPhone XR, 12 Pro, etc with height > 850px) */
+@media (max-width: 480px) and (min-height: 850px) {
+  .pnl-display {
+    top: 75%;
+    margin-right: -60%;
+    align-items: flex-end;
+  }
+  
+  .pnl-label {
+    font-size: 11px;
+  }
+  
+  .pnl-amount {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+}
+
+/* Adjust positioning on short narrow screens */
+@media (max-width: 480px) and (max-height: 849px) {
+  .pnl-display {
+    top: 70%;
+    right: 10px;
+    align-items: flex-end;
+  }
+  
+  .pnl-label {
+    font-size: 11px;
+  }
+  
+  .pnl-amount {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+}
+
+/* Extra small screens (iPhone SE) */
+@media (max-width: 375px) {
+  .pnl-display {
+    margin-right: -30%;
+    right: 5px;
+  }
+  
+  .pnl-label {
+    font-size: 10px;
+  }
+  
+  .pnl-amount {
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+}
+
 .pnl-label {
   font-size: 16px;
   font-weight: bold;
@@ -417,6 +539,22 @@
   color: rgba(255, 215, 0, 0.5);
   margin-top: 5px;
   letter-spacing: 1px;
+}
+
+/* Adjust fees display on small screens */
+@media (max-width: 480px) {
+  .fees-display {
+    font-size: 9px;
+    margin-top: 3px;
+  }
+}
+
+@media (max-width: 375px) {
+  .fees-display {
+    font-size: 8px;
+    margin-top: 2px;
+    letter-spacing: 0.5px;
+  }
 }
 
 @keyframes fadeInRight {

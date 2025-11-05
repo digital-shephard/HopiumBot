@@ -177,6 +177,10 @@ npm run preview
 - **Connect Wallet**: WalletConnect integration widget in the top right corner
 - **Buttery Smooth Animations**: Powered by Framer Motion for silky transitions
 - **Mobile Responsive**: Fully responsive design with touch swipe gestures for carousel navigation
+  - **Perp Farming Displays**: Equity and PnL displays dynamically reposition on small screens (iPhone SE and smaller)
+    - Capital display moves to far left edge with optimized font sizes
+    - Net PNL display moves to far right edge with optimized font sizes
+    - Prevents overlap with circle container on narrow screens
 - **Touch Gestures**: Swipe left/right to navigate between sections on mobile devices
 - **Adaptive Navigation**: 
   - **Desktop/Large Screens**: Bottom carousel indicators for section navigation

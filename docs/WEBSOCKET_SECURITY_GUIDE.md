@@ -270,6 +270,428 @@ Connection limit exceeded: maximum 3 connections per user
 
 ---
 
+## 📡 **Strategy Message Formats**
+
+### **Overview of Strategies**
+
+| Strategy | ID | Update Frequency | Message Type | Use Case |
+|----------|----|-----------------|--------------| ---------|
+| **Range Trading** | `range_trading` | Every 1 minute | `summary` | Multi-TF + volume profile + 6-layer confluence |
+| **Momentum** | `momentum` | Every 1 minute | `momentum_indicator` | Directional scalping (trend-aligned volume farming) |
+| **Scalp** | `scalp` | Every 30 seconds | `scalp_indicator` | High-frequency volume farming @ 75x |
+
+---
+
+### **🎯 Scalp Strategy** (High-Frequency Volume Farming)
+
+**Subscribe:**
+```javascript
+ws.send(JSON.stringify({
+  type: 'subscribe',
+  symbol: 'BTCUSDT',
+  strategy: 'scalp'
+}));
+```
+
+**Message Format:**
+```typescript
+{
+  type: "scalp_indicator",
+  symbol: "BTCUSDT",
+  strategy: "scalp",
+  data: {
+    symbol: string;
+    timestamp: string;              // ISO 8601
+    current_price: number;
+    ema_1min: number;              // 1-minute EMA
+    side: "LONG" | "SHORT" | "NEUTRAL";
+    limit_price: number;           // 0 if NEUTRAL
+    tp_price: number;              // 0 if NEUTRAL
+    sl_price: number;              // 0 if NEUTRAL
+    tp_percent: 0.15;              // Always 0.15%
+    sl_percent: 0.10;              // Always 0.10%
+    confidence: "high" | "medium" | "low";
+    reasoning: string;
+    expected_hold_minutes: 2;      // 1-3 minutes
+    range_high_5min: number;
+    range_low_5min: number;
+    position_in_range: number;     // 0.0 to 1.0
+  }
+}
+```
+
+**Update Frequency:** Every 30 seconds
+
+**Signal Types:**
+
+**1. LONG Signal** (Price below EMA):
+```json
+{
+  "type": "scalp_indicator",
+  "symbol": "BTCUSDT",
+  "strategy": "scalp",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-03T13:30:00Z",
+    "current_price": 107500.00,
+    "ema_1min": 107525.00,
+    "side": "LONG",
+    "limit_price": 107478.50,
+    "tp_price": 107661.25,
+    "sl_price": 107392.50,
+    "tp_percent": 0.15,
+    "sl_percent": 0.10,
+    "confidence": "high",
+    "reasoning": "Price 0.02% below EMA (107525.00). Mean reversion opportunity. Price in bottom 30% of 5min range.",
+    "expected_hold_minutes": 2,
+    "range_high_5min": 107650.00,
+    "range_low_5min": 107450.00,
+    "position_in_range": 0.25
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (data.side === 'LONG' && data.confidence === 'high') {
+  // Place limit buy at 107478.50
+  // Set TP at 107661.25 (+0.15%)
+  // Set SL at 107392.50 (-0.10%)
+}
+```
+
+**2. SHORT Signal** (Price above EMA):
+```json
+{
+  "type": "scalp_indicator",
+  "symbol": "BTCUSDT",
+  "strategy": "scalp",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-03T13:30:30Z",
+    "current_price": 107550.00,
+    "ema_1min": 107525.00,
+    "side": "SHORT",
+    "limit_price": 107571.50,
+    "tp_price": 107388.75,
+    "sl_price": 107657.50,
+    "tp_percent": 0.15,
+    "sl_percent": 0.10,
+    "confidence": "high",
+    "reasoning": "Price 0.02% above EMA (107525.00). Mean reversion opportunity. Price in top 30% of 5min range.",
+    "expected_hold_minutes": 2,
+    "range_high_5min": 107600.00,
+    "range_low_5min": 107450.00,
+    "position_in_range": 0.75
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (data.side === 'SHORT' && data.confidence === 'high') {
+  // Place limit sell at 107571.50
+  // Set TP at 107388.75 (-0.15%)
+  // Set SL at 107657.50 (+0.10%)
+}
+```
+
+**3. NEUTRAL Signal** (Price near EMA - NO TRADE):
+```json
+{
+  "type": "scalp_indicator",
+  "symbol": "BTCUSDT",
+  "strategy": "scalp",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-03T13:31:00Z",
+    "current_price": 107525.00,
+    "ema_1min": 107526.00,
+    "side": "NEUTRAL",
+    "limit_price": 0,
+    "tp_price": 0,
+    "sl_price": 0,
+    "tp_percent": 0.15,
+    "sl_percent": 0.10,
+    "confidence": "low",
+    "reasoning": "Price trading at EMA (deviation: 0.00%). Waiting for clearer setup.",
+    "expected_hold_minutes": 2,
+    "range_high_5min": 107600.00,
+    "range_low_5min": 107450.00,
+    "position_in_range": 0.50
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (data.side === 'NEUTRAL') {
+  // Do nothing - wait for next signal
+  // Price is too close to EMA for an edge
+}
+```
+
+**Complete Frontend Handler:**
+```javascript
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  
+  if (msg.type === 'scalp_indicator') {
+    const { data } = msg;
+    
+    console.log(`[SCALP] ${data.side} @ $${data.current_price} (EMA: $${data.ema_1min})`);
+    
+    switch(data.side) {
+      case 'LONG':
+        if (data.confidence === 'high') {
+          placeLimitBuy({
+            symbol: data.symbol,
+            price: data.limit_price,
+            takeProfit: data.tp_price,
+            stopLoss: data.sl_price
+          });
+        }
+        break;
+        
+      case 'SHORT':
+        if (data.confidence === 'high') {
+          placeLimitSell({
+            symbol: data.symbol,
+            price: data.limit_price,
+            takeProfit: data.tp_price,
+            stopLoss: data.sl_price
+          });
+        }
+        break;
+        
+      case 'NEUTRAL':
+        // Wait for next signal (comes in 30 seconds)
+        console.log('Waiting for setup...', data.reasoning);
+        break;
+    }
+  }
+};
+```
+
+**Key Points:**
+- ✅ **Always broadcasts** every 30 seconds (even NEUTRAL)
+- ✅ **Prices are 0** when side is NEUTRAL (ignore these signals)
+- ✅ **High confidence** means price is also in extreme 5-min range
+- ✅ **Expected 50-80 signals/hour** for LONG/SHORT (rest are NEUTRAL)
+- ✅ **Optimized for 75x leverage** (0.15% TP = 11% gain, 0.10% SL = 7.5% loss)
+
+---
+
+### **📊 Range Trading Strategy** ⚡ **ENHANCED**
+
+**Subscribe:**
+```javascript
+ws.send(JSON.stringify({
+  type: 'subscribe',
+  symbol: 'BTCUSDT',
+  strategy: 'range_trading'  // or omit (default)
+}));
+```
+
+**Message Format:**
+```typescript
+{
+  type: "summary",
+  symbol: "BTCUSDT",
+  strategy: "range_trading",
+  payload: {
+    summary: {
+      entry: {
+        price: string;
+        side: "LONG" | "SHORT" | "NEUTRAL";  // ⚠️ NEUTRAL added for safety filters
+        order_type: "LIMIT";
+        tolerance_percent: number;
+        reasoning: string;
+      },
+      severity: "high" | "medium" | "low";
+      sentiment_change?: boolean;
+    },
+    timestamp: string;
+    
+    // Multi-timeframe ranges (NEW)
+    range_1h: { high: number; low: number; size: number; size_percent: number; position_in_range: number; };
+    range_4h: { high: number; low: number; size: number; size_percent: number; position_in_range: number; };
+    range_24h: { high: number; low: number; size: number; size_percent: number; position_in_range: number; };
+    
+    // Volume profile (NEW)
+    volume_profile?: {
+      poc: number;
+      value_area_high: number;
+      value_area_low: number;
+      high_volume_nodes: number[];
+      low_volume_nodes: number[];
+    };
+    
+    // Key levels (NEW)
+    key_levels?: Array<{
+      price: number;
+      type: "support" | "resistance" | "poc" | "gap";
+      strength: number;
+      distance: number;
+      source: string;
+    }>;
+    
+    // Trading details (NEW)
+    tp_price?: number;
+    sl_price?: number;
+    risk_reward?: number;
+    confluence_score?: number;  // 0-6 layers
+    
+    // Legacy support
+    range_data: {
+      daily_high: number;
+      daily_low: number;
+      range_size: number;
+      position_in_range: number;
+      current_price: number;
+    };
+  }
+}
+```
+
+**Update Frequency:** Every 1 minute (only when in entry zones AND safety filters pass)
+
+**Key Points:**
+- ✅ **Can return NEUTRAL** when safety filters block trading (trends, breakouts, volatility)
+- ✅ **Multi-timeframe confluence** (1h, 4h, 24h ranges)
+- ✅ **Volume profile support/resistance** (POC, Value Area, HVN)
+- ✅ **TP/SL with risk/reward ratios**
+- ✅ **Confluence scoring** (0-6 layers for trade quality)
+- ✅ **Safety filters**: Blocks trades during >1% trends, breakouts, >3% volatility, >5% ranges
+- ✅ **Entry zones widened** to 20% (from 15%) for more opportunities
+- ⚠️ **Fewer signals** than before due to safety filters (5-15/day instead of 10-20)
+- ✅ **Backward compatible** with legacy `range_data` field
+
+---
+
+### **🎯 Momentum Strategy** (Directional Volume Farming) ⚡ **NEW**
+
+**Subscribe:**
+```javascript
+ws.send(JSON.stringify({
+  type: 'subscribe',
+  symbol: 'BTCUSDT',
+  strategy: 'momentum'
+}));
+```
+
+**Message Format:**
+```typescript
+{
+  type: "momentum_indicator",
+  symbol: "BTCUSDT",
+  strategy: "momentum",
+  data: {
+    symbol: string;
+    timestamp: string;
+    current_price: number;
+    
+    // Trend context
+    trend_1h: "UP" | "DOWN" | "NEUTRAL";
+    trend_4h: "UP" | "DOWN" | "NEUTRAL";
+    trend_alignment: "ALIGNED" | "CONFLICTED" | "NEUTRAL";
+    trend_strength: number;
+    
+    // Technical
+    macd: number;
+    rsi: number;
+    
+    // Signal
+    side: "LONG" | "SHORT" | "NEUTRAL";
+    limit_price: number;
+    tp_price: number;
+    sl_price: number;
+    tp_percent: 0.08;
+    sl_percent: 0.20;
+    
+    // Quality
+    confidence: "high" | "medium" | "low";
+    confluence_score: number;  // 0-7 layers
+    reasoning: string;
+    expected_hold_minutes: number;
+  }
+}
+```
+
+**Update Frequency:** Every 1 minute
+
+**Signal Types:**
+
+**1. Aligned Downtrend SHORT** (Bear Market Perfect):
+```json
+{
+  "type": "momentum_indicator",
+  "symbol": "BTCUSDT",
+  "strategy": "momentum",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-04T10:30:00Z",
+    "current_price": 68500.00,
+    "trend_1h": "DOWN",
+    "trend_4h": "DOWN",
+    "trend_alignment": "ALIGNED",
+    "trend_strength": 2.5,
+    "macd": -8.5,
+    "rsi": 42.0,
+    "side": "SHORT",
+    "limit_price": 68513.70,
+    "tp_price": 68445.20,
+    "sl_price": 68637.00,
+    "tp_percent": 0.08,
+    "sl_percent": 0.20,
+    "confidence": "high",
+    "confluence_score": 6,
+    "reasoning": "DIRECTIONAL SHORT: Trend=DOWN/DOWN. MACD bearish (-8.50), RSI: 42.0. ✅ 1h+4h downtrends aligned. 🔥 EXCELLENT DIRECTIONAL SHORT.",
+    "expected_hold_minutes": 5
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (data.side === 'SHORT' && data.trend_alignment === 'ALIGNED') {
+  // Both 1h and 4h trending down - take SHORT
+  placeLimitOrder({
+    symbol: data.symbol,
+    side: 'SELL',
+    price: data.limit_price,
+    takeProfit: data.tp_price,
+    stopLoss: data.sl_price
+  });
+}
+```
+
+**2. Conflicted Trends NEUTRAL**:
+```json
+{
+  "type": "momentum_indicator",
+  "data": {
+    "trend_1h": "UP",
+    "trend_4h": "DOWN",
+    "trend_alignment": "CONFLICTED",
+    "side": "NEUTRAL",
+    "reasoning": "CONFLICTED TRENDS: 1h=UP, 4h=DOWN. Waiting for alignment."
+  }
+}
+```
+
+**Key Points:**
+- ✅ **Directional bias** - Only LONGs in uptrends, only SHORTs in downtrends
+- ✅ **Perfect for bear markets** - Detects downtrends, blocks LONGs, spams SHORTs
+- ✅ **Volume farming** - 1-min updates for multiple entries
+- ✅ **7-layer confluence** - Trend + sweep + gap + pullback + RSI + MACD + regime
+- ✅ **NEVER fights trend** - If DOWN, no LONGs. If UP, no SHORTs
+- ✅ **Returns NEUTRAL** when trends conflict (waits for clarity)
+- ✅ **All detectors integrated** - Uses same tech as scalp strategy
+- ⚠️ **Expected 10-20 signals/day** (fewer than scalp, more than range)
+
+---
+
 ## 🔧 **Best Practices**
 
 ### **1. Reuse Connections**

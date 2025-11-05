@@ -178,6 +178,13 @@ npm run preview
 - **Buttery Smooth Animations**: Powered by Framer Motion for silky transitions
 - **Mobile Responsive**: Fully responsive design with touch swipe gestures for carousel navigation
 - **Touch Gestures**: Swipe left/right to navigate between sections on mobile devices
+- **Adaptive Navigation**: 
+  - **Desktop/Large Screens**: Bottom carousel indicators for section navigation
+  - **Small Screens** (height < 650px OR width < 800px): Hamburger menu on the left
+    - Smooth slide-in drawer from the left side
+    - Animated hamburger icon (transforms to X when open)
+    - Click outside or on item to close
+    - Prevents content overlap on limited screen space
 - Modern React setup with Vite
 - No-scroll, fullscreen experience
 

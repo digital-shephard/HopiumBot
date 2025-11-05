@@ -5,7 +5,7 @@
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  z-index: 1000;
+  z-index: 900;
   animation: fadeInWidget 1s ease-out forwards;
   animation-delay: 2s;
   opacity: 0;

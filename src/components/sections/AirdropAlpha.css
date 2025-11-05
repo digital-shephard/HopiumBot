@@ -5,8 +5,8 @@
   overflow: hidden;
 }
 
-/* Allow scrolling on mobile */
-@media (max-width: 768px) {
+/* Allow scrolling on tablet and mobile */
+@media (max-width: 1200px) {
   .airdrop-alpha {
     overflow: visible;
     height: auto;
@@ -575,6 +575,15 @@
   .airdrop-layout {
     grid-template-columns: 1fr;
     gap: 40px;
+    height: auto;
+    min-height: auto;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 30px;
+  }
+
+  .robot-illustration-container {
+    height: auto;
   }
 
   .robot-illustration svg {
@@ -585,17 +594,23 @@
     max-width: 300px;
   }
 
+  .speech-box-container {
+    height: auto;
+  }
+
   .giant-speech-box {
-    height: 60vh;
+    height: auto;
+    min-height: 400px;
+    max-height: none;
+    margin-bottom: 40px;
   }
 }
 
 /* Tablet styles */
 @media (max-width: 1024px) {
   .airdrop-layout {
-    grid-template-columns: 1fr;
     gap: 30px;
-    padding: 50px 30px;
+    padding: 40px 30px;
   }
 
   .robot-illustration svg {
@@ -607,8 +622,8 @@
   }
 
   .giant-speech-box {
-    height: 65vh;
-    max-height: 600px;
+    min-height: 350px;
+    margin-bottom: 30px;
   }
 
   .speech-box-header {

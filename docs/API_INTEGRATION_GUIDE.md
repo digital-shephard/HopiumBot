@@ -521,27 +521,41 @@ HopiumCore supports multiple trading strategies. When subscribing to a symbol, y
 
 #### Available Strategies
 
-**1. Range Trading (Default)**
+**1. Range Trading (Default)** ⚡ **ENHANCED**
 - **ID**: `"range_trading"`
-- **Description**: Mean-reversion strategy that trades bounces off 24h support/resistance
-- **Signal Frequency**: Every 1 minute (when price is in entry zones)
+- **Description**: Multi-timeframe mean-reversion with volume profile and 6-layer confluence scoring
+- **Signal Frequency**: Every 1 minute (only when price is in entry zones AND safety filters pass)
 - **Entry Zones**:
-  - LONG: Bottom 15% of 24h range
-  - SHORT: Top 15% of 24h range
+  - LONG: Bottom 20% of 24h range (widened from 15%)
+  - SHORT: Top 20% of 24h range (widened from 15%)
+- **Safety Filters**: Blocks trades during strong trends (>1% in 60min), breakouts, extreme volatility (>3% in 1h), or oversized ranges (>5%)
 - **Order Type**: Always LIMIT orders
-- **Best For**: Ranging markets with clear support/resistance
+- **Features**:
+  - Multi-timeframe analysis (1h, 4h, 24h ranges)
+  - Volume profile (POC, Value Area, High Volume Nodes)
+  - Key level aggregation from 7+ sources
+  - TP/SL prices with risk/reward ratios
+  - Confluence scoring (0-6 layers)
+- **Best For**: Ranging/sideways markets with clear support/resistance
 
-**2. Momentum (LLM-Powered)**
+**2. Momentum (Directional Volume Farming)** ⚡ **NEW**
 - **ID**: `"momentum"`
-- **Description**: AI-powered trend-following strategy using GPT-5 analysis
-- **Signal Frequency**: Every 5 minutes or on significant market changes
-- **Triggers**:
-  - Momentum shifts (bullish ↔ bearish)
-  - Funding rate changes
-  - Price spikes (>1%)
-  - Volatility/liquidity changes
-- **Order Type**: LIMIT or MARKET (based on volatility)
-- **Best For**: Trending markets with clear momentum
+- **Description**: Multi-timeframe trend detection with high-frequency scalping aligned to trend direction
+- **Signal Frequency**: Every 1 minute (always provides signal, including NEUTRAL)
+- **Philosophy**: Identify hourly direction, then volume farm in that direction ONLY
+- **Directional Bias**:
+  - If 1h+4h both UP → Only LONGs (blocks all SHORTs)
+  - If 1h+4h both DOWN → Only SHORTs (blocks all LONGs)
+  - If trends conflict → Returns NEUTRAL (waits for clarity)
+- **Order Type**: Always LIMIT orders
+- **Features**:
+  - Multi-timeframe trend detection (1h, 4h)
+  - 7-layer confluence scoring (trend + sweep + gap + pullback + RSI + MACD + regime)
+  - MACD/RSI for scalp entries
+  - Integrates all detectors (sweep, imbalance, regime, pullback)
+  - TP/SL: 0.08% TP, 0.20% SL (same as scalp)
+  - Expected hold: 5-15 minutes
+- **Best For**: Bear/bull markets, trending conditions, directional volume farming
 
 **3. Scalp (High-Frequency Volume Farming)** ⚡ **NEW**
 - **ID**: `"scalp"`
@@ -867,6 +881,427 @@ interface ScalpIndicatorMessage {
 - **Always broadcasts** a signal (LONG/SHORT/NEUTRAL) so frontend knows current state
 - NEUTRAL signals have `limit_price`, `tp_price`, `sl_price` set to 0
 - High confidence typically when price is also in extreme 5-min range positions
+
+---
+
+#### Range Trading Update ⚡ **ENHANCED**
+
+Pushed automatically every 1 minute when subscribed to the `range_trading` strategy (only when price is in entry zones and safety filters pass).
+
+**Message Structure**:
+```typescript
+interface RangeTradingMessage {
+  type: "summary";
+  symbol: string;
+  strategy: "range_trading";
+  payload: {
+    summary: {
+      entry: {
+        price: string;
+        side: "LONG" | "SHORT" | "NEUTRAL";  // NEUTRAL added for safety filter blocks
+        order_type: "LIMIT";
+        tolerance_percent: number;
+        reasoning: string;
+      };
+      severity: "high" | "medium" | "low";
+      sentiment_change?: boolean;
+    };
+    timestamp: string;
+    symbol: string;
+    
+    // Multi-timeframe range data (NEW)
+    range_1h: {
+      high: number;
+      low: number;
+      size: number;
+      size_percent: number;
+      position_in_range: number;  // 0.0 to 1.0
+    };
+    range_4h: {
+      high: number;
+      low: number;
+      size: number;
+      size_percent: number;
+      position_in_range: number;
+    };
+    range_24h: {
+      high: number;
+      low: number;
+      size: number;
+      size_percent: number;
+      position_in_range: number;
+    };
+    
+    // Volume profile data (NEW)
+    volume_profile?: {
+      poc: number;                          // Point of Control (highest volume price)
+      value_area_high: number;              // Top of 70% volume zone
+      value_area_low: number;               // Bottom of 70% volume zone
+      high_volume_nodes: number[];          // Support/resistance from volume
+      low_volume_nodes: number[];           // Weak zones (fast moves expected)
+    };
+    
+    // Key levels from all sources (NEW)
+    key_levels?: Array<{
+      price: number;
+      type: "support" | "resistance" | "poc" | "gap";
+      strength: number;                     // 1-5 rating
+      distance: number;                     // % from current price
+      source: string;                       // e.g. "24h_low", "value_area_low", "sweep_BULLISH_SWEEP"
+    }>;
+    
+    // Trading details (NEW)
+    tp_price?: number;                      // Take profit price
+    sl_price?: number;                      // Stop loss price
+    risk_reward?: number;                   // Risk/reward ratio
+    confluence_score?: number;              // 0-6 confluence layers
+    
+    // Legacy support (still included for backward compatibility)
+    range_data: {
+      daily_high: number;
+      daily_low: number;
+      range_size: number;
+      position_in_range: number;
+      current_price: number;
+    };
+    
+    message?: string;
+  };
+}
+```
+
+**Signal Types:**
+
+**1. LONG Signal** (High Confluence):
+```json
+{
+  "type": "summary",
+  "symbol": "BTCUSDT",
+  "strategy": "range_trading",
+  "payload": {
+    "summary": {
+      "entry": {
+        "price": "68500.00",
+        "side": "LONG",
+        "order_type": "LIMIT",
+        "tolerance_percent": 0.3,
+        "reasoning": "Price near support (0.5% above 24h low $68200.00). Range: $68200.00-$69500.00 (1.91%). ✅ 1h+4h+24h all in bottom zone (multi-TF support). ✅ BULLISH SWEEP at $68450.00 (2.1x volume, 2.8x wick) - liquidity grabbed. ✅ FILLING BULLISH GAP $68400.00-$68600.00 (50% filled, 25m old). ✅ Price near Volume POC $68700.00 (high-volume support). ✅ Price at Value Area Low $68450.00 (70% volume boundary). ✅ Sideways regime (18/100 trend strength) - ideal for range trading. 🔥 HIGH CONFLUENCE - EXCELLENT LONG SETUP."
+      },
+      "severity": "high",
+      "sentiment_change": false
+    },
+    "timestamp": "2025-11-04T10:15:00Z",
+    "symbol": "BTCUSDT",
+    "range_1h": {
+      "high": 68750.00,
+      "low": 68480.00,
+      "size": 270.00,
+      "size_percent": 0.39,
+      "position_in_range": 0.15
+    },
+    "range_4h": {
+      "high": 69100.00,
+      "low": 68400.00,
+      "size": 700.00,
+      "size_percent": 1.02,
+      "position_in_range": 0.17
+    },
+    "range_24h": {
+      "high": 69500.00,
+      "low": 68200.00,
+      "size": 1300.00,
+      "size_percent": 1.91,
+      "position_in_range": 0.25
+    },
+    "volume_profile": {
+      "poc": 68700.00,
+      "value_area_high": 68950.00,
+      "value_area_low": 68450.00,
+      "high_volume_nodes": [68500.00, 68700.00, 68900.00],
+      "low_volume_nodes": [68350.00, 69050.00]
+    },
+    "key_levels": [
+      {
+        "price": 68450.00,
+        "type": "support",
+        "strength": 5,
+        "distance": -0.10,
+        "source": "value_area_low"
+      },
+      {
+        "price": 68500.00,
+        "type": "support",
+        "strength": 4,
+        "distance": -0.03,
+        "source": "sweep_BULLISH_SWEEP"
+      }
+    ],
+    "tp_price": 68850.00,
+    "sl_price": 68350.00,
+    "risk_reward": 2.3,
+    "confluence_score": 5,
+    "range_data": {
+      "daily_high": 69500.00,
+      "daily_low": 68200.00,
+      "range_size": 1300.00,
+      "position_in_range": 0.25,
+      "current_price": 68520.00
+    },
+    "message": "Current range trading signal"
+  }
+}
+```
+
+**2. NEUTRAL Signal** (Safety Filter Blocked):
+```json
+{
+  "type": "summary",
+  "symbol": "BTCUSDT",
+  "strategy": "range_trading",
+  "payload": {
+    "summary": {
+      "entry": {
+        "price": "0",
+        "side": "NEUTRAL",
+        "order_type": "LIMIT",
+        "tolerance_percent": 0,
+        "reasoning": "🚫 STRONG UPTREND: Price pumped +2.5% in 60min (threshold: +1.0%). Range trading DISABLED. Waiting for consolidation."
+      },
+      "severity": "low",
+      "sentiment_change": false
+    },
+    "timestamp": "2025-11-04T10:15:00Z",
+    "symbol": "BTCUSDT",
+    "range_1h": {
+      "high": 70000.00,
+      "low": 68000.00,
+      "size": 2000.00,
+      "size_percent": 2.94,
+      "position_in_range": 0.85
+    },
+    "range_24h": {
+      "high": 70000.00,
+      "low": 66000.00,
+      "size": 4000.00,
+      "size_percent": 6.06,
+      "position_in_range": 0.90
+    },
+    "range_data": {
+      "daily_high": 70000.00,
+      "daily_low": 66000.00,
+      "range_size": 4000.00,
+      "position_in_range": 0.90,
+      "current_price": 69600.00
+    },
+    "message": "No trading signal - safety filters active"
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  
+  if (msg.type === 'summary' && msg.strategy === 'range_trading') {
+    const { payload } = msg;
+    const entry = payload.summary.entry;
+    
+    console.log(`[RANGE] ${entry.side} @ ${payload.range_data.current_price}`);
+    
+    if (entry.side === 'LONG' && payload.summary.severity === 'high') {
+      // High confluence LONG
+      placeLimitOrder({
+        symbol: payload.symbol,
+        side: 'BUY',
+        price: parseFloat(entry.price),
+        takeProfit: payload.tp_price,
+        stopLoss: payload.sl_price
+      });
+      
+      console.log(`✅ Confluence: ${payload.confluence_score}/6 layers`);
+      console.log(`✅ R:R = 1:${payload.risk_reward.toFixed(1)}`);
+    } else if (entry.side === 'SHORT' && payload.summary.severity === 'high') {
+      // High confluence SHORT
+      placeLimitOrder({
+        symbol: payload.symbol,
+        side: 'SELL',
+        price: parseFloat(entry.price),
+        takeProfit: payload.tp_price,
+        stopLoss: payload.sl_price
+      });
+    } else if (entry.side === 'NEUTRAL') {
+      // Safety filter blocked - do nothing
+      console.log('⚠️ Trade blocked by safety filters:', entry.reasoning);
+    }
+  }
+};
+```
+
+**Key Points:**
+- ✅ **Can return NEUTRAL** when safety filters block trading (pump/dump/breakout/volatility)
+- ✅ **Multi-timeframe data** (1h, 4h, 24h) for better confluence
+- ✅ **Volume profile** identifies true support/resistance at high-volume nodes
+- ✅ **Key levels** aggregated from 7+ sources (ranges, volume, sweeps, gaps)
+- ✅ **TP/SL included** with automatic risk/reward calculation
+- ✅ **Confluence scoring** (0-6 layers) for trade quality assessment
+- ✅ **Safety filters** block trades during trends >1%, breakouts, volatility >3%, ranges >5%
+- ✅ **Backward compatible** with legacy `range_data` field
+
+---
+
+#### Momentum Indicator Update ⚡ **NEW**
+
+Pushed automatically every 1 minute when subscribed to the `momentum` strategy (directional volume farming).
+
+**Message Structure**:
+```typescript
+interface MomentumIndicatorMessage {
+  type: "momentum_indicator";
+  symbol: string;
+  strategy: "momentum";
+  data: {
+    symbol: string;
+    timestamp: string;              // ISO 8601 timestamp
+    current_price: number;
+    
+    // Multi-timeframe trend detection (NEW)
+    trend_1h: "UP" | "DOWN" | "NEUTRAL";
+    trend_4h: "UP" | "DOWN" | "NEUTRAL";
+    trend_alignment: "ALIGNED" | "CONFLICTED" | "NEUTRAL";
+    trend_strength: number;         // Average % change
+    
+    // Technical indicators
+    macd: number;                   // MACD histogram
+    rsi: number;                    // RSI value
+    
+    // Signal
+    side: "LONG" | "SHORT" | "NEUTRAL";
+    limit_price: number;            // 0 if NEUTRAL
+    tp_price: number;               // 0 if NEUTRAL
+    sl_price: number;               // 0 if NEUTRAL
+    tp_percent: number;             // 0.08
+    sl_percent: number;             // 0.20
+    
+    // Quality metrics
+    confidence: "high" | "medium" | "low";
+    confluence_score: number;       // 0-7 layers
+    reasoning: string;
+    expected_hold_minutes: number;  // 5-15 minutes
+  };
+}
+```
+
+**Signal Types:**
+
+**1. Aligned Downtrend SHORT** (Bear Market):
+```json
+{
+  "type": "momentum_indicator",
+  "symbol": "BTCUSDT",
+  "strategy": "momentum",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-04T10:30:00Z",
+    "current_price": 68500.00,
+    "trend_1h": "DOWN",
+    "trend_4h": "DOWN",
+    "trend_alignment": "ALIGNED",
+    "trend_strength": 2.5,
+    "macd": -8.5,
+    "rsi": 42.0,
+    "side": "SHORT",
+    "limit_price": 68513.70,
+    "tp_price": 68445.20,
+    "sl_price": 68637.00,
+    "tp_percent": 0.08,
+    "sl_percent": 0.20,
+    "confidence": "high",
+    "confluence_score": 6,
+    "reasoning": "DIRECTIONAL SHORT: Trend=DOWN/DOWN. MACD bearish (-8.50), RSI: 42.0. ✅ 1h+4h downtrends aligned. ✅ BEARISH SWEEP at $68450.00. ✅ Pullback to resistance at $68520.00. ✅ RSI not oversold. ✅ Strong MACD momentum. ✅ Trending regime (bearish). 🔥 EXCELLENT DIRECTIONAL SHORT.",
+    "expected_hold_minutes": 5
+  }
+}
+```
+
+**2. Conflicted Trends NEUTRAL**:
+```json
+{
+  "type": "momentum_indicator",
+  "symbol": "BTCUSDT",
+  "strategy": "momentum",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-04T10:31:00Z",
+    "current_price": 68500.00,
+    "trend_1h": "UP",
+    "trend_4h": "DOWN",
+    "trend_alignment": "CONFLICTED",
+    "trend_strength": 1.2,
+    "macd": -2.3,
+    "rsi": 51.0,
+    "side": "NEUTRAL",
+    "limit_price": 0,
+    "tp_price": 0,
+    "sl_price": 0,
+    "tp_percent": 0.08,
+    "sl_percent": 0.20,
+    "confidence": "low",
+    "confluence_score": 0,
+    "reasoning": "CONFLICTED TRENDS: 1h=UP, 4h=DOWN. No clear direction. Waiting for alignment.",
+    "expected_hold_minutes": 5
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  
+  if (msg.type === 'momentum_indicator') {
+    const { data } = msg;
+    
+    console.log(`[MOMENTUM] ${data.side} | Trend: ${data.trend_1h}/${data.trend_4h} (${data.trend_alignment})`);
+    
+    // Only trade when trends are ALIGNED
+    if (data.trend_alignment === 'ALIGNED' && data.side !== 'NEUTRAL') {
+      if (data.side === 'LONG' && data.confidence === 'high') {
+        placeLimitOrder({
+          symbol: data.symbol,
+          side: 'BUY',
+          price: data.limit_price,
+          takeProfit: data.tp_price,
+          stopLoss: data.sl_price
+        });
+        
+        console.log(`✅ Directional LONG (both trends UP) | Confluence: ${data.confluence_score}/7`);
+      } else if (data.side === 'SHORT' && data.confidence === 'high') {
+        placeLimitOrder({
+          symbol: data.symbol,
+          side: 'SELL',
+          price: data.limit_price,
+          takeProfit: data.tp_price,
+          stopLoss: data.sl_price
+        });
+        
+        console.log(`✅ Directional SHORT (both trends DOWN) | Confluence: ${data.confluence_score}/7`);
+      }
+    } else if (data.trend_alignment === 'CONFLICTED') {
+      console.log('⚠️ Trends conflicted - waiting for alignment');
+    }
+  }
+};
+```
+
+**Key Points:**
+- ✅ **Directional bias** - Only trades WITH the trend (never counter-trend)
+- ✅ **Bear market optimal** - Detects downtrends early, only takes SHORTs
+- ✅ **Volume farming** - 1-min frequency for multiple entries
+- ✅ **7-layer confluence** - Trend alignment + all detectors from scalp
+- ✅ **Blocks counter-trend** - If trending DOWN, blocks all LONGs completely
+- ✅ **NEUTRAL when conflicted** - Waits for 1h and 4h trends to align
+- ✅ **Expected hold 5-15min** - Longer than scalp, shorter than traditional swing
 
 ---
 

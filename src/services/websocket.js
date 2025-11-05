@@ -42,6 +42,16 @@ export class HopiumWebSocketClient {
   /** WebSocket URL (from config) */
   url = WEBSOCKET_CONFIG.URL
 
+  /** Reconnection state */
+  reconnectAttempts = 0
+  maxReconnectAttempts = Infinity // Infinite reconnect attempts
+  reconnectInterval = 5000 // 5 seconds
+  reconnectTimeout = null
+  authToken = null // Store token for reconnection
+  lastStrategy = null // Store last subscribed strategy
+  lastSymbol = null // Store last subscribed symbol
+  shouldReconnect = true // Flag to control reconnection
+
   // ============================================================================
   // Event Handlers
   // ============================================================================
@@ -179,6 +189,10 @@ export class HopiumWebSocketClient {
       return // Already connected
     }
 
+    // Store token for reconnection
+    this.authToken = token
+    this.shouldReconnect = true
+
     return new Promise((resolve, reject) => {
       try {
         // Method 1: Include token in URL query parameter (recommended)
@@ -188,6 +202,14 @@ export class HopiumWebSocketClient {
 
         this.ws.onopen = () => {
           console.log('[WebSocket] ✅ Connected successfully (authenticated)')
+          this.reconnectAttempts = 0 // Reset reconnection counter on successful connection
+          
+          // Re-subscribe to last symbol/strategy if this is a reconnection
+          if (this.lastSymbol && this.lastStrategy) {
+            console.log(`[WebSocket] Re-subscribing to ${this.lastSymbol} with strategy ${this.lastStrategy}`)
+            this.subscribe(this.lastSymbol, this.lastStrategy)
+          }
+          
           if (this.onConnect) {
             this.onConnect()
           }
@@ -232,6 +254,11 @@ export class HopiumWebSocketClient {
           if (this.onDisconnect) {
             this.onDisconnect(event)
           }
+
+          // Attempt reconnection if not deliberately disconnected
+          if (this.shouldReconnect && this.authToken) {
+            this._attemptReconnect()
+          }
         }
       } catch (error) {
         reject(error)
@@ -248,11 +275,25 @@ export class HopiumWebSocketClient {
    * ```
    */
   disconnect() {
+    this.shouldReconnect = false // Prevent reconnection
+    
+    // Clear any pending reconnection attempts
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout)
+      this.reconnectTimeout = null
+    }
+    
     if (this.ws) {
       this.ws.close()
       this.ws = null
       this.subscriptions.clear()
     }
+    
+    // Clear stored auth data
+    this.authToken = null
+    this.lastSymbol = null
+    this.lastStrategy = null
+    this.reconnectAttempts = 0
   }
 
   /**
@@ -345,6 +386,10 @@ export class HopiumWebSocketClient {
     if (!this.isConnected()) {
       throw new Error('WebSocket not connected')
     }
+
+    // Store last subscription for reconnection
+    this.lastSymbol = symbol
+    this.lastStrategy = strategy
 
     this._sendMessage({
       type: 'subscribe',
@@ -634,6 +679,52 @@ export class HopiumWebSocketClient {
    */
   getSubscriptions() {
     return Array.from(this.subscriptions)
+  }
+
+  /**
+   * Attempt to reconnect to the WebSocket server
+   * @private
+   */
+  _attemptReconnect() {
+    // Clear any existing reconnection timeout
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout)
+    }
+
+    this.reconnectAttempts++
+    console.log(`[WebSocket] Connection lost. Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts === Infinity ? '∞' : this.maxReconnectAttempts})...`)
+
+    // Schedule reconnection attempt
+    this.reconnectTimeout = setTimeout(async () => {
+      if (!this.shouldReconnect || !this.authToken) {
+        console.log('[WebSocket] Reconnection cancelled')
+        return
+      }
+
+      try {
+        console.log(`[WebSocket] Reconnecting... (attempt ${this.reconnectAttempts})`)
+        await this.connect(this.authToken)
+        console.log('[WebSocket] Reconnection successful!')
+      } catch (error) {
+        console.error('[WebSocket] Reconnection failed:', error)
+        
+        // Attempt again if we haven't exceeded max attempts
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          this._attemptReconnect()
+        } else {
+          console.error('[WebSocket] Max reconnection attempts reached. Giving up.')
+          if (this.onError) {
+            this.onError({
+              type: 'error',
+              payload: {
+                error: 'Failed to reconnect after multiple attempts',
+                reconnectionFailed: true
+              }
+            })
+          }
+        }
+      }
+    }, this.reconnectInterval)
   }
 }
 

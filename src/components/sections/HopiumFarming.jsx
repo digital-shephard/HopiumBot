@@ -103,13 +103,19 @@ function HopiumFarming({ isActive = false }) {
     const pollInterval = setInterval(() => {
       console.log('[HopiumFarming] Polling for task updates...')
       registerOrLoadUser()
-      loadLeaderboard()
     }, 5000)
+
+    // Poll leaderboard every 60 seconds (1 minute)
+    const leaderboardInterval = setInterval(() => {
+      console.log('[HopiumFarming] Polling for leaderboard updates...')
+      loadLeaderboard()
+    }, 60000)
 
     return () => {
       console.log('[HopiumFarming] Stopping task polling')
       setIsPolling(false)
       clearInterval(pollInterval)
+      clearInterval(leaderboardInterval)
     }
   }, [isActive, isConnected, address, isAuthenticated])
 

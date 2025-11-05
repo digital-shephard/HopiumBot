@@ -419,6 +419,14 @@ class HopiumWebSocket {
         console.log('Entry:', data.data.summary.entry);
         break;
         
+      case 'scalp_indicator':
+        console.log('⚡ Scalp:', data.data.side, '@', data.data.current_price);
+        break;
+        
+      case 'momentum_indicator':
+        console.log('🎯 Momentum:', data.data.side, '| Trend:', data.data.trend_1h + '/' + data.data.trend_4h);
+        break;
+        
       case 'alert':
         console.log('⚠️ Alert:', data.data.description);
         break;
@@ -473,10 +481,15 @@ async function setupWebSocket() {
   // await wsClient.connectWithMessage();
 
   // 3. Subscribe to symbols with different strategies
-  wsClient.subscribe('BTCUSDT', 'range_trading');  // Default: 1-min updates
   
-  // OR for high-frequency scalping (30-second updates)
-  // wsClient.subscribe('BTCUSDT', 'scalp');
+  // Range Trading: Multi-timeframe + volume profile + confluence scoring
+  wsClient.subscribe('BTCUSDT', 'range_trading');  // 1-min updates, safety filters, sideways markets
+  
+  // OR Momentum: Directional volume farming (trend-aligned scalping)
+  // wsClient.subscribe('BTCUSDT', 'momentum');  // 1-min updates, only trades with trend, bear market optimal
+  
+  // OR Scalp: High-frequency scalping (mean reversion)
+  // wsClient.subscribe('BTCUSDT', 'scalp');  // 30-sec updates, both directions, volume farming
 
   // 4. Listen for updates (handled by setupMessageHandlers)
 }

@@ -14,6 +14,8 @@ function HomePage() {
   const [slideDistance, setSlideDistance] = useState(300)
   const [isInitialMount, setIsInitialMount] = useState(true)
   const [perpBotMessage, setPerpBotMessage] = useState('Analyzing perpetual funding rates across exchanges...')
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isPerpBotRunning, setIsPerpBotRunning] = useState(false)
   const touchStartX = useRef(null)
   const touchEndX = useRef(null)
 
@@ -30,7 +32,7 @@ function HomePage() {
   
   // Create section components once and keep them mounted
   const sectionComponents = useMemo(() => [
-    <PerpFarming key="perp" onBotMessageChange={setPerpBotMessage} />,
+    <PerpFarming key="perp" onBotMessageChange={setPerpBotMessage} onBotStatusChange={setIsPerpBotRunning} />,
     <HopiumFarming key="hopium" isActive={currentIndex === 1} />,
     <AirdropAlpha key="airdrop" onNavigateToHopium={() => goToIndex(1)} />,
     <VaultFarming key="vault" />
@@ -61,6 +63,7 @@ function HomePage() {
     setIsInitialMount(false)
     setDirection(index > currentIndex ? 1 : -1)
     setCurrentIndex(index)
+    setIsMenuOpen(false) // Close menu after selection
   }
 
   const onTouchStart = (e) => {
@@ -108,7 +111,11 @@ function HomePage() {
       animate={{ opacity: 1 }}
       transition={{ duration: 1.5, ease: 'easeOut' }}
     >
-      <RobotWidget message={sections[currentIndex].message} sectionId={currentIndex} />
+      <RobotWidget 
+        message={sections[currentIndex].message} 
+        sectionId={currentIndex}
+        isPerpBotRunning={isPerpBotRunning}
+      />
       <ConnectWallet />
       
       <div className="carousel-container">
@@ -180,6 +187,43 @@ function HomePage() {
         </button>
       </div>
 
+      {/* Hamburger Menu Button - Shows on small screens */}
+      <button 
+        className="hamburger-menu-button"
+        onClick={() => setIsMenuOpen(!isMenuOpen)}
+        aria-label="Toggle menu"
+      >
+        <div className={`hamburger-icon ${isMenuOpen ? 'open' : ''}`}>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </button>
+
+      {/* Hamburger Menu Drawer */}
+      <div className={`hamburger-menu-drawer ${isMenuOpen ? 'open' : ''}`}>
+        <div className="hamburger-menu-content">
+          {sections.map((section, index) => (
+            <button
+              key={index}
+              className={`hamburger-menu-item ${index === currentIndex ? 'active' : ''}`}
+              onClick={() => goToIndex(index)}
+            >
+              {section.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Menu Overlay - Click to close */}
+      {isMenuOpen && (
+        <div 
+          className="hamburger-menu-overlay"
+          onClick={() => setIsMenuOpen(false)}
+        />
+      )}
+
+      {/* Regular Carousel Indicators - Hidden on small screens */}
       <div className="carousel-indicators">
         {sections.map((section, index) => (
           <button

@@ -62,7 +62,7 @@ function getSmartModeStatement(reason) {
   return statements[randomIndex]
 }
 
-function PerpFarming({ onBotMessageChange }) {
+function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   // Get auth context for WebSocket authentication
   const { authService } = useAuth()
   
@@ -99,6 +99,7 @@ function PerpFarming({ onBotMessageChange }) {
   const [totalTrades, setTotalTrades] = useState(0)
   const [estimatedFees, setEstimatedFees] = useState(0)
   const [botMessage, setBotMessage] = useState('Initializing...')
+  const [showAuthModal, setShowAuthModal] = useState(false)
   
   const orderManagerRef = useRef(null)
   const wsClientRef = useRef(null)
@@ -244,6 +245,7 @@ function PerpFarming({ onBotMessageChange }) {
 
       // Set running state immediately after API key confirmation
       setIsRunning(true)
+      if (onBotStatusChange) onBotStatusChange(true)
       // Format and store capital amount for display
       const capitalNum = parseFloat(capital)
       setAllowedEquity(capitalNum.toLocaleString('en-US', { 
@@ -371,6 +373,35 @@ function PerpFarming({ onBotMessageChange }) {
       // Set default trading symbol (used even if WebSocket fails)
       const defaultSymbol = 'BTCUSDT'
       setTradingSymbol(defaultSymbol)
+      
+      // Check for existing position on startup
+      try {
+        const existingPosition = await orderManager.dexService.getPosition(defaultSymbol)
+        const positionAmt = parseFloat(existingPosition.positionAmt || '0')
+        
+        if (positionAmt !== 0) {
+          console.log(`[PerpFarming] 🔍 Detected existing position:`, {
+            symbol: defaultSymbol,
+            size: positionAmt,
+            entryPrice: existingPosition.entryPrice,
+            unrealizedPnL: existingPosition.unRealizedProfit
+          })
+          
+          // Add position to tracking immediately
+          orderManager.activePositions.set(defaultSymbol, {
+            symbol: defaultSymbol,
+            side: positionAmt > 0 ? 'LONG' : 'SHORT',
+            quantity: Math.abs(positionAmt),
+            entryPrice: parseFloat(existingPosition.entryPrice || '0')
+          })
+          
+          console.log('[PerpFarming] ✅ Existing position is now being tracked')
+        } else {
+          console.log('[PerpFarming] No existing position found - starting fresh')
+        }
+      } catch (error) {
+        console.warn('[PerpFarming] Could not check for existing position:', error.message)
+      }
       
       // Start polling PNL every 2 seconds for real-time updates
       pnlPollIntervalRef.current = setInterval(async () => {
@@ -810,9 +841,9 @@ function PerpFarming({ onBotMessageChange }) {
           
           // Check if requires re-authentication
           if (error.payload?.requiresReauth) {
-            handleError('WebSocket authentication expired. Please re-authenticate and restart trading.')
-            // Stop trading if auth fails
-            handleStop()
+            console.log('[PerpFarming] Authentication expired - showing re-auth modal')
+            // Show modal instead of stopping silently
+            setShowAuthModal(true)
           }
         }
         
@@ -899,6 +930,7 @@ function PerpFarming({ onBotMessageChange }) {
     }
 
     setIsRunning(false)
+    if (onBotStatusChange) onBotStatusChange(false)
     setTradingSymbol('')
     setAllowedEquity('')
     setPnl(0)
@@ -906,6 +938,22 @@ function PerpFarming({ onBotMessageChange }) {
     setEstimatedFees(0)
     peakPnlRef.current = 0
     trailingStopRef.current = 0
+  }
+
+  const handleReAuthenticate = async () => {
+    setShowAuthModal(false)
+    
+    try {
+      // Re-authenticate through AuthContext
+      await authService.authenticate()
+      
+      // If auth was successful, bot will continue running
+      console.log('[PerpFarming] Re-authentication successful')
+    } catch (error) {
+      console.error('[PerpFarming] Re-authentication failed:', error)
+      handleError('Re-authentication failed. Please stop and restart the bot.')
+      handleStop()
+    }
   }
 
   const handleCircleClick = () => {
@@ -1536,6 +1584,41 @@ function PerpFarming({ onBotMessageChange }) {
                 {isRunning ? 'Running...' : isValidating ? 'Validating...' : 'Start'}
               </button>
             </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auth Re-verification Modal */}
+      {showAuthModal && (
+        <div className="risk-modal-overlay" onClick={() => setShowAuthModal(false)}>
+          <div className="risk-modal auth-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="risk-modal-close" onClick={() => setShowAuthModal(false)}>×</button>
+            <div className="risk-modal-wrapper">
+              <h2 className="risk-modal-title">Re-Authentication Required</h2>
+              <div className="auth-modal-content">
+                <div className="auth-modal-icon">⚠️</div>
+                <p className="auth-modal-message">
+                  Your authentication session has expired. Please sign the authentication message in your wallet to continue trading.
+                </p>
+                <div className="auth-modal-buttons">
+                  <button 
+                    className="auth-modal-button primary"
+                    onClick={handleReAuthenticate}
+                  >
+                    Re-Authenticate
+                  </button>
+                  <button 
+                    className="auth-modal-button secondary"
+                    onClick={() => {
+                      setShowAuthModal(false)
+                      handleStop()
+                    }}
+                  >
+                    Stop Bot
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

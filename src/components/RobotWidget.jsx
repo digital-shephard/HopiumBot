@@ -4,7 +4,7 @@ import './RobotWidget.css'
 import logo from '../assets/logo.webp'
 import API_CONFIG from '../config/api'
 
-function RobotWidget({ message, sectionId, onError }) {
+function RobotWidget({ message, sectionId, onError, isPerpBotRunning = false }) {
   const [currentMessage, setCurrentMessage] = useState('')
   const [currentStreaming, setCurrentStreaming] = useState('')
   const [isExpanded, setIsExpanded] = useState(false)
@@ -383,15 +383,19 @@ function RobotWidget({ message, sectionId, onError }) {
     }
   }, [errorMessage])
 
+  // Only show speech bubble on perps page when bot is running
+  const shouldShowSpeechBubble = sectionId === 0 && isPerpBotRunning
+
   return (
     <div className="robot-widget">
       <div className="robot-icon">
         <img src={logo} alt="Hopium Bot Logo" className="robot-logo" />
       </div>
-      <div 
-        className={`speech-bubble ${isExpanded ? 'expanded' : ''}`}
-        onClick={!isExpanded ? toggleExpand : undefined}
-      >
+      {shouldShowSpeechBubble && (
+        <div 
+          className={`speech-bubble ${isExpanded ? 'expanded' : ''}`}
+          onClick={!isExpanded ? toggleExpand : undefined}
+        >
         {isExpanded && (
           <button 
             className="close-button"
@@ -451,7 +455,8 @@ function RobotWidget({ message, sectionId, onError }) {
         {!isExpanded && (
           <div className="expand-hint">Click to expand</div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

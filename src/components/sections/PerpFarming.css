@@ -1665,6 +1665,7 @@
   border: 1px solid rgba(255, 215, 0, 0.3);
   border-radius: 8px;
   color: #ffd700;
+  font-family: 'Courier New', monospace;
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
@@ -1681,7 +1682,10 @@
 }
 
 .pair-count {
+  font-family: 'Courier New', monospace;
   font-size: 16px;
+  font-weight: bold;
+  letter-spacing: 1px;
 }
 
 .pair-arrow {
@@ -1696,9 +1700,11 @@
 .selected-pairs-preview {
   margin-top: 8px;
   padding: 8px;
+  font-family: 'Courier New', monospace;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.6);
   text-align: center;
+  letter-spacing: 0.5px;
 }
 
 .pair-back-button {
@@ -1709,7 +1715,9 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   color: #ffffff;
+  font-family: 'Courier New', monospace;
   font-size: 14px;
+  font-weight: bold;
   cursor: pointer;
   transition: all 0.3s ease;
 }
@@ -1731,19 +1739,26 @@
 
 .pair-selection-info p {
   margin: 0 0 8px 0;
+  font-family: 'Courier New', monospace;
   color: rgba(255, 255, 255, 0.7);
   font-size: 14px;
+  letter-spacing: 0.5px;
 }
 
 .pair-selection-count {
+  font-family: 'Courier New', monospace;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: bold;
   color: #ffd700 !important;
+  letter-spacing: 1px;
 }
 
 .max-reached {
+  font-family: 'Courier New', monospace;
   color: #ff9900;
   font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
 }
 
 .pairs-list {
@@ -1795,10 +1810,12 @@
 }
 
 .pair-symbol {
+  font-family: 'Courier New', monospace;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: bold;
   color: #ffffff;
   flex: 1;
+  letter-spacing: 1px;
 }
 
 .check-mark {
@@ -1811,6 +1828,8 @@
 .loading-symbols {
   text-align: center;
   padding: 40px;
+  font-family: 'Courier New', monospace;
   color: rgba(255, 255, 255, 0.6);
   font-size: 16px;
+  letter-spacing: 0.5px;
 }

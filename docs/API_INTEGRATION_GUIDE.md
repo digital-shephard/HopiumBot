@@ -10,6 +10,7 @@ This guide provides comprehensive documentation for integrating with the HopiumC
 - **WebSocket URL (Production)**: `wss://api.hopiumbot.com/ws`
 - **Content-Type**: All HTTP endpoints return `application/json`
 - **CORS**: Enabled - allows all origins (reflects Origin header for cross-origin requests)
+- **Multi-Symbol Support**: Server tracks 30+ trading pairs simultaneously (see `/api/perps/symbols` for current list)
 
 ### Environment Configuration
 
@@ -59,6 +60,112 @@ Check if the server is running.
 ---
 
 ### Market Data Endpoints
+
+#### Get Tracked Symbols
+
+Get the list of trading pairs currently being tracked by the server.
+
+**Endpoint**: `GET /api/perps/symbols` 🔒 **Requires Authentication**
+
+**Query Parameters**: None
+
+**Headers Required**:
+- `Authorization: Bearer <JWT_TOKEN>`
+
+**Example Request**:
+```javascript
+// With authentication
+const token = authService.getToken()
+fetch(`${BASE_URL}/api/perps/symbols`, {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+})
+  .then(res => res.json())
+  .then(data => console.log(data));
+```
+
+**Response**:
+```json
+{
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT",
+    "..."
+  ],
+  "count": 30,
+  "interval": "1m",
+  "description": "List of trading pairs currently being tracked"
+}
+```
+
+**Use Case**:
+- **Frontend**: Populate dropdown menus with available symbols
+- **Validation**: Check if a symbol is supported before subscribing
+- **Dynamic UI**: Build charts/widgets for all supported symbols
+- **Security**: Requires authentication to prevent abuse and rate limiting
+
+**TypeScript Interface**:
+```typescript
+interface SymbolsResponse {
+  symbols: string[];
+  count: number;
+  interval: string;
+  description: string;
+}
+```
+
+**Frontend Integration**:
+```javascript
+// Fetch supported symbols and populate dropdown (with auth)
+async function loadSymbolDropdown(authToken) {
+  const response = await fetch(`${BASE_URL}/api/perps/symbols`, {
+    headers: {
+      'Authorization': `Bearer ${authToken}`
+    }
+  });
+  const data = await response.json();
+  
+  const dropdown = document.getElementById('symbol-select');
+  data.symbols.forEach(symbol => {
+    const option = document.createElement('option');
+    option.value = symbol;
+    option.textContent = symbol;
+    dropdown.appendChild(option);
+  });
+}
+
+// React example with authentication
+function SymbolSelector() {
+  const [symbols, setSymbols] = useState([]);
+  const { token } = useAuth(); // Get auth token from context
+  
+  useEffect(() => {
+    if (!token) return;
+    
+    fetch(`${BASE_URL}/api/perps/symbols`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+      .then(res => res.json())
+      .then(data => setSymbols(data.symbols));
+  }, [token]);
+  
+  return (
+    <select>
+      {symbols.map(symbol => (
+        <option key={symbol} value={symbol}>{symbol}</option>
+      ))}
+    </select>
+  );
+}
+```
+
+---
 
 #### Get Market Data
 

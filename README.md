@@ -542,6 +542,13 @@ The `OrderManager` service handles:
 ### Perp Farming Settings
 
 In the Perp Farming section, users can configure:
+- **Tracked Pairs**: Select up to 5 trading pairs to track simultaneously
+  - Click the pair selection button at the top of settings
+  - Server provides list of 30+ supported pairs via `/api/perps/symbols` (requires authentication)
+  - Pairs are displayed with checkboxes for easy selection
+  - Selection limited to 5 pairs maximum for optimal performance
+  - Selected pairs saved to localStorage and persist across sessions
+  - Automatically fetches available pairs when modal opens (with auth token)
 - **Aster API Key**: Required for trading (validated when clicking "Start")
 - **Aster API Secret**: Required for signing requests (validated when clicking "Start")
 - **Capital Amount**: Maximum capital to use for trading
@@ -560,6 +567,39 @@ In the Perp Farming section, users can configure:
   - **Aggressive Reversion Scalping**: Ultra-fast 30-second signals optimized for 75x leverage
 
 All settings are stored in localStorage and persist across sessions.
+
+## Rate Limits & Concurrent Tracking
+
+**Two Separate Rate Limit Pools:**
+
+### **Backend (Shared) - Signal Generation:**
+- **2,400 REQUEST_WEIGHT per minute** (shared across all users)
+- Fetches market data to generate trading signals
+- Pushes signals to users via WebSocket
+
+**Backend Capacity:**
+- **Scalp Strategy** (30s updates): ~120 pairs total
+- **Range/Momentum** (1min updates): ~240 pairs total
+- **Concurrent users**: 20-30 scalp users OR 50-100 other strategy users
+
+### **Frontend (Per User) - Position Monitoring:**
+- **2,400 REQUEST_WEIGHT per minute PER USER** (individual API keys)
+- Monitors active orders: Every 2 seconds (30 calls/min per order)
+- Monitors positions for TP/SL: Every 5 seconds (12 calls/min per position)
+
+**Per User Capacity:**
+- **Theoretical max**: ~80-100 concurrent positions before hitting personal rate limit
+- **Practical limit**: **5-10 pairs** (human attention span for active trading)
+
+**Key Insight:**
+- ✅ **Frontend position monitoring** is NOT the bottleneck (each user has their own 2,400/min limit)
+- ⚠️ **Backend signal generation** IS the bottleneck (all users share the backend's 2,400/min limit)
+- Users can monitor many positions, but backend can only analyze limited pairs for signals
+
+**Recommended User Limits:**
+- **Scalp Strategy**: 3-5 pairs (requires intense focus)
+- **Range/Momentum**: 10-15 pairs (more manageable)
+- Backend limits how many pairs are available to subscribe to
 
 ### Trading Flow
 

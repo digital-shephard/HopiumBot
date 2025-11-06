@@ -5,6 +5,7 @@ import OrderManager from '../../services/orderManager'
 import { HopiumWebSocketClient } from '../../services/websocket'
 import AsterDexService from '../../services/dex/aster/AsterDexService'
 import { useAuth } from '../../contexts/AuthContext'
+import API_CONFIG from '../../config/api'
 
 const STORAGE_KEY = 'perp_farming_settings'
 const STATS_STORAGE_KEY = 'perp_farming_stats'
@@ -100,6 +101,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   const [estimatedFees, setEstimatedFees] = useState(0)
   const [botMessage, setBotMessage] = useState('Initializing...')
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showPairSelection, setShowPairSelection] = useState(false) // Toggle between settings and pair selection
+  const [availableSymbols, setAvailableSymbols] = useState([]) // List of symbols from API
+  const [selectedPairs, setSelectedPairs] = useState(['BTCUSDT']) // Default to BTC, max 5
+  const [loadingSymbols, setLoadingSymbols] = useState(false)
   
   const orderManagerRef = useRef(null)
   const wsClientRef = useRef(null)
@@ -138,10 +143,14 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         setBreakEvenLossTolerance(settings.breakEvenLossTolerance !== undefined ? settings.breakEvenLossTolerance : 20)
         setTrailingBreakEven(settings.trailingBreakEven || false)
         setTrailingIncrement(settings.trailingIncrement !== undefined ? settings.trailingIncrement : 20)
+        setSelectedPairs(settings.selectedPairs || ['BTCUSDT']) // Load selected pairs
       } catch (error) {
         console.error('Error loading settings:', error)
       }
     }
+
+    // Fetch available symbols from API on mount
+    fetchAvailableSymbols()
 
     // Load stats from localStorage
     const savedStats = localStorage.getItem(STATS_STORAGE_KEY)
@@ -155,6 +164,43 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
       }
     }
   }, [])
+
+  // Fetch available symbols from API
+  const fetchAvailableSymbols = async () => {
+    setLoadingSymbols(true)
+    try {
+      const response = await API_CONFIG.fetch(API_CONFIG.endpoints.symbols, {
+        includeAuth: true // Requires authentication
+      })
+      setAvailableSymbols(response.symbols || [])
+      console.log('[PerpFarming] Loaded symbols:', response.symbols)
+    } catch (error) {
+      console.error('[PerpFarming] Error fetching symbols:', error)
+      // Fallback to default symbols
+      setAvailableSymbols(['BTCUSDT', 'ETHUSDT', 'SOLUSDT'])
+    } finally {
+      setLoadingSymbols(false)
+    }
+  }
+
+  // Handle pair selection toggle
+  const togglePairSelection = (symbol) => {
+    setSelectedPairs((prev) => {
+      if (prev.includes(symbol)) {
+        // Deselect - ensure at least 1 pair is selected
+        if (prev.length === 1) {
+          return prev // Can't deselect last pair
+        }
+        return prev.filter((s) => s !== symbol)
+      } else {
+        // Select - max 5 pairs
+        if (prev.length >= 5) {
+          return prev // Already at max
+        }
+        return [...prev, symbol]
+      }
+    })
+  }
 
   // Helper function to format percentage display
   const formatPercentage = (value) => {
@@ -238,7 +284,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         breakEvenMode,
         breakEvenLossTolerance,
         trailingBreakEven,
-        trailingIncrement
+        trailingIncrement,
+        selectedPairs // Save selected pairs
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
       setShowModal(false)
@@ -1018,6 +1065,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
 
   const handleCloseModal = () => {
     setShowModal(false)
+    setShowPairSelection(false) // Reset to settings view
     setValidationError('') // Clear error when closing modal
   }
 
@@ -1267,9 +1315,78 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
           <div className="risk-modal" onClick={(e) => e.stopPropagation()}>
             <button className="risk-modal-close" onClick={handleCloseModal}>×</button>
             <div className="risk-modal-wrapper">
-              <h2 className="risk-modal-title">Risk Settings</h2>
+              <h2 className="risk-modal-title">{showPairSelection ? 'Select Pairs' : 'Risk Settings'}</h2>
+              
+              {/* Pair Selection Button - Only show when not in pair selection view */}
+              {!showPairSelection && (
+                <div className="pair-selection-header">
+                  <button 
+                    className="pair-selection-button"
+                    onClick={() => setShowPairSelection(true)}
+                  >
+                    <span className="pair-count">{selectedPairs.length} pair{selectedPairs.length !== 1 ? 's' : ''} selected</span>
+                    <span className="pair-arrow">→</span>
+                  </button>
+                  <div className="selected-pairs-preview">
+                    {selectedPairs.slice(0, 3).join(', ')}
+                    {selectedPairs.length > 3 && ` +${selectedPairs.length - 3} more`}
+                  </div>
+                </div>
+              )}
+              
+              {/* Back button when in pair selection view */}
+              {showPairSelection && (
+                <button 
+                  className="pair-back-button"
+                  onClick={() => setShowPairSelection(false)}
+                >
+                  ← Back to Settings
+                </button>
+              )}
+              
               <div className="risk-modal-content">
               
+              {/* Pair Selection View */}
+              {showPairSelection ? (
+                <div className="pair-selection-content">
+                  <div className="pair-selection-info">
+                    <p>Select up to 5 trading pairs to track simultaneously</p>
+                    <p className="pair-selection-count">
+                      {selectedPairs.length} / 5 selected
+                      {selectedPairs.length >= 5 && <span className="max-reached"> (Max reached)</span>}
+                    </p>
+                  </div>
+                  
+                  {loadingSymbols ? (
+                    <div className="loading-symbols">Loading available pairs...</div>
+                  ) : (
+                    <div className="pairs-list">
+                      {availableSymbols.map((symbol) => {
+                        const isSelected = selectedPairs.includes(symbol)
+                        const isMaxReached = selectedPairs.length >= 5 && !isSelected
+                        
+                        return (
+                          <label 
+                            key={symbol} 
+                            className={`pair-checkbox-item ${isSelected ? 'selected' : ''} ${isMaxReached ? 'disabled' : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => togglePairSelection(symbol)}
+                              disabled={isMaxReached}
+                            />
+                            <span className="pair-symbol">{symbol}</span>
+                            {isSelected && <span className="check-mark">✓</span>}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Risk Settings View
+                <>
               {/* Smart Mode Checkbox - At the very top */}
               <div className="risk-form-group smart-mode-section">
                 <label className="risk-label">Smart Mode</label>
@@ -1697,6 +1814,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               <button className="risk-save-button" onClick={handleStart} disabled={isRunning || isValidating}>
                 {isRunning ? 'Running...' : isValidating ? 'Validating...' : 'Start'}
               </button>
+              </>
+              )}
             </div>
             </div>
           </div>

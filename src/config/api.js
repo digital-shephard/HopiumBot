@@ -48,6 +48,7 @@ export const API_CONFIG = {
     },
     
     // Perps endpoints
+    symbols: '/api/perps/symbols', // Get list of supported trading pairs
     snapshot: (symbol = 'BTCUSDT') => `/api/perps/snapshot?symbol=${symbol}`,
     marketData: (symbol) => `/api/perps/market-data?symbol=${symbol}`,
     klines: (symbol, interval = '1h', limit = 100) => `/api/perps/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,

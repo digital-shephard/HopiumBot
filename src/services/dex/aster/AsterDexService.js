@@ -28,10 +28,6 @@ export class AsterDexService extends DexService {
     }
 
     this.apiClient = new AsterApiClient(credentials.apiKey, credentials.secretKey)
-    
-    // Sync time with server immediately to prevent timestamp errors
-    await this.apiClient.syncServerTime()
-    
     this.initialized = true
   }
 

@@ -525,12 +525,6 @@ src/services/dex/
 - **Risk Management**: Built-in take profit and stop loss enforcement
 - **Rate Limiting**: Respects API rate limits (Aster: 2400 requests/minute)
 - **Precision Handling**: Automatically fetches and applies symbol-specific precision for quantities and prices
-- **Server Time Synchronization**: Automatic timestamp synchronization with Aster API to prevent "timestamp ahead" errors
-  - Syncs with server on initialization using `/fapi/v1/time` endpoint
-  - Calculates offset between client and server time (accounting for network latency)
-  - Re-syncs every 60 seconds to maintain accuracy
-  - Applies synchronized timestamp to all signed API requests
-  - Prevents rejection due to client clock drift
 - **Error Handling**: Graceful error handling with user-friendly messages
 
 ### OrderManager Service

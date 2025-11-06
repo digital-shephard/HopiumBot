@@ -63,59 +63,6 @@ export class AsterApiClient {
     this.apiKey = apiKey
     this.secretKey = secretKey
     this.baseUrl = ASTER_API_BASE
-    this.timeOffset = 0 // Offset between client and server time (in milliseconds)
-    this.lastSyncTime = 0 // Last time we synced with server
-    this.syncInterval = 60000 // Re-sync every 60 seconds
-  }
-
-  /**
-   * Sync time with Aster server
-   * Fetches server time and calculates offset
-   */
-  async syncServerTime() {
-    try {
-      const beforeRequest = Date.now()
-      const response = await fetch(`${this.baseUrl}/fapi/v1/time`)
-      const afterRequest = Date.now()
-      
-      if (!response.ok) {
-        console.warn('[AsterApiClient] Failed to sync server time:', response.status)
-        return
-      }
-      
-      const data = await response.json()
-      const serverTime = data.serverTime
-      
-      // Calculate network latency (round-trip time / 2)
-      const latency = (afterRequest - beforeRequest) / 2
-      
-      // Calculate offset: serverTime - (our time + latency adjustment)
-      this.timeOffset = serverTime - (afterRequest - latency)
-      this.lastSyncTime = Date.now()
-      
-      console.log(`[AsterApiClient] ✅ Time synced - Offset: ${this.timeOffset}ms (${this.timeOffset > 0 ? 'server ahead' : 'client ahead'})`)
-    } catch (error) {
-      console.error('[AsterApiClient] Failed to sync server time:', error)
-      // Continue with 0 offset if sync fails
-    }
-  }
-
-  /**
-   * Get server-synchronized timestamp
-   * @returns {number} Timestamp in milliseconds
-   */
-  getServerTime() {
-    return Date.now() + this.timeOffset
-  }
-
-  /**
-   * Check if we need to re-sync time
-   */
-  async ensureTimeSynced() {
-    const timeSinceLastSync = Date.now() - this.lastSyncTime
-    if (this.lastSyncTime === 0 || timeSinceLastSync > this.syncInterval) {
-      await this.syncServerTime()
-    }
   }
 
   /**
@@ -132,11 +79,7 @@ export class AsterApiClient {
     // Add timestamp and recvWindow for signed endpoints
     const isSigned = options.signed !== false
     if (isSigned) {
-      // Ensure time is synced before making signed requests
-      await this.ensureTimeSynced()
-      
-      // Use server-synchronized timestamp
-      params.timestamp = this.getServerTime()
+      params.timestamp = Date.now()
       if (options.recvWindow) {
         params.recvWindow = options.recvWindow
       }

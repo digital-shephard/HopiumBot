@@ -1767,6 +1767,7 @@
   gap: 10px;
   max-height: 400px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
 }
 

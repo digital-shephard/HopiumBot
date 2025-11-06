@@ -1770,6 +1770,25 @@
   padding: 8px;
 }
 
+/* Scrollbar styling for pairs list */
+.pairs-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pairs-list::-webkit-scrollbar-track {
+  background: rgba(255, 215, 0, 0.1);
+  border-radius: 4px;
+}
+
+.pairs-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 215, 0, 0.3);
+  border-radius: 4px;
+}
+
+.pairs-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 215, 0, 0.5);
+}
+
 .pair-checkbox-item {
   display: flex;
   align-items: center;

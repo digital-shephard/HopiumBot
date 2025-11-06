@@ -500,6 +500,149 @@ export class OrderManager {
   }
 
   /**
+   * Handle Momentum X (Psychic Candle Reader) strategy signals
+   * Ultra-responsive whipsaw scalper using leading indicators
+   */
+  async handleMomentumXSignal(momentumXData) {
+    console.log('[OrderManager] handleMomentumXSignal called with:', momentumXData)
+    
+    if (!this.isRunning || !this.dexService) {
+      console.log('[OrderManager] Not running or no dexService')
+      return
+    }
+
+    // Defensive guards
+    if (!momentumXData || !momentumXData.symbol || !momentumXData.side || !momentumXData.limit_price) {
+      console.log('[OrderManager] Missing required fields:', {
+        hasData: !!momentumXData,
+        hasSymbol: !!momentumXData?.symbol,
+        hasSide: !!momentumXData?.side,
+        hasLimitPrice: !!momentumXData?.limit_price
+      })
+      return
+    }
+
+    const symbol = momentumXData.symbol
+    const side = momentumXData.side
+    const entryPrice = parseFloat(momentumXData.limit_price)
+
+    // Ignore NEUTRAL or FLAT regime
+    if (side === 'NEUTRAL' || momentumXData.market_regime === 'FLAT') {
+      console.log('[OrderManager] NEUTRAL/FLAT regime signal, skipping')
+      return
+    }
+
+    try {
+      // Skip if a position already exists
+      const existingPosition = await this.dexService.getPosition(symbol)
+      const positionAmt = parseFloat(existingPosition.positionAmt || '0')
+      console.log('[OrderManager] Position check:', { symbol, positionAmt })
+      if (positionAmt !== 0) {
+        console.log('[OrderManager] Position already exists, skipping')
+        return
+      }
+
+      // Cancel any existing unfilled orders for this symbol (new signal = new conditions)
+      const openOrders = await this.dexService.getOpenOrders(symbol)
+      console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      if (openOrders.length > 0) {
+        console.log('[OrderManager] Cancelling existing unfilled orders to place new signal')
+        for (const order of openOrders) {
+          try {
+            await this.dexService.cancelOrder(symbol, order.orderId)
+            this.activeOrders.delete(order.orderId)
+            console.log(`[OrderManager] Cancelled order ${order.orderId}`)
+          } catch (error) {
+            console.error(`[OrderManager] Failed to cancel order ${order.orderId}:`, error)
+          }
+        }
+      }
+
+      // Calculate position size - USE CAPITAL % AS MARGIN
+      const accountBalance = await this.dexService.getAccountBalance()
+      const availableBalance = parseFloat(accountBalance.availableBalance || '0')
+      const positionSizePercent = this.settings.positionSize || 10
+      const capitalLimit = parseFloat(this.settings.capital || '0')
+      const leverage = this.settings.leverage || 1
+      
+      // Position size % of capital IS the margin we want to use
+      const marginToUse = (capitalLimit * positionSizePercent) / 100
+      
+      // Actual position value = margin * leverage
+      const targetPositionValue = marginToUse * leverage
+      
+      // Make sure we have enough balance for the margin
+      const maxPositionValue = availableBalance >= marginToUse ? targetPositionValue : availableBalance * leverage
+
+      if (entryPrice <= 0) {
+        return
+      }
+
+      const quantity = maxPositionValue / entryPrice
+      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+
+      const orderType = this.settings.orderType || 'LIMIT'
+
+      console.log('[OrderManager] Placing momentum X order:', {
+        symbol,
+        side,
+        asterSide,
+        orderType,
+        entryPrice,
+        quantity,
+        targetPositionValue,
+        maxPositionValue,
+        marginToUse,
+        availableBalance,
+        positionSizePercent,
+        leverage,
+        capitalLimit,
+        market_regime: momentumXData.market_regime,
+        layer_score: momentumXData.layer_score,
+        delta_trend: momentumXData.delta_trend,
+        orderbook_pressure: momentumXData.orderbook_pressure,
+        atr: momentumXData.atr,
+        in_fvg_zone: momentumXData.in_fvg_zone
+      })
+
+      const orderParams = {
+        symbol,
+        side: asterSide,
+        type: orderType,
+        quantity: quantity,
+        newClientOrderId: `hopium_momentumx_${Date.now()}`
+      }
+
+      // Only add price and timeInForce for LIMIT orders
+      if (orderType === 'LIMIT') {
+        orderParams.price = entryPrice
+        orderParams.timeInForce = 'GTC'
+      }
+
+      console.log('[OrderManager] Order params:', orderParams)
+      const orderResponse = await this.dexService.placeOrder(orderParams)
+      console.log('[OrderManager] Momentum X order placed successfully:', orderResponse)
+
+      // Track order for management
+      this.activeOrders.set(orderResponse.orderId, {
+        orderId: orderResponse.orderId,
+        symbol,
+        side,
+        entryPrice: entryPrice,
+        quantity: orderResponse.executedQty || orderResponse.origQty,
+        status: orderResponse.status,
+        takeProfit: this.settings.takeProfit,
+        stopLoss: this.settings.stopLoss,
+        createdAt: Date.now(),
+        entryConfidence: momentumXData.confidence || 'unknown'
+      })
+    } catch (error) {
+      console.error('[OrderManager] Failed to place momentum X order:', error)
+      this.handleError('Failed to place momentum X order', error)
+    }
+  }
+
+  /**
    * Poll open orders to check status
    */
   async pollOpenOrders() {

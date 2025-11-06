@@ -427,6 +427,10 @@ class HopiumWebSocket {
         console.log('🎯 Momentum:', data.data.side, '| Trend:', data.data.trend_1h + '/' + data.data.trend_4h);
         break;
         
+      case 'momentum_x':
+        console.log('🔮 Momentum X:', data.data.side, '| Regime:', data.data.market_regime, '| Layers:', data.data.layer_score + '/8');
+        break;
+        
       case 'alert':
         console.log('⚠️ Alert:', data.data.description);
         break;
@@ -487,6 +491,9 @@ async function setupWebSocket() {
   
   // OR Momentum: Directional volume farming (trend-aligned scalping)
   // wsClient.subscribe('BTCUSDT', 'momentum');  // 1-min updates, only trades with trend, bear market optimal
+  
+  // OR Momentum X: Psychic candle reader (whipsaw scalping with leading indicators) 🔥
+  // wsClient.subscribe('BTCUSDT', 'momentum_x');  // 1-min updates, ATR regime filter, 8-layer confluence, 100x leverage
   
   // OR Scalp: High-frequency scalping (mean reversion)
   // wsClient.subscribe('BTCUSDT', 'scalp');  // 30-sec updates, both directions, volume farming

@@ -570,6 +570,28 @@ HopiumCore supports multiple trading strategies. When subscribing to a symbol, y
 - **Expected Hold**: 1-3 minutes per trade
 - **Best For**: Volume farming, high-frequency scalping, maximizing trade count
 
+**4. Momentum X (Psychic Candle Reader)** ⚡ **NEW** 🔥
+- **ID**: `"momentum_x"`
+- **Description**: Ultra-responsive whipsaw scalper using leading indicators (delta, orderbook, FVG)
+- **Signal Frequency**: Every 1 minute (FLAT regime = 0 signals, WHIPSAW regime = 10-15/hour)
+- **8-Layer Confluence System**:
+  1. Delta trend (cumulative buy/sell pressure)
+  2. Delta acceleration (momentum building)
+  3. Orderbook imbalance (bid/ask ratio >2.5:1)
+  4. Candle stacking (3+ consecutive greens/reds)
+  5. Volume spike (>1.3x average)
+  6. Sweep detection (smart money traps)
+  7. Imbalance fill (gap fill opportunities)
+  8. FVG reversal (price in fair value gap)
+- **ATR-Based Regime Filter**:
+  - FLAT (ATR < 0.08%): NO TRADES (capital preservation)
+  - WHIPSAW (ATR > 0.15%): ACTIVE TRADING (10-15 signals/hour)
+  - TRENDING (0.08-0.15%): SELECTIVE (need 4+ layers)
+- **Order Type**: Aggressive LIMIT orders (0.01% better than market)
+- **TP/SL**: +0.05% TP, -0.15% SL (5% gain / 15% loss @ 100x)
+- **Expected Hold**: 2-5 minutes per trade
+- **Best For**: High-leverage whipsaw trading (50x-100x), catching moves EARLY with leading indicators
+
 #### Strategy Selection
 
 - **Default**: If no strategy is specified, `range_trading` is used

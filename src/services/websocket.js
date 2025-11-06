@@ -103,6 +103,33 @@ export class HopiumWebSocketClient {
   onMomentumIndicator = null
 
   /**
+   * Called when a momentum X indicator message is received (Psychic Candle Reader)
+   * @type {Function}
+   * @param {Object} data - Momentum X indicator data
+   * @param {string} data.symbol - Trading pair symbol
+   * @param {number} data.current_price - Current market price
+   * @param {number} data.atr - Average True Range
+   * @param {string} data.market_regime - Market regime ('FLAT', 'WHIPSAW', 'TRENDING')
+   * @param {number[]} data.delta_stack - Array of recent candle deltas
+   * @param {string} data.delta_trend - Delta trend ('BULLISH', 'BEARISH', 'NEUTRAL')
+   * @param {number} data.delta_acceleration - Momentum acceleration
+   * @param {number} data.bid_ask_ratio - Orderbook pressure ratio
+   * @param {string} data.orderbook_pressure - Orderbook pressure ('BUY_HEAVY', 'SELL_HEAVY', 'BALANCED')
+   * @param {number} data.stacked_candles - Consecutive green/red candles
+   * @param {number} data.volume_acceleration - Volume spike factor
+   * @param {Object|null} data.nearest_fvg - Fair Value Gap data
+   * @param {boolean} data.in_fvg_zone - Whether price is in FVG zone
+   * @param {string} data.side - Trading direction ('LONG', 'SHORT', 'NEUTRAL')
+   * @param {number} data.limit_price - Recommended limit order price
+   * @param {number} data.tp_price - Take profit price
+   * @param {number} data.sl_price - Stop loss price
+   * @param {string} data.confidence - Confidence level ('high', 'medium', 'low')
+   * @param {number} data.layer_score - Confluence score (0-8 layers)
+   * @param {string} data.reasoning - Strategy reasoning
+   */
+  onMomentumX = null
+
+  /**
    * Called when an alert message is received
    * @type {Function}
    * @param {Object} data - Alert message data
@@ -372,7 +399,7 @@ export class HopiumWebSocketClient {
    * Subscribe to receive updates for a specific trading pair
    * 
    * @param {string} symbol - Trading pair symbol (e.g., 'BTCUSDT')
-   * @param {string} [strategy='range_trading'] - Trading strategy ('range_trading', 'momentum', or 'scalp')
+   * @param {string} [strategy='range_trading'] - Trading strategy ('range_trading', 'momentum', 'scalp', or 'momentum_x')
    * @throws {Error} If WebSocket is not connected
    * 
    * @example
@@ -380,6 +407,8 @@ export class HopiumWebSocketClient {
    * client.subscribe('BTCUSDT', 'range_trading')
    * // Or for scalp strategy
    * client.subscribe('BTCUSDT', 'scalp')
+   * // Or for momentum X (psychic candle reader)
+   * client.subscribe('BTCUSDT', 'momentum_x')
    * ```
    */
   subscribe(symbol, strategy = 'range_trading') {
@@ -572,6 +601,22 @@ export class HopiumWebSocketClient {
           
           // Pass the full message structure (contains symbol, strategy, and data)
           this.onMomentumIndicator(momentumMessage)
+        }
+        break
+
+      case 'momentum_x':
+        if (this.onMomentumX) {
+          // Server sends momentum X data in fullMessage.data (similar to scalp_indicator and momentum_indicator)
+          console.log('[WebSocket] Received momentum_x:', message)
+          
+          // Extract data from fullMessage structure
+          const momentumXMessage = message.fullMessage || message.message || message.payload || message
+          const momentumXData = momentumXMessage?.data || momentumXMessage
+          
+          console.log('[WebSocket] Extracted momentum X data:', momentumXData)
+          
+          // Pass the full message structure (contains symbol, strategy, and data)
+          this.onMomentumX(momentumXMessage)
         }
         break
 

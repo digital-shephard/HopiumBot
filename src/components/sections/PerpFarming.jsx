@@ -835,6 +835,117 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
           }
         }
         
+        // Handle momentum X strategy signals (Psychic Candle Reader)
+        wsClient.onMomentumX = async (message) => {
+          try {
+            console.log('[PerpFarming] Received momentum X message:', message)
+            
+            // Extract the actual momentum X data
+            // WebSocket sends the data in message.data
+            const momentumXData = message?.data || message
+            
+            // Defensive: ignore if malformed
+            if (!momentumXData) {
+              console.log('[PerpFarming] No momentum X data found in message')
+              return
+            }
+            
+            console.log('[PerpFarming] Extracted momentum X data:', momentumXData)
+
+            // Update bot message with server reasoning (always)
+            const reasoning = momentumXData.reasoning || 'Calling home for some data...'
+            setBotMessage(reasoning)
+            if (onBotMessageChange) onBotMessageChange(reasoning)
+
+            // Update symbol
+            if (momentumXData.symbol) {
+              setTradingSymbol(momentumXData.symbol)
+            }
+            
+            // Skip NEUTRAL signals or FLAT regime (ATR-based regime filter)
+            if (momentumXData.side === 'NEUTRAL' || momentumXData.market_regime === 'FLAT') {
+              console.log('[PerpFarming] NEUTRAL/FLAT regime signal, skipping')
+              return
+            }
+            
+            // Check if position exists before opening new one
+            const status = orderManager.getStatus()
+            const hasActivePosition = status.activePositions && status.activePositions.length > 0
+            
+            console.log('[PerpFarming] Momentum X position check:', {
+              hasActivePosition,
+              confidence: momentumXData.confidence,
+              side: momentumXData.side,
+              market_regime: momentumXData.market_regime,
+              layer_score: momentumXData.layer_score,
+              delta_trend: momentumXData.delta_trend,
+              orderbook_pressure: momentumXData.orderbook_pressure,
+              activePositions: status.activePositions
+            })
+
+            // If position exists, check Smart Mode exit conditions
+            if (hasActivePosition && settings.smartMode) {
+              console.log('[PerpFarming] 🧠 Smart Mode: Checking exit conditions')
+              
+              // Add signal to position history
+              const symbol = momentumXData.symbol
+              orderManager.addSignalToHistory(symbol, {
+                confidence: momentumXData.confidence,
+                side: momentumXData.side
+              })
+
+              // Check Smart Mode exit conditions
+              const exitDecision = await orderManager.checkSmartModeExit(symbol, {
+                confidence: momentumXData.confidence,
+                side: momentumXData.side
+              })
+
+              if (exitDecision.shouldExit) {
+                // Check if current PNL is above minimum threshold
+                const currentNetPnl = lastPnlRef.current || 0
+                const minPnl = parseFloat(settings.smartModeMinPnl) || -50
+                
+                if (currentNetPnl >= minPnl) {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT triggered: ${exitDecision.reason} (PNL: $${currentNetPnl.toFixed(2)} >= min $${minPnl.toFixed(2)})`)
+                  
+                  // Select random statement based on reason
+                  const statement = getSmartModeStatement(exitDecision.reason)
+                  setBotMessage(statement)
+                  if (onBotMessageChange) onBotMessageChange(statement)
+                  
+                  // Close position
+                  await orderManager.closePositionSmartMode(symbol, exitDecision.details)
+                  
+                  return // Exit early, don't process new entry
+                } else {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT BLOCKED: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)} - letting normal TP/SL handle it`)
+                }
+              }
+            }
+            
+            // Accept high and medium confidence signals, or low if user trusts them
+            const shouldTrade = momentumXData.confidence === 'high' || 
+                                momentumXData.confidence === 'medium' || 
+                                (momentumXData.confidence === 'low' && settings.trustLowConfidence)
+            
+            if (!hasActivePosition && shouldTrade) {
+              console.log(`[PerpFarming] 🔮 Processing ${momentumXData.confidence.toUpperCase()} confidence ${momentumXData.side} momentum X signal @ $${momentumXData.limit_price} (${momentumXData.layer_score}/8 layers, ${momentumXData.market_regime} regime)`)
+              if (typeof orderManager.handleMomentumXSignal === 'function') {
+                await orderManager.handleMomentumXSignal(momentumXData)
+                console.log('[PerpFarming] ✅ Momentum X order placement attempted')
+              } else {
+                console.error('[PerpFarming] handleMomentumXSignal is not a function!')
+              }
+            } else if (hasActivePosition) {
+              console.log('[PerpFarming] ⏭️ Skipping momentum X signal - active position exists')
+            } else {
+              console.log(`[PerpFarming] ⏭️ Skipping momentum X signal - low confidence (${momentumXData.confidence}) ${settings.trustLowConfidence ? '(trust enabled but still skipped)' : '(trust low confidence disabled)'}`)
+            }
+          } catch (error) {
+            handleError(`Failed to handle momentum X signal: ${error.message}`)
+          }
+        }
+        
         wsClient.onError = (error) => {
           const errorMsg = error.payload?.error || 'Unknown error'
           handleError(`WebSocket error: ${errorMsg}`)
@@ -1456,13 +1567,16 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   <option value="range_trading">Range Trading (Mean Reversion)</option>
                   <option value="momentum">Momentum (LLM-Powered)</option>
                   <option value="scalp">Aggressive Reversion Scalping ⚡</option>
+                  <option value="momentum_x">Momentum X (Psychic Candle Reader) 🔥</option>
                 </select>
                 <div className="strategy-description">
                   {strategy === 'range_trading' 
                     ? '📊 Trades bounces off 24h support/resistance levels'
                     : strategy === 'momentum'
                     ? '🤖 AI-powered trend-following using GPT-5 analysis'
-                    : '⚡ Ultra-fast 30-second signals, optimized for 75x leverage'
+                    : strategy === 'scalp'
+                    ? '⚡ Ultra-fast 30-second signals, optimized for 75x leverage'
+                    : '🔮 8-layer whipsaw scalper with delta, orderbook, FVG analysis @ 100x'
                   }
                 </div>
               </div>

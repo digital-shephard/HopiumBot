@@ -279,6 +279,7 @@ Connection limit exceeded: maximum 3 connections per user
 | **Range Trading** | `range_trading` | Every 1 minute | `summary` | Multi-TF + volume profile + 6-layer confluence |
 | **Momentum** | `momentum` | Every 1 minute | `momentum_indicator` | Directional scalping (trend-aligned volume farming) |
 | **Scalp** | `scalp` | Every 30 seconds | `scalp_indicator` | High-frequency volume farming @ 75x |
+| **Momentum X** 🔥 | `momentum_x` | Every 1 minute | `momentum_x` | Whipsaw scalping with leading indicators (delta, orderbook, FVG) @ 100x |
 
 ---
 
@@ -689,6 +690,169 @@ if (data.side === 'SHORT' && data.trend_alignment === 'ALIGNED') {
 - ✅ **Returns NEUTRAL** when trends conflict (waits for clarity)
 - ✅ **All detectors integrated** - Uses same tech as scalp strategy
 - ⚠️ **Expected 10-20 signals/day** (fewer than scalp, more than range)
+
+---
+
+### **🔮 Momentum X Strategy** (Psychic Candle Reader) ⚡ **NEW** 🔥
+
+**Subscribe:**
+```javascript
+ws.send(JSON.stringify({
+  type: 'subscribe',
+  symbol: 'BTCUSDT',
+  strategy: 'momentum_x'
+}));
+```
+
+**Message Format:**
+```typescript
+{
+  type: "momentum_x",
+  symbol: "BTCUSDT",
+  strategy: "momentum_x",
+  data: {
+    symbol: string;
+    timestamp: string;
+    current_price: number;
+    
+    // Regime detection
+    atr: number;
+    market_regime: "FLAT" | "WHIPSAW" | "TRENDING";
+    
+    // Order flow (leading indicators)
+    delta_stack: number[];           // [current, -1, -2] candle deltas
+    delta_trend: "BULLISH" | "BEARISH" | "NEUTRAL";
+    delta_acceleration: number;      // Momentum acceleration
+    bid_ask_ratio: number;           // Orderbook pressure
+    orderbook_pressure: "BUY_HEAVY" | "SELL_HEAVY" | "BALANCED";
+    stacked_candles: number;         // Consecutive greens/reds
+    volume_acceleration: number;     // Volume spike factor
+    
+    // Smart money concepts
+    nearest_fvg: {
+      type: "BULLISH" | "BEARISH";
+      gap_low: number;
+      gap_high: number;
+      created_at: string;
+      age: number;
+      filled: boolean;
+      fill_percent: number;
+    } | null;
+    in_fvg_zone: boolean;
+    
+    // Signal
+    side: "LONG" | "SHORT" | "NEUTRAL";
+    limit_price: number;
+    tp_price: number;
+    sl_price: number;
+    tp_percent: 0.05;
+    sl_percent: 0.15;
+    
+    // Quality
+    confidence: "high" | "medium" | "low";
+    layer_score: number;             // 0-8 layers
+    reasoning: string;
+    expected_hold_minutes: number;
+  }
+}
+```
+
+**Update Frequency:** Every 1 minute
+
+**Signal Types:**
+
+**1. High Confluence LONG** (7/8 layers - WHIPSAW regime):
+```json
+{
+  "type": "momentum_x",
+  "symbol": "BTCUSDT",
+  "strategy": "momentum_x",
+  "data": {
+    "symbol": "BTCUSDT",
+    "timestamp": "2025-11-06T10:30:00Z",
+    "current_price": 102850.00,
+    "atr": 35.50,
+    "market_regime": "WHIPSAW",
+    "delta_stack": [850.5, 620.3, 410.2],
+    "delta_trend": "BULLISH",
+    "delta_acceleration": 1.37,
+    "bid_ask_ratio": 3.2,
+    "orderbook_pressure": "BUY_HEAVY",
+    "stacked_candles": 4,
+    "volume_acceleration": 1.8,
+    "nearest_fvg": {
+      "type": "BEARISH",
+      "gap_low": 102800.00,
+      "gap_high": 102900.00,
+      "created_at": "2025-11-06T10:25:00Z",
+      "age": 5,
+      "filled": false,
+      "fill_percent": 50.0
+    },
+    "in_fvg_zone": true,
+    "side": "LONG",
+    "limit_price": 102839.70,
+    "tp_price": 102901.43,
+    "sl_price": 102695.75,
+    "tp_percent": 0.05,
+    "sl_percent": 0.15,
+    "confidence": "high",
+    "layer_score": 7,
+    "reasoning": "MOMENTUM X LONG (7/8 layers):\n✅ Bullish delta trend (1881 cumulative)\n✅ Delta accelerating (1.4x)\n✅ Heavy buy pressure (3.20:1 ratio)\n✅ 4 green candles stacked\n✅ Volume spike (1.8x avg)\n✅ Bullish sweep at $102750.00\n✅ Price in bearish FVG (reversal zone)\n\n🔥 EXCEPTIONAL CONFLUENCE - Psychic mode activated!",
+    "expected_hold_minutes": 3
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (data.market_regime === 'WHIPSAW' && data.side === 'LONG' && data.layer_score >= 6) {
+  // High confluence LONG in active whipsaw - take it!
+  placeLimitOrder({
+    symbol: data.symbol,
+    side: 'BUY',
+    price: data.limit_price,
+    takeProfit: data.tp_price,
+    stopLoss: data.sl_price
+  });
+  
+  console.log(`✅ Momentum X LONG | ${data.layer_score}/8 layers | Regime: ${data.market_regime}`);
+}
+```
+
+**2. NEUTRAL Signal** (FLAT regime - capital preservation):
+```json
+{
+  "type": "momentum_x",
+  "data": {
+    "atr": 25.00,
+    "market_regime": "FLAT",
+    "side": "NEUTRAL",
+    "layer_score": 0,
+    "reasoning": "FLAT SIDEWAYS detected (ATR 0.06% < 0.08%). No clear direction. Waiting for volatility."
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (data.market_regime === 'FLAT') {
+  // No trading - wait for volatility
+  console.log('⚠️ FLAT market - waiting for whipsaw', data.reasoning);
+}
+```
+
+**Key Points:**
+- ✅ **ATR regime filter** - Only trades when volatility is active (preserves capital in flat markets)
+- ✅ **8-layer confluence** - Delta + orderbook + FVG + volume + candles + sweeps + gaps + imbalance
+- ✅ **Leading indicators** - Catches whipsaws at the START (not after they're done)
+- ✅ **Signal frequency**: 10-15/hour in WHIPSAW, 0/hour in FLAT, 5-8/hour in TRENDING
+- ✅ **Optimized for 100x leverage** - Ultra-tight TP (0.05%) and SL (0.15%)
+- ✅ **Fair value gaps** - Smart money concept for high-probability reversals
+- ✅ **Delta accumulation** - Sees order flow before price moves
+- ✅ **Orderbook imbalance** - 2.5:1+ bid/ask ratio triggers
+- ✅ **Always includes reasoning** - Full breakdown of why signal fired
+- ⚠️ **Requires active markets** - Best during US trading hours (13:00-21:00 UTC)
 
 ---
 

@@ -1539,23 +1539,6 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             <div className="risk-modal-wrapper">
               <h2 className="risk-modal-title">{showPairSelection ? 'Select Pairs' : 'Risk Settings'}</h2>
               
-              {/* Pair Selection Button - Only show when not in pair selection view */}
-              {!showPairSelection && (
-                <div className="pair-selection-header">
-                  <button 
-                    className="pair-selection-button"
-                    onClick={() => setShowPairSelection(true)}
-                  >
-                    <span className="pair-count">{selectedPairs.length} pair{selectedPairs.length !== 1 ? 's' : ''} selected</span>
-                    <span className="pair-arrow">→</span>
-                  </button>
-                  <div className="selected-pairs-preview">
-                    {selectedPairs.slice(0, 3).join(', ')}
-                    {selectedPairs.length > 3 && ` +${selectedPairs.length - 3} more`}
-                  </div>
-                </div>
-              )}
-              
               {/* Back button when in pair selection view */}
               {showPairSelection && (
                 <button 
@@ -1627,6 +1610,23 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   Automatically scans ALL pairs every hour, opens 3-5 best opportunities with even capital split, and closes all positions at hour end. Uses MARKET orders only. Your capital, TP/SL settings still apply. All other manual settings are ignored.
                 </div>
               </div>
+              
+              {/* Pair Selection Button - Only show when not in pair selection view AND Auto Mode is OFF */}
+              {!autoMode && (
+                <div className="pair-selection-header">
+                  <button 
+                    className="pair-selection-button"
+                    onClick={() => setShowPairSelection(true)}
+                  >
+                    <span className="pair-count">{selectedPairs.length} pair{selectedPairs.length !== 1 ? 's' : ''} selected</span>
+                    <span className="pair-arrow">→</span>
+                  </button>
+                  <div className="selected-pairs-preview">
+                    {selectedPairs.slice(0, 3).join(', ')}
+                    {selectedPairs.length > 3 && ` +${selectedPairs.length - 3} more`}
+                  </div>
+                </div>
+              )}
 
               {/* Smart Mode Checkbox - Only show if Auto Mode is OFF */}
               {!autoMode && (
@@ -1952,8 +1952,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               </div>
               )}
 
-              {/* Exit Strategy - Hide if Auto Mode (closes all at hour end) */}
-              {!autoMode && (
+              {/* Exit Strategy - Available for all modes */}
               <div className="risk-form-group">
                 <label className="risk-label">Exit Strategy</label>
                 
@@ -2060,7 +2059,6 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   </span>
                 </label>
               </div>
-              )}
 
               {validationError && (
                 <div className="risk-error-message">

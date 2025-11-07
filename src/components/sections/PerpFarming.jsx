@@ -421,38 +421,47 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
       orderManager.start()
       orderManagerRef.current = orderManager
       
-      // Set trading symbols from settings
+      // Set trading symbols from settings (only if NOT in Auto Mode)
       const tradingPairs = settings.selectedPairs || ['BTCUSDT']
-      setTradingSymbols(tradingPairs)
+      if (!settings.autoMode) {
+        setTradingSymbols(tradingPairs)
+      } else {
+        // Auto Mode: Wait for hourly scanner signals
+        setTradingSymbols([])
+      }
       
-      // Check for existing positions on ALL selected pairs on startup
-      try {
-        for (const symbol of tradingPairs) {
-          const existingPosition = await orderManager.dexService.getPosition(symbol)
-          const positionAmt = parseFloat(existingPosition.positionAmt || '0')
-          
-          if (positionAmt !== 0) {
-            console.log(`[PerpFarming] 🔍 Detected existing position on ${symbol}:`, {
-              symbol: symbol,
-              size: positionAmt,
-              entryPrice: existingPosition.entryPrice,
-              unrealizedPnL: existingPosition.unRealizedProfit
-            })
+      // Check for existing positions on ALL selected pairs on startup (only in manual mode)
+      if (!settings.autoMode) {
+        try {
+          for (const symbol of tradingPairs) {
+            const existingPosition = await orderManager.dexService.getPosition(symbol)
+            const positionAmt = parseFloat(existingPosition.positionAmt || '0')
             
-            // Add position to tracking immediately
-            orderManager.activePositions.set(symbol, {
-              symbol: symbol,
-              side: positionAmt > 0 ? 'LONG' : 'SHORT',
-              quantity: Math.abs(positionAmt),
-              entryPrice: parseFloat(existingPosition.entryPrice || '0')
-            })
-            
-            console.log(`[PerpFarming] ✅ Existing position on ${symbol} is now being tracked`)
+            if (positionAmt !== 0) {
+              console.log(`[PerpFarming] 🔍 Detected existing position on ${symbol}:`, {
+                symbol: symbol,
+                size: positionAmt,
+                entryPrice: existingPosition.entryPrice,
+                unrealizedPnL: existingPosition.unRealizedProfit
+              })
+              
+              // Add position to tracking immediately
+              orderManager.activePositions.set(symbol, {
+                symbol: symbol,
+                side: positionAmt > 0 ? 'LONG' : 'SHORT',
+                quantity: Math.abs(positionAmt),
+                entryPrice: parseFloat(existingPosition.entryPrice || '0')
+              })
+              
+              console.log(`[PerpFarming] ✅ Existing position on ${symbol} is now being tracked`)
+            }
           }
+          console.log(`[PerpFarming] Checked ${tradingPairs.length} pairs for existing positions`)
+        } catch (error) {
+          console.warn('[PerpFarming] Could not check for existing positions:', error.message)
         }
-        console.log(`[PerpFarming] Checked ${tradingPairs.length} pairs for existing positions`)
-      } catch (error) {
-        console.warn('[PerpFarming] Could not check for existing positions:', error.message)
+      } else {
+        console.log('[PerpFarming] Auto Mode enabled - waiting for hourly scanner signals')
       }
       
       // Start polling PNL every 2 seconds for real-time updates
@@ -1493,6 +1502,11 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
           {isRunning && tradingSymbols.length > 0 && (
             <div className="trading-status">
               Trading {tradingSymbols.join(', ')}
+            </div>
+          )}
+          {isRunning && tradingSymbols.length === 0 && (
+            <div className="trading-status">
+              Waiting for signals...
             </div>
           )}
           {isRunning && allowedEquity && (

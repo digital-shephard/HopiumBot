@@ -92,7 +92,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   const [isRunning, setIsRunning] = useState(false)
   const [isValidating, setIsValidating] = useState(false)
   const [validationError, setValidationError] = useState('')
-  const [tradingSymbol, setTradingSymbol] = useState('')
+  const [tradingSymbols, setTradingSymbols] = useState([]) // Array of symbols being traded
   const [allowedEquity, setAllowedEquity] = useState('')
   const [pnl, setPnl] = useState(0)
   const [prevPnl, setPrevPnl] = useState(0)
@@ -417,37 +417,38 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
       orderManager.start()
       orderManagerRef.current = orderManager
       
-      // Set default trading symbol (used even if WebSocket fails)
-      const defaultSymbol = 'BTCUSDT'
-      setTradingSymbol(defaultSymbol)
+      // Set trading symbols from settings
+      const tradingPairs = settings.selectedPairs || ['BTCUSDT']
+      setTradingSymbols(tradingPairs)
       
-      // Check for existing position on startup
+      // Check for existing positions on ALL selected pairs on startup
       try {
-        const existingPosition = await orderManager.dexService.getPosition(defaultSymbol)
-        const positionAmt = parseFloat(existingPosition.positionAmt || '0')
-        
-        if (positionAmt !== 0) {
-          console.log(`[PerpFarming] 🔍 Detected existing position:`, {
-            symbol: defaultSymbol,
-            size: positionAmt,
-            entryPrice: existingPosition.entryPrice,
-            unrealizedPnL: existingPosition.unRealizedProfit
-          })
+        for (const symbol of tradingPairs) {
+          const existingPosition = await orderManager.dexService.getPosition(symbol)
+          const positionAmt = parseFloat(existingPosition.positionAmt || '0')
           
-          // Add position to tracking immediately
-          orderManager.activePositions.set(defaultSymbol, {
-            symbol: defaultSymbol,
-            side: positionAmt > 0 ? 'LONG' : 'SHORT',
-            quantity: Math.abs(positionAmt),
-            entryPrice: parseFloat(existingPosition.entryPrice || '0')
-          })
-          
-          console.log('[PerpFarming] ✅ Existing position is now being tracked')
-        } else {
-          console.log('[PerpFarming] No existing position found - starting fresh')
+          if (positionAmt !== 0) {
+            console.log(`[PerpFarming] 🔍 Detected existing position on ${symbol}:`, {
+              symbol: symbol,
+              size: positionAmt,
+              entryPrice: existingPosition.entryPrice,
+              unrealizedPnL: existingPosition.unRealizedProfit
+            })
+            
+            // Add position to tracking immediately
+            orderManager.activePositions.set(symbol, {
+              symbol: symbol,
+              side: positionAmt > 0 ? 'LONG' : 'SHORT',
+              quantity: Math.abs(positionAmt),
+              entryPrice: parseFloat(existingPosition.entryPrice || '0')
+            })
+            
+            console.log(`[PerpFarming] ✅ Existing position on ${symbol} is now being tracked`)
+          }
         }
+        console.log(`[PerpFarming] Checked ${tradingPairs.length} pairs for existing positions`)
       } catch (error) {
-        console.warn('[PerpFarming] Could not check for existing position:', error.message)
+        console.warn('[PerpFarming] Could not check for existing positions:', error.message)
       }
       
       // Start polling PNL every 2 seconds for real-time updates
@@ -608,9 +609,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
 
         const wsClient = new HopiumWebSocketClient()
         
-        // Handle subscription confirmation - use the full pair name from WebSocket
+        // Handle subscription confirmation - track subscribed symbols
         wsClient.onSubscribed = (symbol) => {
-          setTradingSymbol(symbol)
+          console.log(`[PerpFarming] Subscribed to ${symbol}`)
+          // Symbols are already set from settings, no need to update here
         }
         
         wsClient.onSummary = async (summaryData) => {
@@ -636,10 +638,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               range_24h 
             })
             
-            // Update symbol
-            if (symbol) {
-              setTradingSymbol(symbol)
-            }
+            // Symbol is already tracked in tradingSymbols array from settings
             
             // Update bot message with reasoning if available
             const reasoning = summary?.entry?.reasoning || 'Analyzing market conditions...'
@@ -688,10 +687,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             setBotMessage(reasoning)
             if (onBotMessageChange) onBotMessageChange(reasoning)
 
-            // Update symbol
-            if (scalpData.symbol) {
-              setTradingSymbol(scalpData.symbol)
-            }
+            // Symbol is already tracked in tradingSymbols array from settings
             
             // Only process LONG/SHORT signals (skip NEUTRAL)
             if (scalpData.side === 'NEUTRAL') {
@@ -795,10 +791,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             setBotMessage(reasoning)
             if (onBotMessageChange) onBotMessageChange(reasoning)
 
-            // Update symbol
-            if (momentumData.symbol) {
-              setTradingSymbol(momentumData.symbol)
-            }
+            // Symbol is already tracked in tradingSymbols array from settings
             
             // Only process LONG/SHORT signals when trends are ALIGNED
             if (momentumData.side === 'NEUTRAL' || momentumData.trend_alignment === 'CONFLICTED') {
@@ -904,10 +897,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             setBotMessage(reasoning)
             if (onBotMessageChange) onBotMessageChange(reasoning)
 
-            // Update symbol
-            if (momentumXData.symbol) {
-              setTradingSymbol(momentumXData.symbol)
-            }
+            // Symbol is already tracked in tradingSymbols array from settings
             
             // Skip NEUTRAL signals or FLAT regime (ATR-based regime filter)
             if (momentumXData.side === 'NEUTRAL' || momentumXData.market_regime === 'FLAT') {
@@ -1007,7 +997,13 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         
         // Connect with authentication token
         await wsClient.connect(token)
-        wsClient.subscribe(defaultSymbol, settings.strategy) // Default symbol with strategy
+        
+        // Subscribe to all selected pairs
+        for (const symbol of tradingPairs) {
+          wsClient.subscribe(symbol, settings.strategy)
+          console.log(`[PerpFarming] Subscribing to ${symbol} with ${settings.strategy} strategy`)
+        }
+        
         wsClientRef.current = wsClient
       } catch (wsError) {
         // WebSocket connection failed, but trading can still continue
@@ -1090,7 +1086,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
 
     setIsRunning(false)
     if (onBotStatusChange) onBotStatusChange(false)
-    setTradingSymbol('')
+    setTradingSymbols([])
     setAllowedEquity('')
     setPnl(0)
     setPrevPnl(0)
@@ -1268,9 +1264,9 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         
         <div className="aster-circle-container">
 
-          {isRunning && tradingSymbol && (
+          {isRunning && tradingSymbols.length > 0 && (
             <div className="trading-status">
-              Trading {tradingSymbol}
+              Trading {tradingSymbols.join(', ')}
             </div>
           )}
           {isRunning && allowedEquity && (

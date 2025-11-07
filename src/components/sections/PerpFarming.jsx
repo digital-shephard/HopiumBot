@@ -799,15 +799,69 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             
             console.log('[PerpFarming] Extracted momentum data:', momentumData)
 
-            // Update bot message with server reasoning (always)
+            // === CLIENT-SIDE ANALYSIS FOR LOW CONFIDENCE SIGNALS ===
+            if (momentumData.confidence === 'low') {
+              console.log('[PerpFarming] 🧠 Low confidence detected, performing client-side analysis...')
+              
+              const rsi = momentumData.rsi || 50
+              const rsiOversold = rsi < 40
+              const rsiOverbought = rsi > 60
+              const nearFibSupport = momentumData.near_fib_level?.type === 'support' && momentumData.near_fib_level?.distance < 0.15
+              const nearFibResistance = momentumData.near_fib_level?.type === 'resistance' && momentumData.near_fib_level?.distance < 0.15
+              const atFibSupport = momentumData.at_fib_support === true
+              const atFibResistance = momentumData.at_fib_resistance === true
+              const rsiAlignedOversold = momentumData.rsi_alignment === 'ALIGNED_OVERSOLD'
+              const rsiAlignedOverbought = momentumData.rsi_alignment === 'ALIGNED_OVERBOUGHT'
+              
+              // Rule 1: RSI oversold + near/at fib support = LONG
+              if ((rsiOversold || rsiAlignedOversold) && (nearFibSupport || atFibSupport)) {
+                momentumData.side = 'LONG'
+                momentumData.confidence = 'medium'
+                momentumData.limit_price = momentumData.near_fib_level?.price || momentumData.current_price
+                const fibLevel = momentumData.near_fib_level?.level || 'fib support'
+                console.log(`🧠 Client Override: RSI ${rsi.toFixed(1)} oversold + ${fibLevel} support → LONG (upgraded to MEDIUM)`)
+                momentumData.reasoning = `Client Analysis: RSI oversold (${rsi.toFixed(1)}) + ${fibLevel} support. Upgraded from low to medium confidence.`
+              }
+              
+              // Rule 2: RSI overbought + near/at fib resistance = SHORT
+              else if ((rsiOverbought || rsiAlignedOverbought) && (nearFibResistance || atFibResistance)) {
+                momentumData.side = 'SHORT'
+                momentumData.confidence = 'medium'
+                momentumData.limit_price = momentumData.near_fib_level?.price || momentumData.current_price
+                const fibLevel = momentumData.near_fib_level?.level || 'fib resistance'
+                console.log(`🧠 Client Override: RSI ${rsi.toFixed(1)} overbought + ${fibLevel} resistance → SHORT (upgraded to MEDIUM)`)
+                momentumData.reasoning = `Client Analysis: RSI overbought (${rsi.toFixed(1)}) + ${fibLevel} resistance. Upgraded from low to medium confidence.`
+              }
+              
+              // Rule 3: Multi-timeframe RSI aligned (even if trends neutral)
+              else if (rsiAlignedOversold) {
+                momentumData.side = 'LONG'
+                momentumData.confidence = 'medium'
+                console.log(`🧠 Client Override: Multi-timeframe RSI aligned oversold → LONG (upgraded to MEDIUM)`)
+                momentumData.reasoning = `Client Analysis: Multi-timeframe RSI oversold alignment detected. Upgraded from low to medium confidence.`
+              }
+              else if (rsiAlignedOverbought) {
+                momentumData.side = 'SHORT'
+                momentumData.confidence = 'medium'
+                console.log(`🧠 Client Override: Multi-timeframe RSI aligned overbought → SHORT (upgraded to MEDIUM)`)
+                momentumData.reasoning = `Client Analysis: Multi-timeframe RSI overbought alignment detected. Upgraded from low to medium confidence.`
+              }
+              
+              // If no override, keep as low confidence
+              else {
+                console.log(`🧠 Client Analysis: No override criteria met, keeping low confidence ${momentumData.side}`)
+              }
+            }
+
+            // Update bot message with reasoning (server or client-modified)
             const reasoning = momentumData.reasoning || 'Calling home for some data...'
             setBotMessage(reasoning)
             if (onBotMessageChange) onBotMessageChange(reasoning)
 
             // Symbol is already tracked in tradingSymbols array from settings
             
-            // Only process LONG/SHORT signals when trends are ALIGNED
-            if (momentumData.side === 'NEUTRAL' || momentumData.trend_alignment === 'CONFLICTED') {
+            // Only process LONG/SHORT signals when trends are ALIGNED (unless client upgraded from low)
+            if (momentumData.side === 'NEUTRAL' || (momentumData.trend_alignment === 'CONFLICTED' && momentumData.confidence !== 'medium')) {
               console.log('[PerpFarming] NEUTRAL/CONFLICTED signal, skipping')
               return
             }

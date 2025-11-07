@@ -431,6 +431,25 @@ class HopiumWebSocket {
         console.log('🔮 Momentum X:', data.data.side, '| Regime:', data.data.market_regime, '| Layers:', data.data.layer_score + '/8');
         break;
         
+      case 'hourly_opportunities':
+        console.log('🔔 Hourly Scan:', data.data.top_picks.length, 'opportunities for', data.data.hour_window);
+        data.data.top_picks.forEach((pick, i) => {
+          console.log(`  ${i+1}. ${pick.symbol} ${pick.direction} @ ${pick.confidence} confidence`);
+        });
+        break;
+        
+      case 'mid_hour_opportunities':
+        console.log('⚡ Mid-Hour:', data.data.top_picks.length, 'exceptional opportunities');
+        break;
+        
+      case 'position_update':
+        console.log('📊 Position:', data.event, data.data.symbol, `(${data.data.tranches_executed}/${data.data.tranches_planned} tranches)`);
+        break;
+        
+      case 'hour_end':
+        console.log('🔚 Hour End:', data.hour_window, '| PnL:', data.data.total_pnl.toFixed(2), `(${data.data.avg_pnl_percent.toFixed(2)}%)`);
+        break;
+        
       case 'alert':
         console.log('⚠️ Alert:', data.data.description);
         break;
@@ -499,6 +518,13 @@ async function setupWebSocket() {
   // wsClient.subscribe('BTCUSDT', 'scalp');  // 30-sec updates, both directions, volume farming
 
   // 4. Listen for updates (handled by setupMessageHandlers)
+  
+  // 5. Hourly Scanner: Multi-pair portfolio trading (NO subscription needed!)
+  // The hourly scanner broadcasts to ALL authenticated clients automatically:
+  // - hourly_opportunities (XX:00) - Top 3-5 picks for the hour
+  // - mid_hour_opportunities (XX:30) - Exceptional setups mid-hour
+  // - position_update - Position lifecycle events
+  // - hour_end (XX:59) - Hour performance summary
 }
 
 // Advanced Example: Scalp Strategy for Volume Farming

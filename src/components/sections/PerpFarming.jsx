@@ -79,6 +79,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   const [strategy, setStrategy] = useState('range_trading')
   const [orderType, setOrderType] = useState('LIMIT') // 'LIMIT' or 'MARKET'
   const [orderTimeout, setOrderTimeout] = useState(120) // Order timeout in seconds (default 120)
+  const [autoMode, setAutoMode] = useState(false) // Auto Mode - Hourly Scanner (replaces all other strategies)
   const [smartMode, setSmartMode] = useState(true) // Smart Mode - active position management
   const [smartModeMinPnl, setSmartModeMinPnl] = useState(-50) // Minimum PNL before Smart Mode can exit (default -$50)
   const [trustLowConfidence, setTrustLowConfidence] = useState(false) // Allow trading on low confidence signals
@@ -105,6 +106,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   const [availableSymbols, setAvailableSymbols] = useState([]) // List of symbols from API
   const [selectedPairs, setSelectedPairs] = useState(['BTCUSDT']) // Default to BTC, max 5
   const [loadingSymbols, setLoadingSymbols] = useState(false)
+  const [hourlyPositions, setHourlyPositions] = useState([]) // Track Auto Mode positions
   
   const orderManagerRef = useRef(null)
   const wsClientRef = useRef(null)
@@ -136,6 +138,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         setStrategy(settings.strategy || 'range_trading')
         setOrderType(settings.orderType || 'LIMIT')
         setOrderTimeout(settings.orderTimeout !== undefined ? settings.orderTimeout : 120)
+        setAutoMode(settings.autoMode || false) // Auto Mode (Hourly Scanner)
         setSmartMode(settings.smartMode !== undefined ? settings.smartMode : true) // Default enabled
         setSmartModeMinPnl(settings.smartModeMinPnl !== undefined ? settings.smartModeMinPnl : -50)
         setTrustLowConfidence(settings.trustLowConfidence || false)
@@ -278,6 +281,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         strategy,
         orderType,
         orderTimeout,
+        autoMode, // Auto Mode (Hourly Scanner)
         smartMode,
         smartModeMinPnl,
         trustLowConfidence,
@@ -983,6 +987,220 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
           }
         }
         
+        // === AUTO MODE (HOURLY SCANNER) HANDLERS ===
+        
+        // Handle hourly opportunities (XX:00) - Open 3-5 positions
+        wsClient.onHourlyOpportunities = async (message) => {
+          try {
+            if (!settings.autoMode) return // Only process if Auto Mode enabled
+            
+            console.log('[PerpFarming] 🔔 Received hourly opportunities:', message)
+            
+            const oppData = message?.data || message
+            if (!oppData || !oppData.top_picks) {
+              console.log('[PerpFarming] No opportunities data found')
+              return
+            }
+            
+            setBotMessage(`Found ${oppData.top_picks.length} opportunities for ${oppData.hour_window}`)
+            if (onBotMessageChange) onBotMessageChange(`Found ${oppData.top_picks.length} opportunities for ${oppData.hour_window}`)
+            
+            // Calculate capital per position
+            const capitalNum = parseFloat(settings.capital)
+            const capitalPerPosition = capitalNum / oppData.top_picks.length
+            
+            // Open position for each opportunity
+            const newPositions = []
+            for (const pick of oppData.top_picks) {
+              try {
+                // Get max leverage for this symbol and position size
+                const maxLeverage = await orderManager.dexService.getMaxLeverageForNotional(
+                  pick.symbol,
+                  capitalPerPosition
+                )
+                
+                // Use the minimum of: user's setting, pick's max, or API's max
+                const leverage = Math.min(
+                  parseInt(settings.leverage),
+                  pick.max_leverage || maxLeverage,
+                  maxLeverage
+                )
+                
+                console.log(`[AutoMode] Opening ${pick.symbol} ${pick.direction} | Confidence: ${pick.confidence} | Leverage: ${leverage}x | Size: $${capitalPerPosition.toFixed(2)}`)
+                
+                // Set leverage for this symbol
+                await orderManager.dexService.setLeverage(pick.symbol, leverage)
+                
+                // Calculate position quantity
+                const price = pick.suggested_entry || parseFloat(await orderManager.dexService.getPosition(pick.symbol).then(p => p.markPrice))
+                const quantity = (capitalPerPosition * leverage) / price
+                
+                // Place MARKET order (Auto Mode uses market orders)
+                const result = await orderManager.dexService.placeOrder({
+                  symbol: pick.symbol,
+                  side: pick.direction === 'LONG' ? 'BUY' : 'SELL',
+                  type: 'MARKET',
+                  quantity: quantity
+                })
+                
+                // Track this position
+                newPositions.push({
+                  id: `${pick.symbol}_${Date.now()}`,
+                  symbol: pick.symbol,
+                  direction: pick.direction,
+                  confidence: pick.confidence,
+                  entryPrice: price,
+                  size: capitalPerPosition,
+                  leverage: leverage,
+                  orderId: result.orderId
+                })
+                
+                console.log(`[AutoMode] ✅ Opened ${pick.symbol} position`)
+              } catch (error) {
+                console.error(`[AutoMode] Failed to open ${pick.symbol}:`, error.message)
+                handleError(`Failed to open ${pick.symbol}: ${error.message}`)
+              }
+            }
+            
+            setHourlyPositions(newPositions)
+            setTradingSymbols(newPositions.map(p => p.symbol))
+            
+          } catch (error) {
+            handleError(`Failed to handle hourly opportunities: ${error.message}`)
+          }
+        }
+        
+        // Handle mid-hour opportunities (XX:30) - Close weak, open new
+        wsClient.onMidHourOpportunities = async (message) => {
+          try {
+            if (!settings.autoMode) return
+            
+            console.log('[PerpFarming] ⚡ Received mid-hour opportunities:', message)
+            
+            const oppData = message?.data || message
+            if (!oppData || !oppData.top_picks) return
+            
+            setBotMessage(`Mid-hour: ${oppData.top_picks.length} exceptional opportunities`)
+            if (onBotMessageChange) onBotMessageChange(`Mid-hour: ${oppData.top_picks.length} exceptional opportunities`)
+            
+            // Close weak positions (down >1.5%)
+            const updatedPositions = []
+            for (const pos of hourlyPositions) {
+              const position = await orderManager.dexService.getPosition(pos.symbol)
+              const pnlPercent = parseFloat(position.unRealizedProfit) / pos.size * 100
+              
+              if (pnlPercent < -1.5) {
+                console.log(`[AutoMode] Closing weak position ${pos.symbol} (${pnlPercent.toFixed(2)}%)`)
+                await closePosition(orderManager, pos.symbol, parseFloat(position.unRealizedProfit))
+              } else {
+                updatedPositions.push(pos)
+              }
+            }
+            
+            // Open new exceptional positions if room available
+            const maxPositions = 5
+            const roomForNew = maxPositions - updatedPositions.length
+            
+            if (roomForNew > 0 && oppData.top_picks.length > 0) {
+              const capitalNum = parseFloat(settings.capital)
+              const newPicks = oppData.top_picks.slice(0, roomForNew)
+              
+              for (const pick of newPicks) {
+                // Similar logic as hourly opportunities
+                const capitalPerPosition = capitalNum / (updatedPositions.length + newPicks.length)
+                const maxLeverage = await orderManager.dexService.getMaxLeverageForNotional(pick.symbol, capitalPerPosition)
+                const leverage = Math.min(parseInt(settings.leverage), pick.max_leverage || maxLeverage, maxLeverage)
+                
+                await orderManager.dexService.setLeverage(pick.symbol, leverage)
+                
+                const price = pick.suggested_entry
+                const quantity = (capitalPerPosition * leverage) / price
+                
+                const result = await orderManager.dexService.placeOrder({
+                  symbol: pick.symbol,
+                  side: pick.direction === 'LONG' ? 'BUY' : 'SELL',
+                  type: 'MARKET',
+                  quantity: quantity
+                })
+                
+                updatedPositions.push({
+                  id: `${pick.symbol}_${Date.now()}`,
+                  symbol: pick.symbol,
+                  direction: pick.direction,
+                  confidence: pick.confidence,
+                  entryPrice: price,
+                  size: capitalPerPosition,
+                  leverage: leverage,
+                  orderId: result.orderId
+                })
+                
+                console.log(`[AutoMode] ✅ Opened mid-hour position ${pick.symbol}`)
+              }
+            }
+            
+            setHourlyPositions(updatedPositions)
+            setTradingSymbols(updatedPositions.map(p => p.symbol))
+            
+          } catch (error) {
+            handleError(`Failed to handle mid-hour opportunities: ${error.message}`)
+          }
+        }
+        
+        // Handle hour end (XX:59) - Close all positions
+        wsClient.onHourEnd = async (message) => {
+          try {
+            if (!settings.autoMode) return
+            
+            console.log('[PerpFarming] 🔚 Hour ending, closing all positions:', message)
+            
+            const hourData = message?.data || message
+            
+            // Close all hourly positions
+            for (const pos of hourlyPositions) {
+              const position = await orderManager.dexService.getPosition(pos.symbol)
+              const pnl = parseFloat(position.unRealizedProfit)
+              await closePosition(orderManager, pos.symbol, pnl)
+            }
+            
+            // Reset positions
+            setHourlyPositions([])
+            setTradingSymbols([])
+            
+            // Show hour summary
+            if (hourData.hour_window) {
+              setBotMessage(`Hour ${hourData.hour_window} ended | Total PnL: $${hourData.total_pnl?.toFixed(2) || '0.00'}`)
+              if (onBotMessageChange) onBotMessageChange(`Hour ${hourData.hour_window} ended`)
+            }
+            
+          } catch (error) {
+            handleError(`Failed to handle hour end: ${error.message}`)
+          }
+        }
+        
+        // Handle position updates
+        wsClient.onPositionUpdate = async (message) => {
+          try {
+            if (!settings.autoMode) return
+            
+            console.log('[PerpFarming] 📊 Position update:', message)
+            
+            const posData = message?.data || message
+            
+            // Update local position tracking
+            setHourlyPositions(prev => {
+              return prev.map(p => {
+                if (p.symbol === posData.symbol) {
+                  return { ...p, ...posData }
+                }
+                return p
+              })
+            })
+            
+          } catch (error) {
+            console.error('[PerpFarming] Failed to handle position update:', error)
+          }
+        }
+        
         wsClient.onError = (error) => {
           const errorMsg = error.payload?.error || 'Unknown error'
           handleError(`WebSocket error: ${errorMsg}`)
@@ -998,10 +1216,18 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         // Connect with authentication token
         await wsClient.connect(token)
         
-        // Subscribe to all selected pairs
-        for (const symbol of tradingPairs) {
-          wsClient.subscribe(symbol, settings.strategy)
-          console.log(`[PerpFarming] Subscribing to ${symbol} with ${settings.strategy} strategy`)
+        // Only subscribe to manual strategies if Auto Mode is disabled
+        // Auto Mode receives hourly_opportunities broadcasts automatically
+        if (!settings.autoMode) {
+          // Subscribe to all selected pairs with manual strategy
+          for (const symbol of tradingPairs) {
+            wsClient.subscribe(symbol, settings.strategy)
+            console.log(`[PerpFarming] Subscribing to ${symbol} with ${settings.strategy} strategy`)
+          }
+        } else {
+          console.log(`[PerpFarming] Auto Mode enabled - listening for hourly scanner broadcasts`)
+          setBotMessage('Auto Mode: Waiting for hourly scanner signals...')
+          if (onBotMessageChange) onBotMessageChange('Auto Mode: Waiting for hourly scanner signals...')
         }
         
         wsClientRef.current = wsClient
@@ -1383,7 +1609,27 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               ) : (
                 // Risk Settings View
                 <>
-              {/* Smart Mode Checkbox - At the very top */}
+              {/* Auto Mode Checkbox - At the VERY top */}
+              <div className="risk-form-group auto-mode-section">
+                <label className="risk-label">Auto Mode 🤖</label>
+                <label className="breakeven-option">
+                  <input
+                    type="checkbox"
+                    checked={autoMode}
+                    onChange={(e) => setAutoMode(e.target.checked)}
+                    className="breakeven-radio"
+                  />
+                  <span className="breakeven-option-text">
+                    🔥 Enable Hourly Scanner (Fully Automated Trading)
+                  </span>
+                </label>
+                <div className="breakeven-description">
+                  Automatically scans ALL pairs every hour, opens 3-5 best opportunities with even capital split, and closes all positions at hour end. Uses MARKET orders only. Your capital, TP/SL settings still apply. All other manual settings are ignored.
+                </div>
+              </div>
+
+              {/* Smart Mode Checkbox - Only show if Auto Mode is OFF */}
+              {!autoMode && (
               <div className="risk-form-group smart-mode-section">
                 <label className="risk-label">Smart Mode</label>
                 <label className="breakeven-option">
@@ -1417,8 +1663,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   </div>
                 )}
               </div>
+              )}
 
-              {/* Trust Low Confidence Checkbox */}
+              {/* Trust Low Confidence Checkbox - Only show if Auto Mode is OFF */}
+              {!autoMode && (
               <div className="risk-form-group">
                 <label className="risk-label">Signal Confidence</label>
                 <label className="breakeven-option">
@@ -1436,6 +1684,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   By default, only high and medium confidence signals are traded. Enable this to also trade low confidence signals. Warning: May increase losses.
                 </div>
               </div>
+              )}
 
               <div className="risk-form-group">
                 <label className="risk-label">Aster API Key</label>
@@ -1625,6 +1874,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                 </div>
               </div>
 
+              {/* Order Type - Hide if Auto Mode (uses MARKET only) */}
+              {!autoMode && (
               <div className="risk-form-group">
                 <label className="risk-label">Order Type</label>
                 <div className="order-type-toggle">
@@ -1648,7 +1899,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   }
                 </div>
               </div>
+              )}
 
+              {/* Order Timeout - Hide if Auto Mode (uses MARKET only) */}
+              {!autoMode && (
               <div className="risk-form-group">
                 <label className="risk-label">Limit Order Timeout: {orderTimeout}s</label>
                 <input
@@ -1669,7 +1923,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   ⏱️ Cancel unfilled LIMIT orders after this time to allow new signals
                 </div>
               </div>
+              )}
 
+              {/* Strategy - Hide if Auto Mode (uses scanner) */}
+              {!autoMode && (
               <div className="risk-form-group">
                 <label className="risk-label">Trading Strategy</label>
                 <select
@@ -1693,7 +1950,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   }
                 </div>
               </div>
+              )}
 
+              {/* Exit Strategy - Hide if Auto Mode (closes all at hour end) */}
+              {!autoMode && (
               <div className="risk-form-group">
                 <label className="risk-label">Exit Strategy</label>
                 
@@ -1800,6 +2060,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   </span>
                 </label>
               </div>
+              )}
 
               {validationError && (
                 <div className="risk-error-message">

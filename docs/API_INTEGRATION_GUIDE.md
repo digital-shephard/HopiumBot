@@ -65,22 +65,13 @@ Check if the server is running.
 
 Get the list of trading pairs currently being tracked by the server.
 
-**Endpoint**: `GET /api/perps/symbols` 🔒 **Requires Authentication**
+**Endpoint**: `GET /api/perps/symbols`
 
 **Query Parameters**: None
 
-**Headers Required**:
-- `Authorization: Bearer <JWT_TOKEN>`
-
 **Example Request**:
 ```javascript
-// With authentication
-const token = authService.getToken()
-fetch(`${BASE_URL}/api/perps/symbols`, {
-  headers: {
-    'Authorization': `Bearer ${token}`
-  }
-})
+fetch(`${BASE_URL}/api/perps/symbols`)
   .then(res => res.json())
   .then(data => console.log(data));
 ```
@@ -106,7 +97,6 @@ fetch(`${BASE_URL}/api/perps/symbols`, {
 - **Frontend**: Populate dropdown menus with available symbols
 - **Validation**: Check if a symbol is supported before subscribing
 - **Dynamic UI**: Build charts/widgets for all supported symbols
-- **Security**: Requires authentication to prevent abuse and rate limiting
 
 **TypeScript Interface**:
 ```typescript
@@ -120,13 +110,9 @@ interface SymbolsResponse {
 
 **Frontend Integration**:
 ```javascript
-// Fetch supported symbols and populate dropdown (with auth)
-async function loadSymbolDropdown(authToken) {
-  const response = await fetch(`${BASE_URL}/api/perps/symbols`, {
-    headers: {
-      'Authorization': `Bearer ${authToken}`
-    }
-  });
+// Fetch supported symbols and populate dropdown
+async function loadSymbolDropdown() {
+  const response = await fetch(`${BASE_URL}/api/perps/symbols`);
   const data = await response.json();
   
   const dropdown = document.getElementById('symbol-select');
@@ -138,22 +124,15 @@ async function loadSymbolDropdown(authToken) {
   });
 }
 
-// React example with authentication
+// React example
 function SymbolSelector() {
   const [symbols, setSymbols] = useState([]);
-  const { token } = useAuth(); // Get auth token from context
   
   useEffect(() => {
-    if (!token) return;
-    
-    fetch(`${BASE_URL}/api/perps/symbols`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
+    fetch(`${BASE_URL}/api/perps/symbols`)
       .then(res => res.json())
       .then(data => setSymbols(data.symbols));
-  }, [token]);
+  }, []);
   
   return (
     <select>
@@ -1431,6 +1410,684 @@ ws.onmessage = (event) => {
 - ✅ **Blocks counter-trend** - If trending DOWN, blocks all LONGs completely
 - ✅ **NEUTRAL when conflicted** - Waits for 1h and 4h trends to align
 - ✅ **Expected hold 5-15min** - Longer than scalp, shorter than traditional swing
+
+---
+
+#### Momentum X Indicator Update ⚡ **NEW** 🔥
+
+Pushed automatically every 1 minute when subscribed to the `momentum_x` strategy (psychic candle reader for whipsaw scalping).
+
+**Message Structure:**
+```typescript
+interface MomentumXMessage {
+  type: "momentum_x";
+  symbol: string;
+  strategy: "momentum_x";
+  data: {
+    symbol: string;
+    timestamp: string;
+    current_price: number;
+    
+    // Regime detection
+    atr: number;
+    market_regime: "FLAT" | "WHIPSAW" | "TRENDING";
+    
+    // Order flow (leading indicators)
+    delta_stack: number[];           // [current, -1, -2] candle deltas
+    delta_trend: "BULLISH" | "BEARISH" | "NEUTRAL";
+    delta_acceleration: number;
+    bid_ask_ratio: number;
+    orderbook_pressure: "BUY_HEAVY" | "SELL_HEAVY" | "BALANCED";
+    stacked_candles: number;
+    volume_acceleration: number;
+    
+    // Smart money concepts
+    nearest_fvg: {
+      type: "BULLISH" | "BEARISH";
+      gap_low: number;
+      gap_high: number;
+      created_at: string;
+      age: number;
+      filled: boolean;
+      fill_percent: number;
+    } | null;
+    in_fvg_zone: boolean;
+    
+    // Signal
+    side: "LONG" | "SHORT" | "NEUTRAL";
+    limit_price: number;
+    tp_price: number;
+    sl_price: number;
+    tp_percent: 0.05;
+    sl_percent: 0.15;
+    
+    // Quality
+    confidence: "high" | "medium" | "low";
+    layer_score: number;             // 0-8 layers
+    reasoning: string;
+    expected_hold_minutes: number;
+  };
+}
+```
+
+**Frontend Action:**
+```javascript
+if (msg.type === 'momentum_x') {
+  const { data } = msg;
+  
+  if (data.market_regime === 'WHIPSAW' && data.side !== 'NEUTRAL' && data.layer_score >= 6) {
+    console.log(`🔥 High confluence ${data.side} | ${data.layer_score}/8 layers`);
+    
+    placeLimitOrder({
+      symbol: data.symbol,
+      side: data.side === 'LONG' ? 'BUY' : 'SELL',
+      price: data.limit_price,
+      takeProfit: data.tp_price,
+      stopLoss: data.sl_price
+    });
+  }
+}
+```
+
+---
+
+#### Hourly Opportunities Update 🚀 **NEW** (Multi-Pair Portfolio Trading)
+
+The Hourly Scanner broadcasts opportunities to **ALL authenticated clients** automatically. No subscription needed!
+
+**Message Types:**
+
+##### 1. Hourly Opportunities (`hourly_opportunities`)
+
+Broadcast at **top of every hour (XX:00:00)** with the top 3-5 trading opportunities.
+
+**Message Structure:**
+```typescript
+interface HourlyOpportunitiesMessage {
+  type: "hourly_opportunities";
+  data: {
+    timestamp: string;
+    hour_window: string;            // e.g., "14:00-15:00"
+    top_picks: Array<{
+      symbol: string;
+      direction: "LONG" | "SHORT";
+      confidence: number;           // 0-100 score
+      
+      // Score breakdown
+      momentum_score: number;       // 0-25 points
+      orderbook_score: number;      // 0-25 points
+      volume_score: number;         // 0-20 points
+      technical_score: number;      // 0-15 points
+      trend_score: number;          // 0-15 points
+      
+      // Execution quality
+      liquidity_tier: string;       // "Tier1" to "Tier4"
+      max_position_size: number;    // USD
+      max_leverage: number;
+      spread_quality: string;
+      
+      // Risk metrics
+      recent_volatility: number;
+      funding_rate: number;
+      
+      // Entry/exit
+      suggested_entry: number;
+      suggested_tp: number;
+      suggested_sl: number;
+      
+      // Context
+      signals: string[];
+      warnings: string[];
+    }>;
+    total_scanned: number;
+    scan_duration: string;
+  };
+}
+```
+
+**Example:**
+```json
+{
+  "type": "hourly_opportunities",
+  "data": {
+    "timestamp": "2025-11-07T14:00:00Z",
+    "hour_window": "14:00-15:00",
+    "top_picks": [
+      {
+        "symbol": "SOL-PERP",
+        "direction": "LONG",
+        "confidence": 92,
+        "momentum_score": 25,
+        "orderbook_score": 23,
+        "volume_score": 18,
+        "technical_score": 12,
+        "trend_score": 14,
+        "liquidity_tier": "Tier1",
+        "max_position_size": 50000,
+        "max_leverage": 20,
+        "spread_quality": "Excellent",
+        "recent_volatility": 0.28,
+        "funding_rate": 0.0001,
+        "suggested_entry": 110.50,
+        "suggested_tp": 111.60,
+        "suggested_sl": 107.75,
+        "signals": [
+          "Strong momentum (+2.3% in 30min)",
+          "Buy pressure 3.2:1",
+          "Volume spike 1.8x"
+        ],
+        "warnings": []
+      },
+      {
+        "symbol": "AVAX-PERP",
+        "direction": "SHORT",
+        "confidence": 85,
+        "liquidity_tier": "Tier2",
+        "max_position_size": 10000,
+        "suggested_entry": 32.15,
+        "suggested_tp": 31.95,
+        "suggested_sl": 32.40
+      }
+    ],
+    "total_scanned": 32,
+    "scan_duration": "2.3s"
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  
+  if (msg.type === 'hourly_opportunities') {
+    const { data } = msg;
+    
+    console.log(`🔔 NEW HOUR: ${data.hour_window}`);
+    console.log(`Scanned ${data.total_scanned} pairs in ${data.scan_duration}`);
+    console.log(`Top ${data.top_picks.length} opportunities found:\n`);
+    
+    data.top_picks.forEach((pick, i) => {
+      console.log(`${i+1}. ${pick.symbol} ${pick.direction} @ ${pick.confidence} confidence`);
+      console.log(`   Entry: $${pick.suggested_entry} | TP: $${pick.suggested_tp} | SL: $${pick.suggested_sl}`);
+      console.log(`   Tier: ${pick.liquidity_tier} | Max Size: $${pick.max_position_size}`);
+      console.log(`   Signals: ${pick.signals.join(', ')}\n`);
+    });
+    
+    // Display opportunities in UI
+    displayHourlyOpportunities(data.top_picks, data.hour_window);
+  }
+};
+```
+
+---
+
+##### 2. Mid-Hour Opportunities (`mid_hour_opportunities`)
+
+Broadcast at **mid-hour (XX:30:00)** when exceptional opportunities (≥90 confidence) are detected.
+
+**Message Structure:** Same as `hourly_opportunities` but only includes exceptional setups.
+
+**Example:**
+```json
+{
+  "type": "mid_hour_opportunities",
+  "data": {
+    "timestamp": "2025-11-07T14:30:00Z",
+    "hour_window": "14:30 Mid-Hour",
+    "top_picks": [
+      {
+        "symbol": "LINK-PERP",
+        "direction": "LONG",
+        "confidence": 94,
+        "liquidity_tier": "Tier2",
+        "suggested_entry": 15.25,
+        "suggested_tp": 15.40,
+        "suggested_sl": 14.95
+      }
+    ],
+    "total_scanned": 32
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (msg.type === 'mid_hour_opportunities') {
+  if (msg.data.top_picks.length > 0) {
+    console.log('⚡ EXCEPTIONAL MID-HOUR SETUP FOUND!');
+    
+    const pick = msg.data.top_picks[0];
+    showAlert({
+      title: 'Mid-Hour Opportunity',
+      message: `${pick.symbol} ${pick.direction} @ ${pick.confidence} confidence`,
+      data: pick
+    });
+  }
+}
+```
+
+---
+
+##### 3. Position Updates (`position_update`)
+
+Broadcast when positions are opened, tranches added, or positions closed.
+
+**Message Structure:**
+```typescript
+interface PositionUpdateMessage {
+  type: "position_update";
+  event: "open" | "tranche" | "close";
+  data: {
+    id: string;
+    symbol: string;
+    direction: "LONG" | "SHORT";
+    entry_time: string;
+    hour_window: string;
+    
+    // Size
+    target_size: number;
+    current_size: number;
+    leverage: number;
+    
+    // Tranches
+    tranches_planned: number;
+    tranches_executed: number;
+    tranche_size: number;
+    next_tranche_time: string;
+    
+    // Prices
+    avg_entry_price: number;
+    current_price: number;
+    unrealized_pnl: number;
+    unrealized_pnl_percent: number;
+    
+    // Levels
+    take_profit: number;
+    stop_loss: number;
+    
+    // State
+    status: "ACTIVE" | "CLOSED";
+    stop_adding: boolean;
+    confidence: number;
+    warnings: string[];
+  };
+}
+```
+
+**Examples:**
+
+**Position Opened:**
+```json
+{
+  "type": "position_update",
+  "event": "open",
+  "data": {
+    "id": "SOL-PERP_1730995200",
+    "symbol": "SOL-PERP",
+    "direction": "LONG",
+    "entry_time": "2025-11-07T14:00:00Z",
+    "hour_window": "14:00-15:00",
+    "target_size": 10000,
+    "current_size": 2500,
+    "leverage": 20,
+    "tranches_planned": 4,
+    "tranches_executed": 1,
+    "avg_entry_price": 110.50,
+    "take_profit": 111.60,
+    "stop_loss": 107.75,
+    "confidence": 92,
+    "status": "ACTIVE"
+  }
+}
+```
+
+**Tranche Added:**
+```json
+{
+  "type": "position_update",
+  "event": "tranche",
+  "data": {
+    "id": "SOL-PERP_1730995200",
+    "symbol": "SOL-PERP",
+    "tranches_executed": 2,
+    "current_size": 5000,
+    "avg_entry_price": 110.60,
+    "unrealized_pnl": 45.50,
+    "unrealized_pnl_percent": 0.82
+  }
+}
+```
+
+**Position Closed:**
+```json
+{
+  "type": "position_update",
+  "event": "close",
+  "data": {
+    "id": "SOL-PERP_1730995200",
+    "symbol": "SOL-PERP",
+    "status": "CLOSED",
+    "unrealized_pnl": 234.50,
+    "unrealized_pnl_percent": 2.35
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (msg.type === 'position_update') {
+  const { event, data } = msg;
+  
+  switch(event) {
+    case 'open':
+      console.log(`🎯 Opened ${data.symbol} ${data.direction}`);
+      console.log(`   Size: $${data.current_size} (tranche 1/4)`);
+      console.log(`   Entry: $${data.avg_entry_price} | Confidence: ${data.confidence}`);
+      
+      // Add to active positions UI
+      addPositionCard(data);
+      break;
+      
+    case 'tranche':
+      console.log(`📈 ${data.symbol} tranche ${data.tranches_executed}/4 added`);
+      console.log(`   New size: $${data.current_size}`);
+      console.log(`   PnL: $${data.unrealized_pnl.toFixed(2)} (${data.unrealized_pnl_percent.toFixed(2)}%)`);
+      
+      // Update position card
+      updatePositionCard(data);
+      break;
+      
+    case 'close':
+      console.log(`🔴 Closed ${data.symbol}`);
+      console.log(`   Final PnL: $${data.unrealized_pnl.toFixed(2)} (${data.unrealized_pnl_percent.toFixed(2)}%)`);
+      
+      // Remove from UI and add to history
+      removePositionCard(data.id);
+      addToHistory(data);
+      break;
+  }
+}
+```
+
+---
+
+##### 4. Hour End Summary (`hour_end`)
+
+Broadcast at **end of hour (XX:59:00)** with complete hour performance.
+
+**Message Structure:**
+```typescript
+interface HourEndMessage {
+  type: "hour_end";
+  hour_window: string;
+  data: {
+    positions_closed: number;
+    total_pnl: number;
+    avg_pnl_percent: number;
+    positions: Array<{
+      symbol: string;
+      direction: string;
+      entry_price: number;
+      exit_price: number;
+      pnl: number;
+      pnl_percent: number;
+      tranches_executed: number;
+    }>;
+  };
+}
+```
+
+**Example:**
+```json
+{
+  "type": "hour_end",
+  "hour_window": "14:00-15:00",
+  "data": {
+    "positions_closed": 3,
+    "total_pnl": 457.32,
+    "avg_pnl_percent": 1.82,
+    "positions": [
+      {
+        "symbol": "SOL-PERP",
+        "direction": "LONG",
+        "entry_price": 110.50,
+        "exit_price": 113.10,
+        "pnl": 234.50,
+        "pnl_percent": 2.35,
+        "tranches_executed": 4
+      },
+      {
+        "symbol": "AVAX-PERP",
+        "direction": "SHORT",
+        "entry_price": 32.10,
+        "exit_price": 31.85,
+        "pnl": 155.25,
+        "pnl_percent": 0.78,
+        "tranches_executed": 3
+      },
+      {
+        "symbol": "LINK-PERP",
+        "direction": "LONG",
+        "entry_price": 15.25,
+        "exit_price": 15.35,
+        "pnl": 67.57,
+        "pnl_percent": 0.66,
+        "tranches_executed": 2
+      }
+    ]
+  }
+}
+```
+
+**Frontend Action:**
+```javascript
+if (msg.type === 'hour_end') {
+  const { hour_window, data } = msg;
+  
+  console.log(`\n🔚 HOUR END: ${hour_window}`);
+  console.log(`Positions: ${data.positions_closed}`);
+  console.log(`Total PnL: $${data.total_pnl.toFixed(2)}`);
+  console.log(`Average: ${data.avg_pnl_percent.toFixed(2)}%\n`);
+  
+  // Show detailed summary modal
+  showHourSummaryModal({
+    window: hour_window,
+    totalPnL: data.total_pnl,
+    avgPercent: data.avg_pnl_percent,
+    positions: data.positions
+  });
+  
+  // Update daily/weekly stats
+  updateDailyStats(data.total_pnl);
+  
+  // Add to performance history
+  addHourToHistory(hour_window, data);
+}
+```
+
+---
+
+**Complete Hourly Scanner Frontend Handler:**
+
+```javascript
+class HourlyScannerHandler {
+  constructor() {
+    this.currentOpportunities = [];
+    this.activePositions = new Map();
+    this.hourHistory = [];
+  }
+  
+  handleMessage(msg) {
+    switch(msg.type) {
+      case 'hourly_opportunities':
+        this.onHourlyOpportunities(msg.data);
+        break;
+        
+      case 'mid_hour_opportunities':
+        this.onMidHourOpportunities(msg.data);
+        break;
+        
+      case 'position_update':
+        this.onPositionUpdate(msg.event, msg.data);
+        break;
+        
+      case 'hour_end':
+        this.onHourEnd(msg.hour_window, msg.data);
+        break;
+    }
+  }
+  
+  onHourlyOpportunities(data) {
+    this.currentOpportunities = data.top_picks;
+    
+    // Display opportunities table
+    const html = `
+      <div class="hourly-scan">
+        <h2>🔔 ${data.hour_window} Opportunities</h2>
+        <p>Scanned ${data.total_scanned} pairs in ${data.scan_duration}</p>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Direction</th>
+              <th>Confidence</th>
+              <th>Tier</th>
+              <th>Entry</th>
+              <th>TP</th>
+              <th>SL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.top_picks.map(pick => `
+              <tr>
+                <td>${pick.symbol}</td>
+                <td class="${pick.direction.toLowerCase()}">${pick.direction}</td>
+                <td>${pick.confidence}</td>
+                <td>${pick.liquidity_tier}</td>
+                <td>$${pick.suggested_entry.toFixed(2)}</td>
+                <td>$${pick.suggested_tp.toFixed(2)}</td>
+                <td>$${pick.suggested_sl.toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+    
+    document.getElementById('opportunities').innerHTML = html;
+  }
+  
+  onMidHourOpportunities(data) {
+    if (data.top_picks.length > 0) {
+      const pick = data.top_picks[0];
+      
+      // Show alert notification
+      showNotification({
+        title: '⚡ Mid-Hour Opportunity!',
+        message: `${pick.symbol} ${pick.direction} @ ${pick.confidence} confidence`,
+        type: 'success',
+        duration: 10000
+      });
+    }
+  }
+  
+  onPositionUpdate(event, data) {
+    if (event === 'open') {
+      this.activePositions.set(data.id, data);
+      this.renderPositions();
+    } else if (event === 'tranche') {
+      const pos = this.activePositions.get(data.id);
+      if (pos) {
+        Object.assign(pos, data);
+        this.renderPositions();
+      }
+    } else if (event === 'close') {
+      this.activePositions.delete(data.id);
+      this.renderPositions();
+      
+      // Show PnL notification
+      const color = data.unrealized_pnl > 0 ? 'success' : 'error';
+      showNotification({
+        title: `Position Closed: ${data.symbol}`,
+        message: `PnL: $${data.unrealized_pnl.toFixed(2)} (${data.unrealized_pnl_percent.toFixed(2)}%)`,
+        type: color
+      });
+    }
+  }
+  
+  onHourEnd(hourWindow, data) {
+    this.hourHistory.push({ window: hourWindow, ...data });
+    
+    // Show hour summary
+    showModal({
+      title: `📊 Hour Summary: ${hourWindow}`,
+      content: `
+        <div class="hour-summary">
+          <h3>Performance</h3>
+          <p class="total-pnl ${data.total_pnl > 0 ? 'positive' : 'negative'}">
+            $${data.total_pnl.toFixed(2)} (${data.avg_pnl_percent.toFixed(2)}%)
+          </p>
+          
+          <h3>Positions (${data.positions_closed})</h3>
+          <ul>
+            ${data.positions.map(pos => `
+              <li>
+                ${pos.symbol} ${pos.direction}: 
+                ${pos.pnl > 0 ? '+' : ''}$${pos.pnl.toFixed(2)} 
+                (${pos.pnl_percent.toFixed(2)}%)
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      `
+    });
+  }
+  
+  renderPositions() {
+    const html = `
+      <div class="active-positions">
+        <h2>Active Positions (${this.activePositions.size}/5)</h2>
+        ${Array.from(this.activePositions.values()).map(pos => `
+          <div class="position-card ${pos.direction.toLowerCase()}">
+            <h3>${pos.symbol} ${pos.direction}</h3>
+            <p>Entry: $${pos.avg_entry_price.toFixed(2)}</p>
+            <p>Current: $${pos.current_price.toFixed(2)}</p>
+            <p class="${pos.unrealized_pnl > 0 ? 'profit' : 'loss'}">
+              PnL: $${pos.unrealized_pnl.toFixed(2)} (${pos.unrealized_pnl_percent.toFixed(2)}%)
+            </p>
+            <p>Size: $${pos.current_size.toFixed(0)} (${pos.tranches_executed}/${pos.tranches_planned} tranches)</p>
+            <p>Next tranche: ${new Date(pos.next_tranche_time).toLocaleTimeString()}</p>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    
+    document.getElementById('positions').innerHTML = html;
+  }
+}
+
+// Usage
+const handler = new HourlyScannerHandler();
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  handler.handleMessage(msg);
+};
+```
+
+---
+
+**Hourly Scanner Key Points:**
+- ✅ **Automatic broadcasts** - No subscription needed (sent to all authenticated clients)
+- ✅ **Top of hour** - Scans all 30+ pairs and broadcasts top 3-5 picks
+- ✅ **Mid-hour check** - Exceptional opportunities (≥90 confidence only)
+- ✅ **Position lifecycle** - Full tracking from open to close
+- ✅ **Tranched entries** - 4 × 25% at 0, 15, 30, 45 minutes
+- ✅ **Hour summaries** - Complete performance breakdown
+- ✅ **Portfolio view** - Track 3-5 concurrent positions
+- 📚 **Full documentation:** See `MOMENTUM_X_HOURLY_GUIDE.md`
 
 ---
 

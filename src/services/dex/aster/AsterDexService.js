@@ -429,6 +429,83 @@ export class AsterDexService extends DexService {
   }
 
   /**
+   * Get leverage bracket for a symbol
+   * Returns max leverage and notional limits for the symbol
+   */
+  async getLeverageBracket(symbol) {
+    if (!this.initialized || !this.apiClient) {
+      throw new Error('Service not initialized')
+    }
+
+    const params = { symbol }
+
+    try {
+      const response = await this.apiClient.get('/fapi/v1/leverageBracket', params, { signed: true })
+      
+      // Response format: { symbol: "BTCUSDT", brackets: [...] }
+      if (response && response.brackets) {
+        return response
+      }
+      
+      throw new Error('Invalid leverage bracket response')
+    } catch (error) {
+      console.error(`[AsterDexService] Failed to get leverage bracket for ${symbol}:`, error)
+      throw error
+    }
+  }
+
+  /**
+   * Set leverage for a symbol
+   * @param {string} symbol - Trading pair symbol
+   * @param {number} leverage - Leverage value (1-125)
+   */
+  async setLeverage(symbol, leverage) {
+    if (!this.initialized || !this.apiClient) {
+      throw new Error('Service not initialized')
+    }
+
+    const params = {
+      symbol,
+      leverage: parseInt(leverage)
+    }
+
+    try {
+      const response = await this.apiClient.post('/fapi/v1/leverage', params, { signed: true })
+      console.log(`[AsterDexService] Set leverage for ${symbol} to ${leverage}x:`, response)
+      return response
+    } catch (error) {
+      console.error(`[AsterDexService] Failed to set leverage for ${symbol}:`, error)
+      throw error
+    }
+  }
+
+  /**
+   * Get maximum allowed leverage for a position size
+   * @param {string} symbol - Trading pair symbol
+   * @param {number} notional - Position size in USD
+   * @returns {number} Maximum allowed leverage
+   */
+  async getMaxLeverageForNotional(symbol, notional) {
+    try {
+      const brackets = await this.getLeverageBracket(symbol)
+      
+      // Find the bracket that contains this notional
+      for (const bracket of brackets.brackets) {
+        if (notional >= bracket.notionalFloor && notional <= bracket.notionalCap) {
+          return bracket.initialLeverage
+        }
+      }
+      
+      // If notional exceeds all brackets, use the last bracket's leverage
+      return brackets.brackets[brackets.brackets.length - 1].initialLeverage
+    } catch (error) {
+      console.error(`[AsterDexService] Failed to get max leverage for ${symbol}:`, error)
+      // Return conservative default
+      return 20
+    }
+  }
+
+  /**
    * Get DEX name
    */
   getName() {

@@ -109,6 +109,19 @@ npm run preview
   - **Perps Bot**: Automated perpetual futures trading
     - **Risk Settings Modal**: Configure Aster API credentials, capital limits, Take Profit, Stop Loss, and Position Size
       - Fixed scrollbar clipping issue with proper container structure and overflow handling
+    - **Auto Mode** 🤖 (Hourly Scanner): Fully automated multi-pair trading system
+      - **Automatic Operation**: Scans ALL available pairs every hour, selects best 3-5 opportunities
+      - **Even Capital Split**: Divides capital equally among selected pairs
+      - **Leverage Optimization**: Automatically queries and applies max leverage per symbol via Aster API
+        - Fetches leverage brackets using `GET /fapi/v1/leverageBracket`
+        - Sets optimal leverage using `POST /fapi/v1/leverage` before each trade
+        - Respects notional limits and position size restrictions per pair
+      - **MARKET Orders Only**: Auto Mode uses instant market fills (no limit orders)
+      - **Mid-Hour Rebalancing** (XX:30): Closes weak performers (down >1.5%), opens new exceptional opportunities
+      - **Hour-End Close** (XX:59): Automatically closes ALL positions at end of each hour
+      - **WebSocket Integration**: Receives `hourly_opportunities`, `mid_hour_opportunities`, `position_update`, and `hour_end` broadcasts
+      - **UI Simplification**: When enabled, hides manual strategy settings (pair selection, Smart Mode, order type, etc.)
+      - **Capital Respecting**: Still uses user's capital, TP/SL settings, but ignores manual pair/strategy selection
     - **Exit Strategy Modes**:
       - **Smart Mode** 🧠: Active position management for capital preservation (enabled by default)
       - **Confidence Monitoring**: Continuously monitors server confidence (high/medium/low) for open positions

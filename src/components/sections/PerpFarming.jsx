@@ -821,7 +821,12 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               confidence: momentumData.confidence,
               side: momentumData.side,
               trend_alignment: momentumData.trend_alignment,
+              trend_1h: momentumData.trend_1h,
+              trend_4h: momentumData.trend_4h,
               confluence_score: momentumData.confluence_score,
+              rsi_alignment: momentumData.rsi_alignment,
+              at_fib_support: momentumData.at_fib_support,
+              at_fib_resistance: momentumData.at_fib_resistance,
               activePositions: status.activePositions
             })
 
@@ -871,7 +876,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                                 (momentumData.confidence === 'low' && settings.trustLowConfidence)
             
             if (!hasActivePosition && shouldTrade) {
-              console.log(`[PerpFarming] 🎯 Processing ${momentumData.confidence.toUpperCase()} confidence ${momentumData.side} momentum signal @ $${momentumData.limit_price}`)
+              console.log(`[PerpFarming] 🎯 Processing ${momentumData.confidence.toUpperCase()} confidence ${momentumData.side} momentum signal @ $${momentumData.limit_price} (${momentumData.confluence_score}/10 layers)`)
               if (typeof orderManager.handleMomentumSignal === 'function') {
                 await orderManager.handleMomentumSignal(momentumData)
                 console.log('[PerpFarming] ✅ Momentum order placement attempted')

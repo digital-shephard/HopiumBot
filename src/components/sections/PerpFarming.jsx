@@ -54,6 +54,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   const [totalTrades, setTotalTrades] = useState(0)
   const [estimatedFees, setEstimatedFees] = useState(0)
   const [botMessage, setBotMessage] = useState('Initializing...')
+  const [botMessages, setBotMessages] = useState({})
+  const lastMessageUpdateRef = useRef({})
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPairSelection, setShowPairSelection] = useState(false) // Toggle between settings and pair selection
   const [availableSymbols, setAvailableSymbols] = useState([]) // List of symbols from API
@@ -160,7 +162,35 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     })
   }
 
-  // Helper function to format percentage display
+  const updateBotMessage = (symbol, message) => {
+    const now = Date.now()
+    const lastUpdate = lastMessageUpdateRef.current[symbol] || 0
+    const timeSinceUpdate = (now - lastUpdate) / 1000
+    
+    if (timeSinceUpdate < 30) {
+      console.log(`[BotMessage] Skipping update for ${symbol} (${timeSinceUpdate.toFixed(0)}s since last update, need 30s)`)
+      return
+    }
+    
+    lastMessageUpdateRef.current[symbol] = now
+    
+    setBotMessages(prev => {
+      const updated = { ...prev, [symbol]: message }
+      
+      const messageArray = Object.entries(updated)
+        .map(([sym, msg]) => `[${sym}] ${msg}`)
+        .join('\n\n')
+      
+      setBotMessage(messageArray || 'Waiting for signals...')
+      
+      if (onBotMessageChange) {
+        onBotMessageChange(messageArray || 'Waiting for signals...')
+      }
+      
+      return updated
+    })
+  }
+
   const formatPercentage = (value) => {
     return value === 0 ? 'None' : `${value}%`
   }
@@ -343,9 +373,26 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
       // Clear signal history for this symbol
       signalHistoryRef.current.delete(symbol)
       
-      // Remove from trading symbols
       setTradingSymbols(prev => prev.filter(s => s !== symbol))
       console.log(`[ClosePosition] Removed ${symbol} from trading symbols`)
+      
+      setBotMessages(prev => {
+        const updated = { ...prev }
+        delete updated[symbol]
+        delete lastMessageUpdateRef.current[symbol]
+        
+        const messageArray = Object.entries(updated)
+          .map(([sym, msg]) => `[${sym}] ${msg}`)
+          .join('\n\n')
+        
+        setBotMessage(messageArray || 'Waiting for signals...')
+        
+        if (onBotMessageChange) {
+          onBotMessageChange(messageArray || 'Waiting for signals...')
+        }
+        
+        return updated
+      })
       
       // Verify position is fully closed
       setTimeout(async () => {
@@ -1213,25 +1260,17 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             
             console.log('[PerpFarming] Extracted order book data:', orderBookData)
 
-            // Build comprehensive bot message with CVD, OBI, and spoof warnings
             let reasoning = orderBookData.reasoning?.join(' ') || 'Analyzing order flow...'
             
-            // Add CVD and OBI metrics to message
             const cvdInfo = `CVD: ${orderBookData.cvd_slope || 'N/A'}`
             const obiInfo = `OBI: ${orderBookData.obi?.toFixed(2) || 'N/A'}`
             reasoning = `${reasoning} | ${cvdInfo} | ${obiInfo}`
             
-            // Add spoof warning if detected
             if (orderBookData.spoof_detection?.wall_velocity === 'high') {
               reasoning = `⚠️ SPOOF ALERT (${orderBookData.spoof_detection.recent_spoofs} recent) | ${reasoning}`
             }
             
-            // Prefix with symbol for multi-pair tracking
-            const symbolPrefix = `[${orderBookData.symbol}]`
-            const fullMessage = `${symbolPrefix} ${reasoning}`
-            
-            setBotMessage(fullMessage)
-            if (onBotMessageChange) onBotMessageChange(fullMessage)
+            updateBotMessage(orderBookData.symbol, reasoning)
 
             // Check if position exists
             const status = orderManager.getStatus()

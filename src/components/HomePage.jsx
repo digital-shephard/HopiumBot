@@ -14,6 +14,7 @@ function HomePage() {
   const [slideDistance, setSlideDistance] = useState(300)
   const [isInitialMount, setIsInitialMount] = useState(true)
   const [perpBotMessage, setPerpBotMessage] = useState('Analyzing perpetual funding rates across exchanges...')
+  const [perpBotMessages, setPerpBotMessages] = useState({})
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isPerpBotRunning, setIsPerpBotRunning] = useState(false)
   const touchStartX = useRef(null)
@@ -32,7 +33,12 @@ function HomePage() {
   
   // Create section components once and keep them mounted
   const sectionComponents = useMemo(() => [
-    <PerpFarming key="perp" onBotMessageChange={setPerpBotMessage} onBotStatusChange={setIsPerpBotRunning} />,
+    <PerpFarming 
+      key="perp" 
+      onBotMessageChange={setPerpBotMessage} 
+      onBotMessagesChange={setPerpBotMessages}
+      onBotStatusChange={setIsPerpBotRunning} 
+    />,
     <HopiumFarming key="hopium" isActive={currentIndex === 1} />,
     <AirdropAlpha key="airdrop" onNavigateToHopium={() => goToIndex(1)} />,
     <VaultFarming key="vault" />
@@ -113,6 +119,7 @@ function HomePage() {
     >
       <RobotWidget 
         message={sections[currentIndex].message} 
+        messages={currentIndex === 0 ? perpBotMessages : {}}
         sectionId={currentIndex}
         isPerpBotRunning={isPerpBotRunning}
       />

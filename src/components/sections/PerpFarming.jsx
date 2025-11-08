@@ -16,7 +16,7 @@ const TAKER_FEE = 0.0004  // 0.04% (MARKET orders or LIMIT orders that take liqu
 const ENTRY_FEE = TAKER_FEE // Conservative estimate - assume taker
 const EXIT_FEE = TAKER_FEE  // MARKET orders are always taker
 
-function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
+function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChange }) {
   // Get auth context for WebSocket authentication
   const { authService } = useAuth()
   
@@ -176,6 +176,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     
     setBotMessages(prev => {
       const updated = { ...prev, [symbol]: message }
+      
+      if (onBotMessagesChange) {
+        onBotMessagesChange(updated)
+      }
       
       const messageArray = Object.entries(updated)
         .map(([sym, msg]) => `[${sym}] ${msg}`)
@@ -380,6 +384,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         const updated = { ...prev }
         delete updated[symbol]
         delete lastMessageUpdateRef.current[symbol]
+        
+        if (onBotMessagesChange) {
+          onBotMessagesChange(updated)
+        }
         
         const messageArray = Object.entries(updated)
           .map(([sym, msg]) => `[${sym}] ${msg}`)

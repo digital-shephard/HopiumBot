@@ -4,9 +4,11 @@ import './RobotWidget.css'
 import logo from '../assets/logo.webp'
 import API_CONFIG from '../config/api'
 
-function RobotWidget({ message, sectionId, onError, isPerpBotRunning = false }) {
+function RobotWidget({ message, messages = {}, sectionId, onError, isPerpBotRunning = false }) {
   const [currentMessage, setCurrentMessage] = useState('')
   const [currentStreaming, setCurrentStreaming] = useState('')
+  const [symbolMessages, setSymbolMessages] = useState({})
+  const [streamingSymbols, setStreamingSymbols] = useState({})
   const [isExpanded, setIsExpanded] = useState(false)
   const [isLoadingSentiment, setIsLoadingSentiment] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
@@ -14,6 +16,7 @@ function RobotWidget({ message, sectionId, onError, isPerpBotRunning = false }) 
   const messagesEndRef = useRef(null)
   const messageHistoryRef = useRef(null)
   const streamingTimeoutRef = useRef(null)
+  const symbolStreamingTimeoutsRef = useRef({})
   const previousSectionRef = useRef(null)
   const isStreamingRef = useRef(false)
   const currentMessageRef = useRef('')
@@ -23,19 +26,20 @@ function RobotWidget({ message, sectionId, onError, isPerpBotRunning = false }) 
   const previousSectionIdRef = useRef(sectionId)
   const lastSentimentSummaryRef = useRef(null)
   const hasInitializedRef = useRef(false)
+  const previousSymbolMessagesRef = useRef({})
 
-  // Reset messages when section changes
   useEffect(() => {
     if (previousSectionIdRef.current !== sectionId) {
-      // Section changed - reset everything
       setCurrentMessage('')
       setCurrentStreaming('')
+      setSymbolMessages({})
+      setStreamingSymbols({})
       setIsLoadingSentiment(false)
       setIsStreaming(false)
       userScrolledUpRef.current = false
-      lastSentimentSummaryRef.current = null // Reset last sentiment when section changes
+      lastSentimentSummaryRef.current = null
+      previousSymbolMessagesRef.current = {}
       
-      // Clear any active timeouts
       if (streamingTimeoutRef.current) {
         clearTimeout(streamingTimeoutRef.current)
         streamingTimeoutRef.current = null
@@ -44,90 +48,89 @@ function RobotWidget({ message, sectionId, onError, isPerpBotRunning = false }) 
         clearTimeout(thinkingDotsRef.current)
         thinkingDotsRef.current = null
       }
+      Object.values(symbolStreamingTimeoutsRef.current).forEach(timeout => clearTimeout(timeout))
+      symbolStreamingTimeoutsRef.current = {}
       
       isStreamingRef.current = false
       isAnimatingRef.current = false
       previousSectionIdRef.current = sectionId
-      // Reset refs so new message will stream
       previousSectionRef.current = null
       currentMessageRef.current = ''
     }
   }, [sectionId])
 
-  // Stream message when section changes
   useEffect(() => {
-    if (!message) return
-    
-    // On initial mount, force streaming even if refs match
-    const isInitialMount = !hasInitializedRef.current
-    
-    // Check if we're already streaming this exact message for this section
-    // Skip only if we've initialized and it's the same message
-    if (!isInitialMount && previousSectionRef.current === sectionId && currentMessageRef.current === message) {
-      return
-    }
-    
-    // Mark as initialized after first run
-    hasInitializedRef.current = true
-    
-    // Clear any existing timeout and stop current streaming
-    if (streamingTimeoutRef.current) {
-      clearTimeout(streamingTimeoutRef.current)
-      streamingTimeoutRef.current = null
-    }
-    
-    // If we were streaming, complete the previous message first
-    if (isStreamingRef.current && currentMessageRef.current) {
-      setCurrentMessage(currentMessageRef.current)
-    }
-
-    // Update refs before starting new stream
-    previousSectionRef.current = sectionId
-    currentMessageRef.current = message
-    isStreamingRef.current = true
-    setIsStreaming(true)
-    
-    // Reset streaming state
-    setCurrentStreaming('')
-    
-    let charIndex = 0
-    let streamedText = ''
-    
-    const streamChars = () => {
-      if (charIndex < message.length) {
-        streamedText += message[charIndex]
-        setCurrentStreaming(streamedText)
-        charIndex++
-        streamingTimeoutRef.current = setTimeout(streamChars, 30) // 30ms per character
-      } else {
-        // Message complete, replace the current message
-        setCurrentMessage(message)
-        setCurrentStreaming('')
-        isStreamingRef.current = false
-        setIsStreaming(false)
-        streamingTimeoutRef.current = null
+    if (Object.keys(messages).length > 0) {
+      for (const [symbol, msg] of Object.entries(messages)) {
+        if (previousSymbolMessagesRef.current[symbol] !== msg) {
+          previousSymbolMessagesRef.current[symbol] = msg
+          
+          if (symbolStreamingTimeoutsRef.current[symbol]) {
+            clearTimeout(symbolStreamingTimeoutsRef.current[symbol])
+          }
+          
+          setStreamingSymbols(prev => ({ ...prev, [symbol]: '' }))
+          
+          let charIndex = 0
+          let streamedText = ''
+          
+          const streamChars = () => {
+            if (charIndex < msg.length) {
+              streamedText += msg[charIndex]
+              setStreamingSymbols(prev => ({ ...prev, [symbol]: streamedText }))
+              charIndex++
+              symbolStreamingTimeoutsRef.current[symbol] = setTimeout(streamChars, 20)
+            } else {
+              setSymbolMessages(prev => ({ ...prev, [symbol]: msg }))
+              setStreamingSymbols(prev => {
+                const updated = { ...prev }
+                delete updated[symbol]
+                return updated
+              })
+              delete symbolStreamingTimeoutsRef.current[symbol]
+            }
+          }
+          
+          setTimeout(streamChars, 100)
+        }
       }
-    }
-    
-    // Small delay before starting to stream
-    const startTimeout = setTimeout(() => {
-      streamChars()
-    }, 200)
-
-    return () => {
-      clearTimeout(startTimeout)
-      if (streamingTimeoutRef.current) {
-        clearTimeout(streamingTimeoutRef.current)
-        streamingTimeoutRef.current = null
+      
+      const currentSymbols = Object.keys(messages)
+      setSymbolMessages(prev => {
+        const filtered = {}
+        for (const symbol of currentSymbols) {
+          if (prev[symbol]) filtered[symbol] = prev[symbol]
+        }
+        return filtered
+      })
+    } else if (message && !currentMessageRef.current) {
+      previousSectionRef.current = sectionId
+      currentMessageRef.current = message
+      isStreamingRef.current = true
+      setIsStreaming(true)
+      setCurrentStreaming('')
+      
+      let charIndex = 0
+      let streamedText = ''
+      
+      const streamChars = () => {
+        if (charIndex < message.length) {
+          streamedText += message[charIndex]
+          setCurrentStreaming(streamedText)
+          charIndex++
+          streamingTimeoutRef.current = setTimeout(streamChars, 30)
+        } else {
+          setCurrentMessage(message)
+          setCurrentStreaming('')
+          isStreamingRef.current = false
+          setIsStreaming(false)
+          streamingTimeoutRef.current = null
+        }
       }
-      // Reset streaming state if effect is cleaned up mid-stream
-      if (isStreamingRef.current) {
-        isStreamingRef.current = false
-        setIsStreaming(false)
-        setCurrentStreaming('')
-      }
+      
+      setTimeout(streamChars, 200)
     }
-  }, [message, sectionId])
+  }, [messages, message, sectionId])
 
   // Check if user has scrolled up
   useEffect(() => {
@@ -345,14 +348,18 @@ function RobotWidget({ message, sectionId, onError, isPerpBotRunning = false }) 
     }
   }, [])
 
-  // For collapsed view: show streaming text if actively streaming, otherwise show current message
-  // Don't show the message prop if we're about to stream it (isStreaming but currentStreaming is empty)
-  const displayText = currentStreaming 
-    ? currentStreaming 
-    : (currentMessage || ((!isStreaming && message) || 'Initializing...'))
+  const displayText = Object.keys(messages).length > 0
+    ? Object.entries(messages).map(([sym, msg]) => {
+        const streaming = streamingSymbols[sym]
+        const completed = symbolMessages[sym]
+        const text = streaming || completed || msg
+        return `[${sym}] ${text}`
+      }).join('\n\n')
+    : (currentStreaming || currentMessage || message || 'Initializing...')
+  
   const isPerpFarmingSection = sectionId === 0
-  // Show cursor only when actively streaming (has content and not loading sentiment)
-  const isCurrentlyStreaming = currentStreaming && !isLoadingSentiment && isStreaming
+  const isCurrentlyStreaming = (currentStreaming && !isLoadingSentiment && isStreaming) || 
+                                Object.keys(streamingSymbols).length > 0
   
   // Handle error messages from parent
   useEffect(() => {
@@ -410,26 +417,53 @@ function RobotWidget({ message, sectionId, onError, isPerpBotRunning = false }) 
         )}
         {isExpanded ? (
           <div className="message-history" ref={messageHistoryRef}>
-            {currentMessage && !currentStreaming && (
-              <motion.div
-                className="message-item"
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                {currentMessage}
-              </motion.div>
-            )}
-            {currentStreaming && (
-              <motion.div
-                className="message-item"
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                {currentStreaming}
-                <span className="cursor">|</span>
-              </motion.div>
+            {Object.keys(messages).length > 0 ? (
+              <AnimatePresence mode="popLayout">
+                {Object.entries(messages).map(([symbol, msg]) => {
+                  const isStreaming = streamingSymbols[symbol]
+                  const displayMsg = isStreaming || symbolMessages[symbol] || msg
+                  
+                  return (
+                    <motion.div
+                      key={symbol}
+                      className="message-item"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.2 }}
+                      layout
+                    >
+                      <strong style={{ color: '#00ff00' }}>[{symbol}]</strong><br />
+                      {isStreaming || displayMsg}
+                      {isStreaming && <span className="cursor">|</span>}
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+            ) : (
+              <>
+                {currentMessage && !currentStreaming && (
+                  <motion.div
+                    className="message-item"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {currentMessage}
+                  </motion.div>
+                )}
+                {currentStreaming && (
+                  <motion.div
+                    className="message-item"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {currentStreaming}
+                    <span className="cursor">|</span>
+                  </motion.div>
+                )}
+              </>
             )}
             {isPerpFarmingSection && (
               <button

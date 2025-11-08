@@ -264,11 +264,32 @@ export class OrderManager {
         return
       }
 
-      // Cancel any existing unfilled orders for this symbol (new signal = new conditions)
+      // Check existing orders - only cancel if price changed
       const openOrders = await this.dexService.getOpenOrders(symbol)
       console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      
+      const orderType = this.settings.orderType || 'LIMIT'
+      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+      
+      // For LIMIT orders, check if we already have an order at the same price
+      if (orderType === 'LIMIT' && openOrders.length > 0) {
+        const matchingOrder = openOrders.find(order => {
+          const orderPrice = parseFloat(order.price || '0')
+          const priceTolerance = entryPrice * 0.0001 // 0.01% tolerance for floating point
+          const priceMatches = Math.abs(orderPrice - entryPrice) <= priceTolerance
+          const sideMatches = order.side === asterSide
+          return priceMatches && sideMatches
+        })
+        
+        if (matchingOrder) {
+          console.log(`[OrderManager] ✅ Existing order at same price ($${entryPrice}) - keeping order ${matchingOrder.orderId}`)
+          return // Skip - no need to cancel and replace
+        }
+      }
+      
+      // Price changed or MARKET order - cancel existing orders
       if (openOrders.length > 0) {
-        console.log('[OrderManager] Cancelling existing unfilled orders to place new signal')
+        console.log('[OrderManager] Cancelling existing orders (price changed or market order)')
         for (const order of openOrders) {
           try {
             await this.dexService.cancelOrder(symbol, order.orderId)
@@ -301,9 +322,6 @@ export class OrderManager {
       }
 
       const quantity = maxPositionValue / entryPrice
-      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
-
-      const orderType = this.settings.orderType || 'LIMIT'
 
       console.log('[OrderManager] Placing scalp order:', {
         symbol,
@@ -401,11 +419,32 @@ export class OrderManager {
         return
       }
 
-      // Cancel any existing unfilled orders for this symbol (new signal = new conditions)
+      // Check existing orders - only cancel if price changed
       const openOrders = await this.dexService.getOpenOrders(symbol)
       console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      
+      const orderType = this.settings.orderType || 'LIMIT'
+      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+      
+      // For LIMIT orders, check if we already have an order at the same price
+      if (orderType === 'LIMIT' && openOrders.length > 0) {
+        const matchingOrder = openOrders.find(order => {
+          const orderPrice = parseFloat(order.price || '0')
+          const priceTolerance = entryPrice * 0.0001 // 0.01% tolerance for floating point
+          const priceMatches = Math.abs(orderPrice - entryPrice) <= priceTolerance
+          const sideMatches = order.side === asterSide
+          return priceMatches && sideMatches
+        })
+        
+        if (matchingOrder) {
+          console.log(`[OrderManager] ✅ Existing order at same price ($${entryPrice}) - keeping order ${matchingOrder.orderId}`)
+          return // Skip - no need to cancel and replace
+        }
+      }
+      
+      // Price changed or MARKET order - cancel existing orders
       if (openOrders.length > 0) {
-        console.log('[OrderManager] Cancelling existing unfilled orders to place new signal')
+        console.log('[OrderManager] Cancelling existing orders (price changed or market order)')
         for (const order of openOrders) {
           try {
             await this.dexService.cancelOrder(symbol, order.orderId)
@@ -438,9 +477,6 @@ export class OrderManager {
       }
 
       const quantity = maxPositionValue / entryPrice
-      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
-
-      const orderType = this.settings.orderType || 'LIMIT'
 
       console.log('[OrderManager] Placing momentum order:', {
         symbol,
@@ -542,11 +578,32 @@ export class OrderManager {
         return
       }
 
-      // Cancel any existing unfilled orders for this symbol (new signal = new conditions)
+      // Check existing orders - only cancel if price changed
       const openOrders = await this.dexService.getOpenOrders(symbol)
       console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      
+      const orderType = this.settings.orderType || 'LIMIT'
+      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+      
+      // For LIMIT orders, check if we already have an order at the same price
+      if (orderType === 'LIMIT' && openOrders.length > 0) {
+        const matchingOrder = openOrders.find(order => {
+          const orderPrice = parseFloat(order.price || '0')
+          const priceTolerance = entryPrice * 0.0001 // 0.01% tolerance for floating point
+          const priceMatches = Math.abs(orderPrice - entryPrice) <= priceTolerance
+          const sideMatches = order.side === asterSide
+          return priceMatches && sideMatches
+        })
+        
+        if (matchingOrder) {
+          console.log(`[OrderManager] ✅ Existing order at same price ($${entryPrice}) - keeping order ${matchingOrder.orderId}`)
+          return // Skip - no need to cancel and replace
+        }
+      }
+      
+      // Price changed or MARKET order - cancel existing orders
       if (openOrders.length > 0) {
-        console.log('[OrderManager] Cancelling existing unfilled orders to place new signal')
+        console.log('[OrderManager] Cancelling existing orders (price changed or market order)')
         for (const order of openOrders) {
           try {
             await this.dexService.cancelOrder(symbol, order.orderId)
@@ -579,9 +636,6 @@ export class OrderManager {
       }
 
       const quantity = maxPositionValue / entryPrice
-      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
-
-      const orderType = this.settings.orderType || 'LIMIT'
 
       console.log('[OrderManager] Placing momentum X order:', {
         symbol,
@@ -690,11 +744,32 @@ export class OrderManager {
         return
       }
 
-      // Cancel any existing unfilled orders for this symbol (new signal = new conditions)
+      // Check existing orders - only cancel if price changed
       const openOrders = await this.dexService.getOpenOrders(symbol)
       console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      
+      const orderType = this.settings.orderType || 'LIMIT'
+      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+      
+      // For LIMIT orders, check if we already have an order at the same price
+      if (orderType === 'LIMIT' && openOrders.length > 0) {
+        const matchingOrder = openOrders.find(order => {
+          const orderPrice = parseFloat(order.price || '0')
+          const priceTolerance = entryPrice * 0.0001 // 0.01% tolerance for floating point
+          const priceMatches = Math.abs(orderPrice - entryPrice) <= priceTolerance
+          const sideMatches = order.side === asterSide
+          return priceMatches && sideMatches
+        })
+        
+        if (matchingOrder) {
+          console.log(`[OrderManager] ✅ Existing order at same price ($${entryPrice}) - keeping order ${matchingOrder.orderId}`)
+          return // Skip - no need to cancel and replace
+        }
+      }
+      
+      // Price changed or MARKET order - cancel existing orders
       if (openOrders.length > 0) {
-        console.log('[OrderManager] Cancelling existing unfilled orders to place new signal')
+        console.log('[OrderManager] Cancelling existing orders (price changed or market order)')
         for (const order of openOrders) {
           try {
             await this.dexService.cancelOrder(symbol, order.orderId)
@@ -728,9 +803,6 @@ export class OrderManager {
       }
 
       const quantity = maxPositionValue / entryPrice
-      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
-
-      const orderType = this.settings.orderType || 'LIMIT'
 
       console.log('[OrderManager] Placing order book trading order:', {
         symbol,

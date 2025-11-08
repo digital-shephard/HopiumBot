@@ -1481,11 +1481,14 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               return
             }
             
-            // Calculate capital per position (only for new positions we'll open)
+            // Calculate capital per position
+            // CRITICAL: Always divide total capital by 3 (max positions)
+            // Do NOT divide by (existing + new) because that double-counts existing positions!
             const capitalNum = parseFloat(settings.capital)
             const newPicksToOpen = topPicks.slice(0, roomForNewPositions)
-            const capitalPerPosition = capitalNum / (currentTotalActive + newPicksToOpen.length)
+            const capitalPerPosition = capitalNum / 3  // Always $150 / 3 = $50 per position
             
+            console.log(`[Portfolio] Capital: $${capitalNum} / 3 positions = $${capitalPerPosition.toFixed(2)} per position`)
             console.log(`[Portfolio] Will open ${newPicksToOpen.length} new position(s) with $${capitalPerPosition.toFixed(2)} each`)
             
             // Process each pick
@@ -1511,44 +1514,65 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   break
                 }
                 
-                // Get max leverage for this symbol
-                const maxLeverage = await orderManager.dexService.getMaxLeverageForNotional(
-                  pick.symbol,
-                  capitalPerPosition
-                )
-                
-                // Use minimum of: user's setting, pick's max, or API's max
-                const leverage = Math.min(
-                  parseInt(settings.leverage),
-                  pick.max_leverage || maxLeverage,
-                  maxLeverage
-                )
-                
                 console.log(`[Portfolio] Opening ${pick.symbol} ${pick.side} @ ${pick.confidence}% confidence`)
                 console.log(`[Portfolio]   Entry: $${pick.entry_zone[0]}-${pick.entry_zone[1]}`)
                 console.log(`[Portfolio]   TP: $${pick.take_profit} | SL: $${pick.stop_loss}`)
-                console.log(`[Portfolio]   Leverage: ${leverage}x | Size: $${capitalPerPosition.toFixed(2)}`)
+                console.log(`[Portfolio]   Target size: $${capitalPerPosition.toFixed(2)}`)
                 
-                // Set leverage
-                await orderManager.dexService.setLeverage(pick.symbol, leverage)
-                
-                // Calculate position quantity
-                // IMPORTANT: capitalPerPosition is the NOTIONAL position size (not margin)
-                // Leverage is already set on exchange, so we DON'T multiply by leverage here
-                // If capital = $150 and 3 positions, each position = $50 notional
                 const entryPrice = pick.entry_zone[0] // Use low end of entry zone
-                const quantity = capitalPerPosition / entryPrice
                 
-                // Place LIMIT order at entry zone low (conservative)
-                const result = await orderManager.dexService.placeOrder({
-                  symbol: pick.symbol,
-                  side: pick.side === 'LONG' ? 'BUY' : 'SELL',
-                  type: 'LIMIT',
-                  price: entryPrice,
-                  quantity: quantity,
-                  timeInForce: 'GTC',
-                  newClientOrderId: `hopium_portfolio_${Date.now()}`
-                })
+                // Try placing order with decreasing leverage until it works
+                let result = null
+                let leverage = Math.min(parseInt(settings.leverage), pick.max_leverage || 125)
+                const minLeverage = 1
+                
+                while (leverage >= minLeverage && !result) {
+                  try {
+                    console.log(`[Portfolio] Trying ${pick.symbol} with ${leverage}x leverage...`)
+                    
+                    // Set leverage
+                    await orderManager.dexService.setLeverage(pick.symbol, leverage)
+                    
+                    // Calculate quantity for EXACT $50 notional position
+                    // quantity * price = $50
+                    const quantity = capitalPerPosition / entryPrice
+                    
+                    console.log(`[Portfolio] Placing order: ${quantity} @ $${entryPrice} = $${(quantity * entryPrice).toFixed(2)}`)
+                    
+                    // Place LIMIT order
+                    result = await orderManager.dexService.placeOrder({
+                      symbol: pick.symbol,
+                      side: pick.side === 'LONG' ? 'BUY' : 'SELL',
+                      type: 'LIMIT',
+                      price: entryPrice,
+                      quantity: quantity,
+                      timeInForce: 'GTC',
+                      newClientOrderId: `hopium_portfolio_${Date.now()}`
+                    })
+                    
+                    console.log(`[Portfolio] ✅ Order placed successfully with ${leverage}x leverage`)
+                    break
+                    
+                  } catch (error) {
+                    console.log(`[Portfolio] Failed with ${leverage}x leverage: ${error.message}`)
+                    
+                    // If it's a leverage/notional error, try lower leverage
+                    if (error.message.includes('leverage') || 
+                        error.message.includes('notional') || 
+                        error.message.includes('Margin') ||
+                        error.message.includes('balance')) {
+                      leverage = Math.max(1, Math.floor(leverage / 2))
+                      console.log(`[Portfolio] Retrying with ${leverage}x leverage...`)
+                    } else {
+                      // Different error, don't retry
+                      throw error
+                    }
+                  }
+                }
+                
+                if (!result) {
+                  throw new Error(`Could not place order for ${pick.symbol} even at ${minLeverage}x leverage`)
+                }
                 
                 // CRITICAL: Add order to orderManager tracking so it gets moved to activePositions when filled
                 orderManager.activeOrders.set(result.orderId, {

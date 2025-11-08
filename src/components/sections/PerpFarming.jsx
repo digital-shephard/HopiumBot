@@ -1360,6 +1360,19 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                 return
               }
               
+              // Check if spoofing is detected - be more cautious on entry
+              const isSpoofing = orderBookData.spoof_detection?.wall_velocity === 'high'
+              
+              if (isSpoofing) {
+                // During spoofing, only allow HIGH confidence entries
+                if (orderBookData.confidence === 'high') {
+                  console.log(`[PerpFarming] ⚠️ SPOOF ALERT (${orderBookData.spoof_detection.recent_spoofs} recent) but HIGH confidence - allowing entry`)
+                } else {
+                  console.log(`[PerpFarming] 🚫 BLOCKED: SPOOF ALERT (${orderBookData.spoof_detection.recent_spoofs} recent) + ${orderBookData.confidence} confidence - skipping entry`)
+                  return
+                }
+              }
+              
               // Check confidence (respect trustLowConfidence setting)
               const shouldTrade = orderBookData.confidence === 'high' || 
                                   orderBookData.confidence === 'medium' || 

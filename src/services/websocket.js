@@ -535,10 +535,29 @@ export class HopiumWebSocketClient {
    */
   _handleMessage(event) {
     try {
-      const message = JSON.parse(event.data)
+      const rawData = event.data
+      
+      // Handle newline-delimited JSON (multiple messages in one frame)
+      if (typeof rawData === 'string' && rawData.includes('\n')) {
+        const lines = rawData.split('\n').filter(line => line.trim() !== '')
+        for (const line of lines) {
+          try {
+            const message = JSON.parse(line)
+            this._processMessage(message)
+          } catch (lineError) {
+            console.error('[WebSocket] Failed to parse line:', line.substring(0, 100))
+            console.error('[WebSocket] Parse error:', lineError.message)
+          }
+        }
+        return
+      }
+      
+      // Standard single JSON message
+      const message = JSON.parse(rawData)
       this._processMessage(message)
     } catch (error) {
       console.error('Failed to parse WebSocket message:', error)
+      console.error('Raw data (first 500 chars):', event.data?.substring(0, 500))
       if (this.onError) {
         this.onError({
           type: 'error',

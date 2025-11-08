@@ -1216,20 +1216,42 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                 console.log(`[PerpFarming] ⏭️ Skipping order book signal - low confidence (${orderBookData.confidence})`)
               }
             } 
-            // If position exists, check for reversal or Smart Mode exit
+            // If position exists FOR THIS SYMBOL, check for reversal or Smart Mode exit
             else {
               const symbol = orderBookData.symbol
-              const currentNetPnl = lastPnlRef.current || 0
+              
+              // Calculate PNL for THIS SYMBOL specifically (for multi-pair portfolio mode)
+              let symbolNetPnl = 0
+              try {
+                const symbolPosition = await orderManager.dexService.getPosition(symbol)
+                const unrealizedProfit = parseFloat(symbolPosition.unRealizedProfit || '0')
+                const entryPrice = parseFloat(symbolPosition.entryPrice || '0')
+                const positionAmt = Math.abs(parseFloat(symbolPosition.positionAmt || '0'))
+                const markPrice = parseFloat(symbolPosition.markPrice || '0')
+                
+                // Calculate fees for this symbol
+                const entryNotional = positionAmt * entryPrice
+                const exitNotional = positionAmt * markPrice
+                const entryFee = entryNotional * ENTRY_FEE
+                const exitFee = exitNotional * EXIT_FEE
+                const totalFees = entryFee + exitFee
+                
+                symbolNetPnl = unrealizedProfit - totalFees
+                console.log(`[Portfolio] ${symbol} Net PNL: $${symbolNetPnl.toFixed(2)} (Gross: $${unrealizedProfit.toFixed(2)}, Fees: $${totalFees.toFixed(2)})`)
+              } catch (error) {
+                console.error(`[Portfolio] Failed to get PNL for ${symbol}:`, error)
+                symbolNetPnl = lastPnlRef.current || 0 // Fallback to total PNL
+              }
               
               // First check Smart Mode exit conditions
               if (settings.smartMode) {
                 const minPnl = parseFloat(settings.smartModeMinPnl) || -50
                 
-                if (currentNetPnl >= minPnl) {
+                if (symbolNetPnl >= minPnl) {
                   const exitDecision = checkSmartExit(symbol, {
                     side: orderBookData.side,
                     confidence: orderBookData.confidence
-                  }, currentNetPnl)
+                  }, symbolNetPnl)
 
                   if (exitDecision.shouldExit) {
                     console.log(`[PerpFarming] 🧠 Smart Mode EXIT: ${exitDecision.reason}`)
@@ -1239,7 +1261,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                     setBotMessage(exitMessage)
                     if (onBotMessageChange) onBotMessageChange(exitMessage)
                     
-                    await closePosition(orderManager, symbol, currentNetPnl)
+                    await closePosition(orderManager, symbol, symbolNetPnl)
                     
                     // Remove from portfolio tracking if in Auto Mode
                     if (settings.autoMode) {
@@ -1268,7 +1290,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   // Only reverse on high confidence during spoofing
                   if (orderBookData.confidence === 'high') {
                     console.log('[PerpFarming] 🔄 HIGH CONFIDENCE REVERSAL during spoofing - reversing position')
-                    await closePosition(orderManager, symbol, currentNetPnl)
+                    await closePosition(orderManager, symbol, symbolNetPnl)
                     
                     // Update portfolio tracking if in Auto Mode (changing side)
                     if (settings.autoMode) {
@@ -1291,7 +1313,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   
                   if (shouldReverse) {
                     console.log(`[PerpFarming] 🔄 ${orderBookData.confidence.toUpperCase()} CONFIDENCE REVERSAL - reversing position`)
-                    await closePosition(orderManager, symbol, currentNetPnl)
+                    await closePosition(orderManager, symbol, symbolNetPnl)
                     
                     // Update portfolio tracking if in Auto Mode (changing side)
                     if (settings.autoMode) {
@@ -1364,15 +1386,32 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               return
             }
             
-            // Calculate capital per position
+            // Count current open positions
+            const status = orderManager.getStatus()
+            const currentPositionCount = status.activePositions ? status.activePositions.length : 0
+            
+            console.log(`[Portfolio] Current active positions: ${currentPositionCount}/3`)
+            
+            // Calculate how many new positions we can open (max 3 total)
+            const roomForNewPositions = Math.max(0, 3 - currentPositionCount)
+            
+            if (roomForNewPositions === 0) {
+              console.log('[Portfolio] Already have 3 positions - no room for new entries')
+              return
+            }
+            
+            // Calculate capital per position (only for new positions we'll open)
             const capitalNum = parseFloat(settings.capital)
-            const capitalPerPosition = capitalNum / topPicks.length
+            const newPicksToOpen = topPicks.slice(0, roomForNewPositions)
+            const capitalPerPosition = capitalNum / (currentPositionCount + newPicksToOpen.length)
+            
+            console.log(`[Portfolio] Will open ${newPicksToOpen.length} new position(s) with $${capitalPerPosition.toFixed(2)} each`)
             
             // Process each pick
             const newPositions = []
             const newSubscriptions = new Set(portfolioSubscriptions)
             
-            for (const pick of topPicks) {
+            for (const pick of newPicksToOpen) {
               try {
                 // Check if we already have this position
                 const existingPos = portfolioPositions.find(p => p.symbol === pick.symbol)
@@ -1382,6 +1421,13 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   console.log(`[Portfolio] ${pick.symbol} position already exists - will be managed by order book signals`)
                   newPositions.push(existingPos)
                   continue
+                }
+                
+                // Check if we've hit the limit
+                const currentTotal = currentPositionCount + newPositions.length
+                if (currentTotal >= 3) {
+                  console.log(`[Portfolio] Reached max 3 positions - stopping at ${pick.symbol}`)
+                  break
                 }
                 
                 // Get max leverage for this symbol

@@ -363,7 +363,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   }
 
   // Smart Mode: Intelligent exit decision based on signal quality and trends
-  const checkSmartExit = (symbol, newSignal, currentNetPnl) => {
+  const checkSmartExit = (symbol, newSignal, currentNetPnl, options = {}) => {
+    const { isAutoMode = false } = options
     // Get or create signal history for this symbol
     if (!signalHistoryRef.current.has(symbol)) {
       signalHistoryRef.current.set(symbol, {
@@ -436,7 +437,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     }
     
     // 3. CONFIDENCE DECAY: Held for >2min + confidence dropped 2+ levels
-    if (timeInPosition > 120 && (entryScore - currentScore) >= 2) {
+    // DISABLED FOR AUTO MODE - only exit on signal flips
+    if (!isAutoMode && timeInPosition > 120 && (entryScore - currentScore) >= 2) {
       return {
         shouldExit: true,
         reason: 'confidence_decay',
@@ -446,7 +448,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     }
     
     // 4. CONSECUTIVE WEAKNESS: 3+ consecutive low confidence signals
-    if (history.consecutiveLowCount >= 3) {
+    // DISABLED FOR AUTO MODE - only exit on signal flips
+    if (!isAutoMode && history.consecutiveLowCount >= 3) {
       return {
         shouldExit: true,
         reason: 'persistent_low_confidence',
@@ -456,7 +459,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     }
     
     // 5. OPPOSITE DIRECTION PERSISTENCE: 2+ consecutive opposite signals (any confidence)
-    if (history.consecutiveOppositeCount >= 2) {
+    // DISABLED FOR AUTO MODE - only exit on signal flips
+    if (!isAutoMode && history.consecutiveOppositeCount >= 2) {
       return {
         shouldExit: true,
         reason: 'persistent_reversal',
@@ -466,8 +470,9 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     }
     
     // 6. PROFIT EROSION: Was up >$20, now back to breakeven or negative
+    // DISABLED FOR AUTO MODE - only exit on signal flips
     const maxPastPnl = Math.max(...history.signals.map(s => s.pnl), 0)
-    if (maxPastPnl > 20 && currentNetPnl <= 5 && newSignal.confidence === 'low') {
+    if (!isAutoMode && maxPastPnl > 20 && currentNetPnl <= 5 && newSignal.confidence === 'low') {
       return {
         shouldExit: true,
         reason: 'profit_erosion',
@@ -477,7 +482,9 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     }
     
     // 7. STALE POSITION: Held >5min + low confidence + losing money
-    if (timeInPosition > 300 && 
+    // DISABLED FOR AUTO MODE - only exit on signal flips
+    if (!isAutoMode && 
+        timeInPosition > 300 && 
         newSignal.confidence === 'low' && 
         currentNetPnl < -10) {
       return {
@@ -489,7 +496,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     }
     
     // 8. DOWNTREND: Last 3 signals show declining confidence scores
-    if (history.signals.length >= 3) {
+    // DISABLED FOR AUTO MODE - only exit on signal flips
+    if (!isAutoMode && history.signals.length >= 3) {
       const recent3 = history.signals.slice(-3)
       const scores = recent3.map(s => s.score)
       const isDowntrend = scores[0] > scores[1] && scores[1] > scores[2]
@@ -1310,7 +1318,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   const exitDecision = checkSmartExit(symbol, {
                     side: orderBookData.side,
                     confidence: orderBookData.confidence
-                  }, symbolNetPnl)
+                  }, symbolNetPnl, { isAutoMode: settings.autoMode })
 
                   if (exitDecision.shouldExit) {
                     console.log(`[PerpFarming] 🧠 Smart Mode EXIT: ${exitDecision.reason}`)

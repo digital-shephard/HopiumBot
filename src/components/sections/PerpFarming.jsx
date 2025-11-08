@@ -343,6 +343,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
       // Clear signal history for this symbol
       signalHistoryRef.current.delete(symbol)
       
+      // Remove from trading symbols
+      setTradingSymbols(prev => prev.filter(s => s !== symbol))
+      console.log(`[ClosePosition] Removed ${symbol} from trading symbols`)
+      
       // Verify position is fully closed
       setTimeout(async () => {
         const updatedPosition = await orderManager.dexService.getPosition(symbol)
@@ -1247,7 +1251,14 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               if (settings.smartMode) {
                 const minPnl = parseFloat(settings.smartModeMinPnl) || -50
                 
-                if (symbolNetPnl >= minPnl) {
+                // Check if position was just opened (grace period of 60 seconds)
+                const position = orderManager.activePositions.get(symbol)
+                const positionAge = position ? (Date.now() - position.filledAt) / 1000 : 999
+                const gracePeriod = 60 // seconds
+                
+                if (positionAge < gracePeriod) {
+                  console.log(`[Portfolio] ${symbol} is only ${positionAge.toFixed(0)}s old - grace period (${gracePeriod}s) - skipping Smart Mode exit`)
+                } else if (symbolNetPnl >= minPnl) {
                   const exitDecision = checkSmartExit(symbol, {
                     side: orderBookData.side,
                     confidence: orderBookData.confidence
@@ -1283,6 +1294,16 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                                 (currentPosition.side === 'SHORT' && orderBookData.side === 'LONG')
               
               if (isReversal) {
+                // Check if position was just opened (grace period)
+                const position = orderManager.activePositions.get(symbol)
+                const positionAge = position ? (Date.now() - position.filledAt) / 1000 : 999
+                const reversalGracePeriod = 30 // seconds - shorter grace for reversals
+                
+                if (positionAge < reversalGracePeriod) {
+                  console.log(`[Portfolio] ${symbol} is only ${positionAge.toFixed(0)}s old - grace period (${reversalGracePeriod}s) - skipping reversal`)
+                  return
+                }
+                
                 // Check if spoofing is detected - be more cautious
                 const isSpoofing = orderBookData.spoof_detection?.wall_velocity === 'high'
                 

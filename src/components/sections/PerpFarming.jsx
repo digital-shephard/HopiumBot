@@ -580,6 +580,54 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
           const status = orderManager.getStatus()
           const currentPositionCount = status.activePositions ? status.activePositions.length : 0
           
+          // Sync tradingSymbols with actual active positions
+          // This catches positions closed by orderManager directly (TP/SL, Smart Mode, etc.)
+          if (status.activePositions) {
+            const activeSymbols = status.activePositions.map(p => p.symbol)
+            setTradingSymbols(prev => {
+              // Only update if different to avoid unnecessary re-renders
+              const prevSorted = [...prev].sort().join(',')
+              const activeSorted = [...activeSymbols].sort().join(',')
+              if (prevSorted !== activeSorted) {
+                console.log('[PNL Poll] Syncing trading symbols:', { prev, active: activeSymbols })
+                return activeSymbols
+              }
+              return prev
+            })
+            
+            // Also sync portfolioPositions if in Auto Mode
+            if (settings.autoMode) {
+              setPortfolioPositions(prev => {
+                const filtered = prev.filter(p => activeSymbols.includes(p.symbol))
+                if (filtered.length !== prev.length) {
+                  console.log('[PNL Poll] Syncing portfolio positions - removed closed positions')
+                  return filtered
+                }
+                return prev
+              })
+            }
+          } else {
+            // No active positions, clear trading symbols
+            setTradingSymbols(prev => {
+              if (prev.length > 0) {
+                console.log('[PNL Poll] No active positions - clearing trading symbols')
+                return []
+              }
+              return prev
+            })
+            
+            // Clear portfolio positions too if in Auto Mode
+            if (settings.autoMode) {
+              setPortfolioPositions(prev => {
+                if (prev.length > 0) {
+                  console.log('[PNL Poll] Clearing portfolio positions')
+                  return []
+                }
+                return prev
+              })
+            }
+          }
+          
           if (status.activePositions && status.activePositions.length > 0) {
             // Calculate total PNL in dollars from all positions
             let totalPnlDollars = 0
@@ -1477,8 +1525,11 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                 await orderManager.dexService.setLeverage(pick.symbol, leverage)
                 
                 // Calculate position quantity
+                // IMPORTANT: capitalPerPosition is the NOTIONAL position size (not margin)
+                // Leverage is already set on exchange, so we DON'T multiply by leverage here
+                // If capital = $150 and 3 positions, each position = $50 notional
                 const entryPrice = pick.entry_zone[0] // Use low end of entry zone
-                const quantity = (capitalPerPosition * leverage) / entryPrice
+                const quantity = capitalPerPosition / entryPrice
                 
                 // Place LIMIT order at entry zone low (conservative)
                 const result = await orderManager.dexService.placeOrder({

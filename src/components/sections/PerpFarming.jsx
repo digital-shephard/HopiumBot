@@ -1386,24 +1386,28 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               return
             }
             
-            // Count current open positions
+            // Count current open positions AND pending orders
             const status = orderManager.getStatus()
             const currentPositionCount = status.activePositions ? status.activePositions.length : 0
+            const currentOrderCount = status.activeOrders ? status.activeOrders.length : 0
+            const currentTotalActive = currentPositionCount + currentOrderCount
             
-            console.log(`[Portfolio] Current active positions: ${currentPositionCount}/3`)
+            console.log(`[Portfolio] Current active: ${currentTotalActive}/3 (${currentPositionCount} positions + ${currentOrderCount} pending orders)`)
             
-            // Calculate how many new positions we can open (max 3 total)
-            const roomForNewPositions = Math.max(0, 3 - currentPositionCount)
+            // Calculate how many new positions we can open (max 3 total including pending orders)
+            const roomForNewPositions = Math.max(0, 3 - currentTotalActive)
             
             if (roomForNewPositions === 0) {
-              console.log('[Portfolio] Already have 3 positions - no room for new entries')
+              console.log('[Portfolio] Already have 3 active (positions + orders) - no room for new entries')
+              console.log('[Portfolio] Active positions:', status.activePositions?.map(p => p.symbol))
+              console.log('[Portfolio] Pending orders:', status.activeOrders?.map(o => o.symbol))
               return
             }
             
             // Calculate capital per position (only for new positions we'll open)
             const capitalNum = parseFloat(settings.capital)
             const newPicksToOpen = topPicks.slice(0, roomForNewPositions)
-            const capitalPerPosition = capitalNum / (currentPositionCount + newPicksToOpen.length)
+            const capitalPerPosition = capitalNum / (currentTotalActive + newPicksToOpen.length)
             
             console.log(`[Portfolio] Will open ${newPicksToOpen.length} new position(s) with $${capitalPerPosition.toFixed(2)} each`)
             
@@ -1423,10 +1427,10 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   continue
                 }
                 
-                // Check if we've hit the limit
-                const currentTotal = currentPositionCount + newPositions.length
+                // CRITICAL: Re-check limit including new positions opened in THIS loop
+                const currentTotal = currentTotalActive + newPositions.length
                 if (currentTotal >= 3) {
-                  console.log(`[Portfolio] Reached max 3 positions - stopping at ${pick.symbol}`)
+                  console.log(`[Portfolio] 🚫 Reached max 3 active - stopping at ${pick.symbol}`)
                   break
                 }
                 
@@ -1466,7 +1470,23 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   newClientOrderId: `hopium_portfolio_${Date.now()}`
                 })
                 
-                // Track this position
+                // CRITICAL: Add order to orderManager tracking so it gets moved to activePositions when filled
+                orderManager.activeOrders.set(result.orderId, {
+                  orderId: result.orderId,
+                  symbol: pick.symbol,
+                  side: pick.side,
+                  entryPrice: entryPrice,
+                  quantity: result.executedQty || result.origQty,
+                  status: result.status,
+                  takeProfit: parseFloat(settings.takeProfit),
+                  stopLoss: parseFloat(settings.stopLoss),
+                  createdAt: Date.now(),
+                  entryConfidence: 'high' // Portfolio picks are high confidence
+                })
+                
+                console.log(`[Portfolio] Tracking order ${result.orderId} for ${pick.symbol} in orderManager`)
+                
+                // Track this position in local state
                 const newPos = {
                   symbol: pick.symbol,
                   side: pick.side,

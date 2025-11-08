@@ -643,6 +643,154 @@ export class OrderManager {
   }
 
   /**
+   * Handle Order Book Trading signal (Near Real-Time Order Flow)
+   * Uses CVD, OBI, VWAP deviation, and spoof detection
+   * @param {Object} orderBookData - Order book signal data
+   */
+  async handleOrderBookSignal(orderBookData) {
+    console.log('[OrderManager] handleOrderBookSignal called with:', orderBookData)
+    
+    if (!this.isRunning || !this.dexService) {
+      console.log('[OrderManager] Not running or no dexService')
+      return
+    }
+
+    // Defensive guards
+    if (!orderBookData || !orderBookData.symbol || !orderBookData.side || !orderBookData.entry) {
+      console.log('[OrderManager] Missing required fields:', {
+        hasData: !!orderBookData,
+        hasSymbol: !!orderBookData?.symbol,
+        hasSide: !!orderBookData?.side,
+        hasEntry: !!orderBookData?.entry
+      })
+      return
+    }
+
+    const symbol = orderBookData.symbol
+    const side = orderBookData.side
+    const entry = orderBookData.entry
+    
+    // Use low end of trigger zone for entry (more conservative)
+    const triggerZone = entry.trigger_zone || []
+    const entryPrice = triggerZone.length >= 2 ? parseFloat(triggerZone[0]) : 0
+
+    // Ignore NEUTRAL signals
+    if (side === 'NEUTRAL') {
+      console.log('[OrderManager] NEUTRAL signal, skipping')
+      return
+    }
+
+    try {
+      // Skip if a position already exists
+      const existingPosition = await this.dexService.getPosition(symbol)
+      const positionAmt = parseFloat(existingPosition.positionAmt || '0')
+      console.log('[OrderManager] Position check:', { symbol, positionAmt })
+      if (positionAmt !== 0) {
+        console.log('[OrderManager] Position already exists, skipping')
+        return
+      }
+
+      // Cancel any existing unfilled orders for this symbol (new signal = new conditions)
+      const openOrders = await this.dexService.getOpenOrders(symbol)
+      console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      if (openOrders.length > 0) {
+        console.log('[OrderManager] Cancelling existing unfilled orders to place new signal')
+        for (const order of openOrders) {
+          try {
+            await this.dexService.cancelOrder(symbol, order.orderId)
+            this.activeOrders.delete(order.orderId)
+            console.log(`[OrderManager] Cancelled order ${order.orderId}`)
+          } catch (error) {
+            console.error(`[OrderManager] Failed to cancel order ${order.orderId}:`, error)
+          }
+        }
+      }
+
+      // Calculate position size - USE CAPITAL % AS MARGIN
+      const accountBalance = await this.dexService.getAccountBalance()
+      const availableBalance = parseFloat(accountBalance.availableBalance || '0')
+      const positionSizePercent = this.settings.positionSize || 10
+      const capitalLimit = parseFloat(this.settings.capital || '0')
+      const leverage = this.settings.leverage || 1
+      
+      // Position size % of capital IS the margin we want to use
+      const marginToUse = (capitalLimit * positionSizePercent) / 100
+      
+      // Actual position value = margin * leverage
+      const targetPositionValue = marginToUse * leverage
+      
+      // Make sure we have enough balance for the margin
+      const maxPositionValue = availableBalance >= marginToUse ? targetPositionValue : availableBalance * leverage
+
+      if (entryPrice <= 0) {
+        console.error('[OrderManager] Invalid entry price:', entryPrice)
+        return
+      }
+
+      const quantity = maxPositionValue / entryPrice
+      const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+
+      const orderType = this.settings.orderType || 'LIMIT'
+
+      console.log('[OrderManager] Placing order book trading order:', {
+        symbol,
+        side,
+        asterSide,
+        orderType,
+        entryPrice,
+        triggerZone,
+        quantity,
+        targetPositionValue,
+        maxPositionValue,
+        marginToUse,
+        availableBalance,
+        positionSizePercent,
+        leverage,
+        capitalLimit,
+        bias_score: orderBookData.bias_score,
+        cvd_slope: orderBookData.cvd_slope,
+        obi: orderBookData.obi,
+        spoof_velocity: orderBookData.spoof_detection?.wall_velocity
+      })
+
+      const orderParams = {
+        symbol,
+        side: asterSide,
+        type: orderType,
+        quantity: quantity,
+        newClientOrderId: `hopium_orderbook_${Date.now()}`
+      }
+
+      // Only add price and timeInForce for LIMIT orders
+      if (orderType === 'LIMIT') {
+        orderParams.price = entryPrice
+        orderParams.timeInForce = 'GTC'
+      }
+
+      console.log('[OrderManager] Order params:', orderParams)
+      const orderResponse = await this.dexService.placeOrder(orderParams)
+      console.log('[OrderManager] Order book trading order placed successfully:', orderResponse)
+
+      // Track order for management
+      this.activeOrders.set(orderResponse.orderId, {
+        orderId: orderResponse.orderId,
+        symbol,
+        side,
+        entryPrice: entryPrice,
+        quantity: orderResponse.executedQty || orderResponse.origQty,
+        status: orderResponse.status,
+        takeProfit: this.settings.takeProfit,
+        stopLoss: this.settings.stopLoss,
+        createdAt: Date.now(),
+        entryConfidence: orderBookData.confidence || 'unknown'
+      })
+    } catch (error) {
+      console.error('[OrderManager] Failed to place order book trading order:', error)
+      this.handleError('Failed to place order book trading order', error)
+    }
+  }
+
+  /**
    * Poll open orders to check status
    */
   async pollOpenOrders() {

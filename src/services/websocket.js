@@ -130,6 +130,24 @@ export class HopiumWebSocketClient {
   onMomentumX = null
 
   /**
+   * Called when an order book signal message is received
+   * @type {Function}
+   * @param {Object} data - Order book signal data
+   * @param {string} data.symbol - Trading pair symbol
+   * @param {string} data.side - Trading direction ('LONG', 'SHORT', 'NEUTRAL')
+   * @param {number} data.bias_score - Composite bias score (-1 to +1)
+   * @param {string} data.confidence - Confidence level ('high', 'medium', 'low')
+   * @param {number} data.cvd - Cumulative Volume Delta
+   * @param {string} data.cvd_slope - CVD slope with sigma notation
+   * @param {number} data.obi - Order Book Imbalance (-1 to +1)
+   * @param {number} data.vwap_dev - VWAP deviation percentage
+   * @param {Object} data.spoof_detection - Spoof detection data
+   * @param {string[]} data.reasoning - Array of reasoning strings
+   * @param {Object} data.entry - Entry recommendation with trigger_zone, stop_loss, take_profit
+   */
+  onOrderBookSignal = null
+
+  /**
    * Called when an alert message is received
    * @type {Function}
    * @param {Object} data - Alert message data
@@ -617,6 +635,22 @@ export class HopiumWebSocketClient {
           
           // Pass the full message structure (contains symbol, strategy, and data)
           this.onMomentumX(momentumXMessage)
+        }
+        break
+
+      case 'orderbook_signal':
+        if (this.onOrderBookSignal) {
+          // Server sends order book data in fullMessage.data (similar to scalp_indicator and momentum_indicator)
+          console.log('[WebSocket] Received orderbook_signal:', message)
+          
+          // Extract data from fullMessage structure
+          const orderBookMessage = message.fullMessage || message.message || message.payload || message
+          const orderBookData = orderBookMessage?.data || orderBookMessage
+          
+          console.log('[WebSocket] Extracted order book data:', orderBookData)
+          
+          // Pass the full message structure (contains symbol, strategy, and data)
+          this.onOrderBookSignal(orderBookMessage)
         }
         break
 

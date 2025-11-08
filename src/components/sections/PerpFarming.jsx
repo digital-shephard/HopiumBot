@@ -1135,6 +1135,160 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
           }
         }
         
+        // Handle Order Book Trading signals (Near Real-Time Order Flow)
+        wsClient.onOrderBookSignal = async (message) => {
+          try {
+            console.log('[PerpFarming] Received order book signal:', message)
+            
+            // Extract the actual order book data
+            const orderBookData = message?.data || message
+            
+            // Defensive: ignore if malformed
+            if (!orderBookData) {
+              console.log('[PerpFarming] No order book data found in message')
+              return
+            }
+            
+            console.log('[PerpFarming] Extracted order book data:', orderBookData)
+
+            // Build comprehensive bot message with CVD, OBI, and spoof warnings
+            let reasoning = orderBookData.reasoning?.join(' ') || 'Analyzing order flow...'
+            
+            // Add CVD and OBI metrics to message
+            const cvdInfo = `CVD: ${orderBookData.cvd_slope || 'N/A'}`
+            const obiInfo = `OBI: ${orderBookData.obi?.toFixed(2) || 'N/A'}`
+            reasoning = `${reasoning} | ${cvdInfo} | ${obiInfo}`
+            
+            // Add spoof warning if detected
+            if (orderBookData.spoof_detection?.wall_velocity === 'high') {
+              reasoning = `⚠️ SPOOF ALERT (${orderBookData.spoof_detection.recent_spoofs} recent) | ${reasoning}`
+            }
+            
+            setBotMessage(reasoning)
+            if (onBotMessageChange) onBotMessageChange(reasoning)
+
+            // Check if position exists
+            const status = orderManager.getStatus()
+            const hasActivePosition = status.activePositions && status.activePositions.length > 0
+            const currentPosition = hasActivePosition ? status.activePositions[0] : null
+            
+            console.log('[PerpFarming] Order Book position check:', {
+              hasActivePosition,
+              currentSide: currentPosition?.side,
+              newSide: orderBookData.side,
+              confidence: orderBookData.confidence,
+              bias_score: orderBookData.bias_score,
+              spoof_velocity: orderBookData.spoof_detection?.wall_velocity,
+              activePositions: status.activePositions
+            })
+
+            // === ORDER BOOK STRATEGY: STAY IN UNTIL REVERSAL ===
+            
+            // If no position, check if we should enter
+            if (!hasActivePosition) {
+              // Skip NEUTRAL signals for entry
+              if (orderBookData.side === 'NEUTRAL') {
+                console.log('[PerpFarming] NEUTRAL signal, no entry')
+                return
+              }
+              
+              // Check confidence (respect trustLowConfidence setting)
+              const shouldTrade = orderBookData.confidence === 'high' || 
+                                  orderBookData.confidence === 'medium' || 
+                                  (orderBookData.confidence === 'low' && settings.trustLowConfidence)
+              
+              if (shouldTrade) {
+                console.log(`[PerpFarming] 📊 Opening ${orderBookData.confidence.toUpperCase()} confidence ${orderBookData.side} order book position (Bias: ${orderBookData.bias_score?.toFixed(2)})`)
+                
+                if (typeof orderManager.handleOrderBookSignal === 'function') {
+                  await orderManager.handleOrderBookSignal(orderBookData)
+                  console.log('[PerpFarming] ✅ Order book trade placement attempted')
+                } else {
+                  console.error('[PerpFarming] handleOrderBookSignal is not a function!')
+                }
+              } else {
+                console.log(`[PerpFarming] ⏭️ Skipping order book signal - low confidence (${orderBookData.confidence})`)
+              }
+            } 
+            // If position exists, check for reversal or Smart Mode exit
+            else {
+              const symbol = orderBookData.symbol
+              const currentNetPnl = lastPnlRef.current || 0
+              
+              // First check Smart Mode exit conditions
+              if (settings.smartMode) {
+                const minPnl = parseFloat(settings.smartModeMinPnl) || -50
+                
+                if (currentNetPnl >= minPnl) {
+                  const exitDecision = checkSmartExit(symbol, {
+                    side: orderBookData.side,
+                    confidence: orderBookData.confidence
+                  }, currentNetPnl)
+
+                  if (exitDecision.shouldExit) {
+                    console.log(`[PerpFarming] 🧠 Smart Mode EXIT: ${exitDecision.reason}`)
+                    console.log(`[PerpFarming] 🧠 Details:`, exitDecision.details)
+                    
+                    setBotMessage(exitDecision.statement)
+                    if (onBotMessageChange) onBotMessageChange(exitDecision.statement)
+                    
+                    await closePosition(orderManager, symbol, currentNetPnl)
+                    return
+                  }
+                }
+              }
+              
+              // Check for REVERSAL signal (opposite direction)
+              const isReversal = (currentPosition.side === 'LONG' && orderBookData.side === 'SHORT') ||
+                                (currentPosition.side === 'SHORT' && orderBookData.side === 'LONG')
+              
+              if (isReversal) {
+                // Check if spoofing is detected - be more cautious
+                const isSpoofing = orderBookData.spoof_detection?.wall_velocity === 'high'
+                
+                if (isSpoofing) {
+                  // Only reverse on high confidence during spoofing
+                  if (orderBookData.confidence === 'high') {
+                    console.log('[PerpFarming] 🔄 HIGH CONFIDENCE REVERSAL during spoofing - reversing position')
+                    await closePosition(orderManager, symbol, currentNetPnl)
+                    
+                    // Open new position in opposite direction
+                    if (typeof orderManager.handleOrderBookSignal === 'function') {
+                      await orderManager.handleOrderBookSignal(orderBookData)
+                    }
+                  } else {
+                    console.log(`[PerpFarming] ⚠️ Reversal signal but spoofing detected (${orderBookData.spoof_detection.recent_spoofs} spoofs) + confidence ${orderBookData.confidence} - holding position`)
+                  }
+                } else {
+                  // No spoofing - reverse on high or medium confidence
+                  const shouldReverse = orderBookData.confidence === 'high' || 
+                                       orderBookData.confidence === 'medium'
+                  
+                  if (shouldReverse) {
+                    console.log(`[PerpFarming] 🔄 ${orderBookData.confidence.toUpperCase()} CONFIDENCE REVERSAL - reversing position`)
+                    await closePosition(orderManager, symbol, currentNetPnl)
+                    
+                    // Open new position in opposite direction
+                    if (typeof orderManager.handleOrderBookSignal === 'function') {
+                      await orderManager.handleOrderBookSignal(orderBookData)
+                    }
+                  } else {
+                    console.log(`[PerpFarming] ⏭️ Reversal signal but low confidence - holding position`)
+                  }
+                }
+              } else if (orderBookData.side === 'NEUTRAL') {
+                // NEUTRAL = STAY IN (this is the key difference from other strategies)
+                console.log('[PerpFarming] 📊 NEUTRAL signal - STAYING IN position (order book strategy behavior)')
+              } else {
+                // Same direction signal = stay in
+                console.log(`[PerpFarming] 📊 Confirming ${orderBookData.side} position - staying in`)
+              }
+            }
+          } catch (error) {
+            handleError(`Failed to handle order book signal: ${error.message}`)
+          }
+        }
+        
         // === AUTO MODE (HOURLY SCANNER) HANDLERS ===
         
         // Handle hourly opportunities (XX:00) - Open 3-5 positions
@@ -2094,7 +2248,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               <div className="risk-form-group">
                 <label className="risk-label">Trading Strategy</label>
                 <select
-                  className="risk-input"
+                  className="risk-input strategy-dropdown"
                   value={strategy}
                   onChange={(e) => setStrategy(e.target.value)}
                 >
@@ -2102,6 +2256,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   <option value="momentum">Momentum (LLM-Powered)</option>
                   <option value="scalp">Aggressive Reversion Scalping ⚡</option>
                   <option value="momentum_x">Momentum X (Psychic Candle Reader) 🔥</option>
+                  <option value="orderbook_trading">Order Book Trading (Near Real-Time) 🔥⚡</option>
                 </select>
                 <div className="strategy-description">
                   {strategy === 'range_trading' 
@@ -2110,7 +2265,9 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                     ? '🤖 AI-powered trend-following using GPT-5 analysis'
                     : strategy === 'scalp'
                     ? '⚡ Ultra-fast 30-second signals, optimized for 75x leverage'
-                    : '🔮 8-layer whipsaw scalper with delta, orderbook, FVG analysis @ 100x'
+                    : strategy === 'momentum_x'
+                    ? '🔮 8-layer whipsaw scalper with delta, orderbook, FVG analysis @ 100x'
+                    : '📊 10-second order flow analysis with CVD, OBI, VWAP. Stays in until reversal!'
                   }
                 </div>
               </div>

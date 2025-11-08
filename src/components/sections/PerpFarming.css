@@ -1158,6 +1158,17 @@
   color: rgba(255, 215, 0, 0.4);
 }
 
+/* Fix strategy dropdown option colors */
+.strategy-dropdown option {
+  background: #1a1a1a;
+  color: #ffd700;
+  padding: 10px;
+}
+
+.strategy-dropdown option:hover {
+  background: rgba(255, 215, 0, 0.2);
+}
+
 .strategy-description {
   font-family: 'Courier New', monospace;
   font-size: 14px;

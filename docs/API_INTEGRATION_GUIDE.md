@@ -1281,7 +1281,31 @@ interface MomentumIndicatorMessage {
     
     // Technical indicators
     macd: number;                   // MACD histogram
-    rsi: number;                    // RSI value
+    rsi: number;                    // 1-min RSI (legacy)
+    rsi_5min: number;               // 5-minute RSI (NEW)
+    rsi_15min: number;              // 15-minute RSI (NEW)
+    rsi_1h: number;                 // 1-hour RSI (NEW)
+    rsi_alignment: string;          // "ALIGNED_OVERSOLD", "ALIGNED_OVERBOUGHT", "ALIGNED_BULLISH", "ALIGNED_BEARISH", "DIVERGENT", "NEUTRAL" (NEW)
+    
+    // Fibonacci retracement levels (NEW)
+    fib_levels?: {
+      swing_high: number;
+      swing_low: number;
+      fib_0236: number;             // 23.6% level
+      fib_0382: number;             // 38.2% level (key)
+      fib_0500: number;             // 50% level (psychological)
+      fib_0618: number;             // 61.8% golden ratio (most important)
+      fib_0786: number;             // 78.6% level
+      trend_dir: string;
+    };
+    near_fib_level?: {              // Closest fib level
+      level: string;                // "23.6%", "38.2%", "50%", "61.8%", "78.6%"
+      price: number;
+      distance: number;             // % from current price
+      type: "support" | "resistance";
+    };
+    at_fib_support: boolean;        // Within 0.2% of fib support (NEW)
+    at_fib_resistance: boolean;     // Within 0.2% of fib resistance (NEW)
     
     // Signal
     side: "LONG" | "SHORT" | "NEUTRAL";
@@ -1293,7 +1317,7 @@ interface MomentumIndicatorMessage {
     
     // Quality metrics
     confidence: "high" | "medium" | "low";
-    confluence_score: number;       // 0-7 layers
+    confluence_score: number;       // 0-10 layers (upgraded from 7)
     reasoning: string;
     expected_hold_minutes: number;  // 5-15 minutes
   };
@@ -1405,8 +1429,10 @@ ws.onmessage = (event) => {
 **Key Points:**
 - ✅ **Directional bias** - Only trades WITH the trend (never counter-trend)
 - ✅ **Bear market optimal** - Detects downtrends early, only takes SHORTs
+- ✅ **Triple RSI Confluence** 🆕 - RSI on 3 timeframes (5m, 15m, 1h) detects alignment and divergences
+- ✅ **Fibonacci Support/Resistance** 🆕 - 5 key levels (23.6%, 38.2%, 50%, 61.8%, 78.6%) from 4H swings
 - ✅ **Volume farming** - 1-min frequency for multiple entries
-- ✅ **7-layer confluence** - Trend alignment + all detectors from scalp
+- ✅ **10-layer confluence** 🆕 - Trend + sweep + gap + pullback + RSI + MACD + regime + triple RSI + Fibonacci + divergence
 - ✅ **Blocks counter-trend** - If trending DOWN, blocks all LONGs completely
 - ✅ **NEUTRAL when conflicted** - Waits for 1h and 4h trends to align
 - ✅ **Expected hold 5-15min** - Longer than scalp, shorter than traditional swing

@@ -16,53 +16,6 @@ const TAKER_FEE = 0.0004  // 0.04% (MARKET orders or LIMIT orders that take liqu
 const ENTRY_FEE = TAKER_FEE // Conservative estimate - assume taker
 const EXIT_FEE = TAKER_FEE  // MARKET orders are always taker
 
-// Smart Mode exit statements
-const SMART_MODE_STATEMENTS = {
-  low_confidence: [
-    "Confidence dropped, cutting losses early",
-    "Market looking shaky, taking the small loss",
-    "Signal weakening, protecting capital",
-    "Better safe than sorry, exiting position",
-    "Trade not playing out, minimizing damage",
-    "Confidence fading, preserving funds",
-    "Smart exit - avoiding deeper losses",
-    "Early exit activated, capital protected",
-    "Signal deteriorating, closing position",
-    "Not worth the risk, exiting early",
-    "Confidence too low, cutting losses",
-    "Protecting the bag, closing position",
-    "Trade losing steam, smart exit triggered",
-    "Risk management activated",
-    "Better to exit now than wait for SL",
-    "Confidence dropped, damage control mode",
-    "Smart mode saved you from a bigger loss",
-    "Early detection, early exit",
-    "Capital preservation > holding hope",
-    "Trade invalidated, closing early"
-  ],
-  reversal: [
-    "Market direction flipped, exiting",
-    "Signal reversed, closing position",
-    "Direction changed, taking the exit",
-    "Market switched sides, closing out"
-  ]
-}
-
-// Get random Smart Mode statement based on exit reason
-function getSmartModeStatement(reason) {
-  let statements
-  
-  if (reason === 'reversal') {
-    statements = SMART_MODE_STATEMENTS.reversal
-  } else {
-    // low_confidence_threshold or consecutive_low_confidence
-    statements = SMART_MODE_STATEMENTS.low_confidence
-  }
-  
-  const randomIndex = Math.floor(Math.random() * statements.length)
-  return statements[randomIndex]
-}
-
 function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   // Get auth context for WebSocket authentication
   const { authService } = useAuth()
@@ -120,6 +73,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
   const peakPnlRef = useRef(0)
   const trailingStopRef = useRef(0)
   const bestBreakEvenPnlRef = useRef(Number.NEGATIVE_INFINITY) // Track best (closest to 0) PnL for breakeven loss tolerance
+  const signalHistoryRef = useRef(new Map()) // Track signal history per symbol: { entryTime, signals: [], lastSide, lastConfidence }
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -385,6 +339,9 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         return newValue
       })
       
+      // Clear signal history for this symbol
+      signalHistoryRef.current.delete(symbol)
+      
       // Verify position is fully closed
       setTimeout(async () => {
         const updatedPosition = await orderManager.dexService.getPosition(symbol)
@@ -398,6 +355,153 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
     } catch (error) {
       handleError(`Failed to close position for ${symbol}: ${error.message}`)
     }
+  }
+
+  // Smart Mode: Intelligent exit decision based on signal quality and trends
+  const checkSmartExit = (symbol, newSignal, currentNetPnl) => {
+    // Get or create signal history for this symbol
+    if (!signalHistoryRef.current.has(symbol)) {
+      signalHistoryRef.current.set(symbol, {
+        entryTime: Date.now(),
+        entrySide: newSignal.side,
+        entryConfidence: newSignal.confidence,
+        signals: [],
+        peakConfidence: newSignal.confidence,
+        consecutiveLowCount: 0,
+        consecutiveOppositeCount: 0
+      })
+    }
+    
+    const history = signalHistoryRef.current.get(symbol)
+    const confidenceScore = { high: 3, medium: 2, low: 1, neutral: 0 }
+    
+    // Add new signal to history (keep last 10)
+    history.signals.push({
+      timestamp: Date.now(),
+      side: newSignal.side,
+      confidence: newSignal.confidence,
+      score: confidenceScore[newSignal.confidence] || 0,
+      pnl: currentNetPnl
+    })
+    if (history.signals.length > 10) history.signals.shift()
+    
+    const currentScore = confidenceScore[newSignal.confidence] || 0
+    const entryScore = confidenceScore[history.entryConfidence] || 0
+    const timeInPosition = (Date.now() - history.entryTime) / 1000 // seconds
+    
+    // Update consecutive counters
+    if (newSignal.confidence === 'low') {
+      history.consecutiveLowCount++
+    } else {
+      history.consecutiveLowCount = 0
+    }
+    
+    if (newSignal.side !== history.entrySide && newSignal.side !== 'NEUTRAL') {
+      history.consecutiveOppositeCount++
+    } else {
+      history.consecutiveOppositeCount = 0
+    }
+    
+    console.log(`[SmartMode] ${symbol} | Entry: ${history.entrySide} (${history.entryConfidence}) | Current: ${newSignal.side} (${newSignal.confidence}) | PNL: $${currentNetPnl.toFixed(2)} | Time: ${timeInPosition.toFixed(0)}s`)
+    
+    // === EXIT RULES (ordered by priority) ===
+    
+    // 1. IMMEDIATE EXIT: Strong reversal (high confidence opposite direction)
+    if (newSignal.side !== history.entrySide && 
+        newSignal.side !== 'NEUTRAL' && 
+        newSignal.confidence === 'high') {
+      return {
+        shouldExit: true,
+        reason: 'strong_reversal',
+        statement: `High confidence ${newSignal.side} signal detected - reversing position`,
+        details: { entryScore, currentScore, timeInPosition }
+      }
+    }
+    
+    // 2. AGGRESSIVE EXIT: Profitable + any opposite signal
+    if (currentNetPnl > 10 && 
+        newSignal.side !== history.entrySide && 
+        newSignal.side !== 'NEUTRAL') {
+      return {
+        shouldExit: true,
+        reason: 'profit_protection_reversal',
+        statement: `Locking in $${currentNetPnl.toFixed(2)} profit - reversal signal detected`,
+        details: { entryScore, currentScore, timeInPosition, pnl: currentNetPnl }
+      }
+    }
+    
+    // 3. CONFIDENCE DECAY: Held for >2min + confidence dropped 2+ levels
+    if (timeInPosition > 120 && (entryScore - currentScore) >= 2) {
+      return {
+        shouldExit: true,
+        reason: 'confidence_decay',
+        statement: `Confidence decayed from ${history.entryConfidence} to ${newSignal.confidence} after ${(timeInPosition / 60).toFixed(1)} minutes`,
+        details: { entryScore, currentScore, timeInPosition }
+      }
+    }
+    
+    // 4. CONSECUTIVE WEAKNESS: 3+ consecutive low confidence signals
+    if (history.consecutiveLowCount >= 3) {
+      return {
+        shouldExit: true,
+        reason: 'persistent_low_confidence',
+        statement: `${history.consecutiveLowCount} consecutive low confidence signals - cutting losses`,
+        details: { consecutiveLowCount: history.consecutiveLowCount, timeInPosition }
+      }
+    }
+    
+    // 5. OPPOSITE DIRECTION PERSISTENCE: 2+ consecutive opposite signals (any confidence)
+    if (history.consecutiveOppositeCount >= 2) {
+      return {
+        shouldExit: true,
+        reason: 'persistent_reversal',
+        statement: `${history.consecutiveOppositeCount} consecutive ${newSignal.side} signals - trend reversed`,
+        details: { consecutiveOppositeCount: history.consecutiveOppositeCount, timeInPosition }
+      }
+    }
+    
+    // 6. PROFIT EROSION: Was up >$20, now back to breakeven or negative
+    const maxPastPnl = Math.max(...history.signals.map(s => s.pnl), 0)
+    if (maxPastPnl > 20 && currentNetPnl <= 5 && newSignal.confidence === 'low') {
+      return {
+        shouldExit: true,
+        reason: 'profit_erosion',
+        statement: `Profit eroded from $${maxPastPnl.toFixed(2)} to $${currentNetPnl.toFixed(2)} - exiting before worse`,
+        details: { maxPastPnl, currentNetPnl, timeInPosition }
+      }
+    }
+    
+    // 7. STALE POSITION: Held >5min + low confidence + losing money
+    if (timeInPosition > 300 && 
+        newSignal.confidence === 'low' && 
+        currentNetPnl < -10) {
+      return {
+        shouldExit: true,
+        reason: 'stale_losing_position',
+        statement: `Position stale (${(timeInPosition / 60).toFixed(1)}min) with low confidence and negative PNL`,
+        details: { timeInPosition, currentNetPnl, confidence: newSignal.confidence }
+      }
+    }
+    
+    // 8. DOWNTREND: Last 3 signals show declining confidence scores
+    if (history.signals.length >= 3) {
+      const recent3 = history.signals.slice(-3)
+      const scores = recent3.map(s => s.score)
+      const isDowntrend = scores[0] > scores[1] && scores[1] > scores[2]
+      
+      if (isDowntrend && currentNetPnl < 0) {
+        return {
+          shouldExit: true,
+          reason: 'confidence_downtrend',
+          statement: `Confidence trending down: ${recent3.map(s => s.confidence).join(' → ')}`,
+          details: { scores, currentNetPnl, timeInPosition }
+        }
+      }
+    }
+    
+    // No exit conditions met
+    console.log(`[SmartMode] ${symbol} - Holding position (no exit conditions met)`)
+    return { shouldExit: false }
   }
 
   const startTrading = async (settings) => {
@@ -723,39 +827,31 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             if (hasActivePosition && settings.smartMode) {
               console.log('[PerpFarming] 🧠 Smart Mode: Checking exit conditions')
               
-              // Add signal to position history
               const symbol = scalpData.symbol
-              orderManager.addSignalToHistory(symbol, {
-                confidence: scalpData.confidence,
-                side: scalpData.side
-              })
+              const currentNetPnl = lastPnlRef.current || 0
+              const minPnl = parseFloat(settings.smartModeMinPnl) || -50
+              
+              // Check if PNL is above minimum threshold before running Smart Mode
+              if (currentNetPnl >= minPnl) {
+                const exitDecision = checkSmartExit(symbol, {
+                  side: scalpData.side,
+                  confidence: scalpData.confidence
+                }, currentNetPnl)
 
-              // Check Smart Mode exit conditions
-              const exitDecision = await orderManager.checkSmartModeExit(symbol, {
-                confidence: scalpData.confidence,
-                side: scalpData.side
-              })
-
-              if (exitDecision.shouldExit) {
-                // Check if current PNL is above minimum threshold
-                const currentNetPnl = lastPnlRef.current || 0
-                const minPnl = parseFloat(settings.smartModeMinPnl) || -50
-                
-                if (currentNetPnl >= minPnl) {
-                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT triggered: ${exitDecision.reason} (PNL: $${currentNetPnl.toFixed(2)} >= min $${minPnl.toFixed(2)})`)
+                if (exitDecision.shouldExit) {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT: ${exitDecision.reason}`)
+                  console.log(`[PerpFarming] 🧠 Details:`, exitDecision.details)
                   
-                  // Select random statement based on reason
-                  const statement = getSmartModeStatement(exitDecision.reason)
-                  setBotMessage(statement)
-                  if (onBotMessageChange) onBotMessageChange(statement)
+                  setBotMessage(exitDecision.statement)
+                  if (onBotMessageChange) onBotMessageChange(exitDecision.statement)
                   
                   // Close position
-                  await orderManager.closePositionSmartMode(symbol, exitDecision.details)
+                  await closePosition(orderManager, symbol, currentNetPnl)
                   
                   return // Exit early, don't process new entry
-                } else {
-                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT BLOCKED: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)} - letting normal TP/SL handle it`)
                 }
+              } else {
+                console.log(`[PerpFarming] 🧠 Smart Mode DISABLED for this signal: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)}`)
               }
             }
             
@@ -888,39 +984,31 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             if (hasActivePosition && settings.smartMode) {
               console.log('[PerpFarming] 🧠 Smart Mode: Checking exit conditions')
               
-              // Add signal to position history
               const symbol = momentumData.symbol
-              orderManager.addSignalToHistory(symbol, {
-                confidence: momentumData.confidence,
-                side: momentumData.side
-              })
+              const currentNetPnl = lastPnlRef.current || 0
+              const minPnl = parseFloat(settings.smartModeMinPnl) || -50
+              
+              // Check if PNL is above minimum threshold before running Smart Mode
+              if (currentNetPnl >= minPnl) {
+                const exitDecision = checkSmartExit(symbol, {
+                  side: momentumData.side,
+                  confidence: momentumData.confidence
+                }, currentNetPnl)
 
-              // Check Smart Mode exit conditions
-              const exitDecision = await orderManager.checkSmartModeExit(symbol, {
-                confidence: momentumData.confidence,
-                side: momentumData.side
-              })
-
-              if (exitDecision.shouldExit) {
-                // Check if current PNL is above minimum threshold
-                const currentNetPnl = lastPnlRef.current || 0
-                const minPnl = parseFloat(settings.smartModeMinPnl) || -50
-                
-                if (currentNetPnl >= minPnl) {
-                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT triggered: ${exitDecision.reason} (PNL: $${currentNetPnl.toFixed(2)} >= min $${minPnl.toFixed(2)})`)
+                if (exitDecision.shouldExit) {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT: ${exitDecision.reason}`)
+                  console.log(`[PerpFarming] 🧠 Details:`, exitDecision.details)
                   
-                  // Select random statement based on reason
-                  const statement = getSmartModeStatement(exitDecision.reason)
-                  setBotMessage(statement)
-                  if (onBotMessageChange) onBotMessageChange(statement)
+                  setBotMessage(exitDecision.statement)
+                  if (onBotMessageChange) onBotMessageChange(exitDecision.statement)
                   
                   // Close position
-                  await orderManager.closePositionSmartMode(symbol, exitDecision.details)
+                  await closePosition(orderManager, symbol, currentNetPnl)
                   
                   return // Exit early, don't process new entry
-                } else {
-                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT BLOCKED: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)} - letting normal TP/SL handle it`)
                 }
+              } else {
+                console.log(`[PerpFarming] 🧠 Smart Mode DISABLED for this signal: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)}`)
               }
             }
             
@@ -996,39 +1084,31 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
             if (hasActivePosition && settings.smartMode) {
               console.log('[PerpFarming] 🧠 Smart Mode: Checking exit conditions')
               
-              // Add signal to position history
               const symbol = momentumXData.symbol
-              orderManager.addSignalToHistory(symbol, {
-                confidence: momentumXData.confidence,
-                side: momentumXData.side
-              })
+              const currentNetPnl = lastPnlRef.current || 0
+              const minPnl = parseFloat(settings.smartModeMinPnl) || -50
+              
+              // Check if PNL is above minimum threshold before running Smart Mode
+              if (currentNetPnl >= minPnl) {
+                const exitDecision = checkSmartExit(symbol, {
+                  side: momentumXData.side,
+                  confidence: momentumXData.confidence
+                }, currentNetPnl)
 
-              // Check Smart Mode exit conditions
-              const exitDecision = await orderManager.checkSmartModeExit(symbol, {
-                confidence: momentumXData.confidence,
-                side: momentumXData.side
-              })
-
-              if (exitDecision.shouldExit) {
-                // Check if current PNL is above minimum threshold
-                const currentNetPnl = lastPnlRef.current || 0
-                const minPnl = parseFloat(settings.smartModeMinPnl) || -50
-                
-                if (currentNetPnl >= minPnl) {
-                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT triggered: ${exitDecision.reason} (PNL: $${currentNetPnl.toFixed(2)} >= min $${minPnl.toFixed(2)})`)
+                if (exitDecision.shouldExit) {
+                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT: ${exitDecision.reason}`)
+                  console.log(`[PerpFarming] 🧠 Details:`, exitDecision.details)
                   
-                  // Select random statement based on reason
-                  const statement = getSmartModeStatement(exitDecision.reason)
-                  setBotMessage(statement)
-                  if (onBotMessageChange) onBotMessageChange(statement)
+                  setBotMessage(exitDecision.statement)
+                  if (onBotMessageChange) onBotMessageChange(exitDecision.statement)
                   
                   // Close position
-                  await orderManager.closePositionSmartMode(symbol, exitDecision.details)
+                  await closePosition(orderManager, symbol, currentNetPnl)
                   
                   return // Exit early, don't process new entry
-                } else {
-                  console.log(`[PerpFarming] 🧠 Smart Mode EXIT BLOCKED: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)} - letting normal TP/SL handle it`)
                 }
+              } else {
+                console.log(`[PerpFarming] 🧠 Smart Mode DISABLED for this signal: PNL $${currentNetPnl.toFixed(2)} < min $${minPnl.toFixed(2)}`)
               }
             }
             
@@ -1378,6 +1458,9 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
       pnlPollIntervalRef.current = null
     }
 
+    // Clear Smart Mode signal history
+    signalHistoryRef.current.clear()
+
     setIsRunning(false)
     if (onBotStatusChange) onBotStatusChange(false)
     setTradingSymbols([])
@@ -1717,7 +1800,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   </span>
                 </label>
                 <div className="breakeven-description">
-                  Monitors confidence changes and exits early when signals weaken. Exits on: (1) Signal reversal, (2) Low confidence + 50% to SL, (3) 2 consecutive low signals.
+                  🧠 Intelligent position management with 8 exit strategies: (1) Strong reversal, (2) Profit protection, (3) Confidence decay, (4) Consecutive weakness, (5) Persistent reversal, (6) Profit erosion, (7) Stale positions, (8) Confidence downtrend. Adapts based on PNL, time in position, and signal quality trends.
                 </div>
                 {smartMode && (
                   <div className="breakeven-tolerance-section" style={{ marginTop: '12px' }}>
@@ -1725,7 +1808,15 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                     <input
                       type="number"
                       value={smartModeMinPnl}
-                      onChange={(e) => setSmartModeMinPnl(parseFloat(e.target.value) || -50)}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        if (val === '' || val === '-') {
+                          setSmartModeMinPnl(-50)
+                        } else {
+                          const parsed = parseFloat(val)
+                          setSmartModeMinPnl(isNaN(parsed) ? -50 : parsed)
+                        }
+                      }}
                       className="risk-input"
                       placeholder="-50"
                       step="10"

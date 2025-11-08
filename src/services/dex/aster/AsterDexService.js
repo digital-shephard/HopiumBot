@@ -401,6 +401,19 @@ export class AsterDexService extends DexService {
     }
   }
 
+  async getAllPositions() {
+    if (!this.initialized || !this.apiClient) {
+      throw new Error('Service not initialized')
+    }
+
+    try {
+      const positions = await this.apiClient.get('/fapi/v2/positionRisk', {}, { signed: true })
+      return Array.isArray(positions) ? positions : []
+    } catch (error) {
+      throw error
+    }
+  }
+
   /**
    * Get account balance
    */

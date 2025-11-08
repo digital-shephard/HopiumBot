@@ -588,7 +588,8 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
         tpSlMode: settings.tpSlMode,
         positionSize: settings.positionSize,
         orderType: settings.orderType,
-        trustLowConfidence: settings.trustLowConfidence
+        trustLowConfidence: settings.trustLowConfidence,
+        autoMode: settings.autoMode
       })
       
       orderManager.start()

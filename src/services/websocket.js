@@ -148,6 +148,18 @@ export class HopiumWebSocketClient {
   onOrderBookSignal = null
 
   /**
+   * Called when portfolio picks are received (Auto Mode - Portfolio Scanner)
+   * @type {Function}
+   * @param {Object} data - Portfolio picks data
+   * @param {string} data.timestamp - ISO 8601 timestamp
+   * @param {number} data.update_interval - Update interval in seconds (30)
+   * @param {Array} data.picks - Array of top 3 trading opportunities
+   * @param {string[]} data.dropped - Symbols that left top 3
+   * @param {number} data.monitoring - Total symbols being monitored
+   */
+  onPortfolioPicks = null
+
+  /**
    * Called when an alert message is received
    * @type {Function}
    * @param {Object} data - Alert message data
@@ -651,6 +663,22 @@ export class HopiumWebSocketClient {
           
           // Pass the full message structure (contains symbol, strategy, and data)
           this.onOrderBookSignal(orderBookMessage)
+        }
+        break
+
+      case 'portfolio_picks':
+        if (this.onPortfolioPicks) {
+          // Server broadcasts portfolio picks to all authenticated clients
+          console.log('[WebSocket] Received portfolio_picks:', message)
+          
+          // Extract picks data from message structure
+          const portfolioMessage = message.fullMessage || message.message || message.payload || message
+          const portfolioData = portfolioMessage?.data || portfolioMessage
+          
+          console.log('[WebSocket] Extracted portfolio data:', portfolioData)
+          
+          // Pass the full message structure
+          this.onPortfolioPicks(portfolioMessage)
         }
         break
 

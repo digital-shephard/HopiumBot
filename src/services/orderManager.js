@@ -255,18 +255,89 @@ export class OrderManager {
     }
 
     try {
-      // Skip if a position already exists
+      // Check for existing position and open orders
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
-      console.log('[OrderManager] Position check:', { symbol, positionAmt })
+      const openOrders = await this.dexService.getOpenOrders(symbol)
+      
+      console.log('[OrderManager] Position and orders check:', { 
+        symbol, 
+        positionAmt, 
+        openOrdersCount: openOrders.length 
+      })
+      
+      // CASE 1: Partially filled (position exists + open orders exist)
+      if (positionAmt !== 0 && openOrders.length > 0) {
+        console.log('[OrderManager] 🔄 PARTIAL FILL detected - position exists with unfilled orders')
+        
+        const orderType = this.settings.orderType || 'LIMIT'
+        const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+        
+        // Calculate unfilled quantity from open orders
+        let totalUnfilledQty = 0
+        for (const order of openOrders) {
+          const origQty = parseFloat(order.origQty || '0')
+          const executedQty = parseFloat(order.executedQty || '0')
+          const unfilledQty = origQty - executedQty
+          totalUnfilledQty += unfilledQty
+        }
+        
+        console.log(`[OrderManager] Unfilled quantity: ${totalUnfilledQty}`)
+        
+        // Cancel all unfilled orders
+        for (const order of openOrders) {
+          try {
+            await this.dexService.cancelOrder(symbol, order.orderId)
+            this.activeOrders.delete(order.orderId)
+            console.log(`[OrderManager] Cancelled partially filled order ${order.orderId}`)
+          } catch (error) {
+            console.error(`[OrderManager] Failed to cancel order ${order.orderId}:`, error)
+          }
+        }
+        
+        // Place new order for ONLY the unfilled amount at new price
+        if (totalUnfilledQty > 0 && orderType === 'LIMIT') {
+          console.log(`[OrderManager] Placing replacement order for unfilled ${totalUnfilledQty} at new price $${entryPrice}`)
+          
+          const orderParams = {
+            symbol,
+            side: asterSide,
+            type: orderType,
+            quantity: totalUnfilledQty,
+            price: entryPrice,
+            timeInForce: 'GTC',
+            newClientOrderId: `hopium_scalp_${Date.now()}`
+          }
+          
+          const orderResponse = await this.dexService.placeOrder(orderParams)
+          console.log('[OrderManager] Replacement order placed:', orderResponse)
+          
+          // Track new order
+          this.activeOrders.set(orderResponse.orderId, {
+            orderId: orderResponse.orderId,
+            symbol,
+            side,
+            entryPrice: entryPrice,
+            quantity: totalUnfilledQty,
+            status: orderResponse.status,
+            takeProfit: this.settings.takeProfit,
+            stopLoss: this.settings.stopLoss,
+            createdAt: Date.now(),
+            entryConfidence: scalpData.confidence || 'unknown'
+          })
+        }
+        
+        return // Done handling partial fill
+      }
+      
+      // CASE 2: Fully filled (position exists, no open orders)
       if (positionAmt !== 0) {
-        console.log('[OrderManager] Position already exists, skipping')
+        console.log('[OrderManager] Position fully filled, skipping new entry')
         return
       }
-
-      // Check existing orders - only cancel if price changed
-      const openOrders = await this.dexService.getOpenOrders(symbol)
-      console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      
+      // CASE 3: No position yet (only open orders or nothing)
+      console.log('[OrderManager] No position - checking for existing orders')
       
       const orderType = this.settings.orderType || 'LIMIT'
       const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
@@ -282,6 +353,25 @@ export class OrderManager {
         })
         
         if (matchingOrder) {
+          // Check if confidence degraded
+          const trackedOrder = this.activeOrders.get(matchingOrder.orderId)
+          const originalConfidence = trackedOrder?.entryConfidence || 'unknown'
+          const newConfidence = scalpData.confidence || 'unknown'
+          
+          // Cancel if confidence dropped to low AND user doesn't trust low confidence
+          const confidenceDegraded = (originalConfidence === 'high' || originalConfidence === 'medium') && 
+                                     newConfidence === 'low'
+          const trustLowConfidence = this.settings.trustLowConfidence !== undefined 
+                                      ? this.settings.trustLowConfidence 
+                                      : false
+          
+          if (confidenceDegraded && !trustLowConfidence) {
+            console.log(`[OrderManager] ⚠️ Confidence degraded (${originalConfidence} → ${newConfidence}) and trust disabled - cancelling order ${matchingOrder.orderId}`)
+            await this.dexService.cancelOrder(symbol, matchingOrder.orderId)
+            this.activeOrders.delete(matchingOrder.orderId)
+            return // Don't place new order (low confidence not trusted)
+          }
+          
           console.log(`[OrderManager] ✅ Existing order at same price ($${entryPrice}) - keeping order ${matchingOrder.orderId}`)
           return // Skip - no need to cancel and replace
         }
@@ -410,18 +500,89 @@ export class OrderManager {
     }
 
     try {
-      // Skip if a position already exists
+      // Check for existing position and open orders
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
-      console.log('[OrderManager] Position check:', { symbol, positionAmt })
+      const openOrders = await this.dexService.getOpenOrders(symbol)
+      
+      console.log('[OrderManager] Position and orders check:', { 
+        symbol, 
+        positionAmt, 
+        openOrdersCount: openOrders.length 
+      })
+      
+      // CASE 1: Partially filled (position exists + open orders exist)
+      if (positionAmt !== 0 && openOrders.length > 0) {
+        console.log('[OrderManager] 🔄 PARTIAL FILL detected - position exists with unfilled orders')
+        
+        const orderType = this.settings.orderType || 'LIMIT'
+        const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+        
+        // Calculate unfilled quantity from open orders
+        let totalUnfilledQty = 0
+        for (const order of openOrders) {
+          const origQty = parseFloat(order.origQty || '0')
+          const executedQty = parseFloat(order.executedQty || '0')
+          const unfilledQty = origQty - executedQty
+          totalUnfilledQty += unfilledQty
+        }
+        
+        console.log(`[OrderManager] Unfilled quantity: ${totalUnfilledQty}`)
+        
+        // Cancel all unfilled orders
+        for (const order of openOrders) {
+          try {
+            await this.dexService.cancelOrder(symbol, order.orderId)
+            this.activeOrders.delete(order.orderId)
+            console.log(`[OrderManager] Cancelled partially filled order ${order.orderId}`)
+          } catch (error) {
+            console.error(`[OrderManager] Failed to cancel order ${order.orderId}:`, error)
+          }
+        }
+        
+        // Place new order for ONLY the unfilled amount at new price
+        if (totalUnfilledQty > 0 && orderType === 'LIMIT') {
+          console.log(`[OrderManager] Placing replacement order for unfilled ${totalUnfilledQty} at new price $${entryPrice}`)
+          
+          const orderParams = {
+            symbol,
+            side: asterSide,
+            type: orderType,
+            quantity: totalUnfilledQty,
+            price: entryPrice,
+            timeInForce: 'GTC',
+            newClientOrderId: `hopium_momentum_${Date.now()}`
+          }
+          
+          const orderResponse = await this.dexService.placeOrder(orderParams)
+          console.log('[OrderManager] Replacement order placed:', orderResponse)
+          
+          // Track new order
+          this.activeOrders.set(orderResponse.orderId, {
+            orderId: orderResponse.orderId,
+            symbol,
+            side,
+            entryPrice: entryPrice,
+            quantity: totalUnfilledQty,
+            status: orderResponse.status,
+            takeProfit: this.settings.takeProfit,
+            stopLoss: this.settings.stopLoss,
+            createdAt: Date.now(),
+            entryConfidence: momentumData.confidence || 'unknown'
+          })
+        }
+        
+        return // Done handling partial fill
+      }
+      
+      // CASE 2: Fully filled (position exists, no open orders)
       if (positionAmt !== 0) {
-        console.log('[OrderManager] Position already exists, skipping')
+        console.log('[OrderManager] Position fully filled, skipping new entry')
         return
       }
-
-      // Check existing orders - only cancel if price changed
-      const openOrders = await this.dexService.getOpenOrders(symbol)
-      console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      
+      // CASE 3: No position yet (only open orders or nothing)
+      console.log('[OrderManager] No position - checking for existing orders')
       
       const orderType = this.settings.orderType || 'LIMIT'
       const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
@@ -437,6 +598,25 @@ export class OrderManager {
         })
         
         if (matchingOrder) {
+          // Check if confidence degraded
+          const trackedOrder = this.activeOrders.get(matchingOrder.orderId)
+          const originalConfidence = trackedOrder?.entryConfidence || 'unknown'
+          const newConfidence = momentumData.confidence || 'unknown'
+          
+          // Cancel if confidence dropped to low AND user doesn't trust low confidence
+          const confidenceDegraded = (originalConfidence === 'high' || originalConfidence === 'medium') && 
+                                     newConfidence === 'low'
+          const trustLowConfidence = this.settings.trustLowConfidence !== undefined 
+                                      ? this.settings.trustLowConfidence 
+                                      : false
+          
+          if (confidenceDegraded && !trustLowConfidence) {
+            console.log(`[OrderManager] ⚠️ Confidence degraded (${originalConfidence} → ${newConfidence}) and trust disabled - cancelling order ${matchingOrder.orderId}`)
+            await this.dexService.cancelOrder(symbol, matchingOrder.orderId)
+            this.activeOrders.delete(matchingOrder.orderId)
+            return // Don't place new order (low confidence not trusted)
+          }
+          
           console.log(`[OrderManager] ✅ Existing order at same price ($${entryPrice}) - keeping order ${matchingOrder.orderId}`)
           return // Skip - no need to cancel and replace
         }
@@ -569,18 +749,89 @@ export class OrderManager {
     }
 
     try {
-      // Skip if a position already exists
+      // Check for existing position and open orders
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
-      console.log('[OrderManager] Position check:', { symbol, positionAmt })
+      const openOrders = await this.dexService.getOpenOrders(symbol)
+      
+      console.log('[OrderManager] Position and orders check:', { 
+        symbol, 
+        positionAmt, 
+        openOrdersCount: openOrders.length 
+      })
+      
+      // CASE 1: Partially filled (position exists + open orders exist)
+      if (positionAmt !== 0 && openOrders.length > 0) {
+        console.log('[OrderManager] 🔄 PARTIAL FILL detected - position exists with unfilled orders')
+        
+        const orderType = this.settings.orderType || 'LIMIT'
+        const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+        
+        // Calculate unfilled quantity from open orders
+        let totalUnfilledQty = 0
+        for (const order of openOrders) {
+          const origQty = parseFloat(order.origQty || '0')
+          const executedQty = parseFloat(order.executedQty || '0')
+          const unfilledQty = origQty - executedQty
+          totalUnfilledQty += unfilledQty
+        }
+        
+        console.log(`[OrderManager] Unfilled quantity: ${totalUnfilledQty}`)
+        
+        // Cancel all unfilled orders
+        for (const order of openOrders) {
+          try {
+            await this.dexService.cancelOrder(symbol, order.orderId)
+            this.activeOrders.delete(order.orderId)
+            console.log(`[OrderManager] Cancelled partially filled order ${order.orderId}`)
+          } catch (error) {
+            console.error(`[OrderManager] Failed to cancel order ${order.orderId}:`, error)
+          }
+        }
+        
+        // Place new order for ONLY the unfilled amount at new price
+        if (totalUnfilledQty > 0 && orderType === 'LIMIT') {
+          console.log(`[OrderManager] Placing replacement order for unfilled ${totalUnfilledQty} at new price $${entryPrice}`)
+          
+          const orderParams = {
+            symbol,
+            side: asterSide,
+            type: orderType,
+            quantity: totalUnfilledQty,
+            price: entryPrice,
+            timeInForce: 'GTC',
+            newClientOrderId: `hopium_momentumx_${Date.now()}`
+          }
+          
+          const orderResponse = await this.dexService.placeOrder(orderParams)
+          console.log('[OrderManager] Replacement order placed:', orderResponse)
+          
+          // Track new order
+          this.activeOrders.set(orderResponse.orderId, {
+            orderId: orderResponse.orderId,
+            symbol,
+            side,
+            entryPrice: entryPrice,
+            quantity: totalUnfilledQty,
+            status: orderResponse.status,
+            takeProfit: this.settings.takeProfit,
+            stopLoss: this.settings.stopLoss,
+            createdAt: Date.now(),
+            entryConfidence: momentumXData.confidence || 'unknown'
+          })
+        }
+        
+        return // Done handling partial fill
+      }
+      
+      // CASE 2: Fully filled (position exists, no open orders)
       if (positionAmt !== 0) {
-        console.log('[OrderManager] Position already exists, skipping')
+        console.log('[OrderManager] Position fully filled, skipping new entry')
         return
       }
-
-      // Check existing orders - only cancel if price changed
-      const openOrders = await this.dexService.getOpenOrders(symbol)
-      console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      
+      // CASE 3: No position yet (only open orders or nothing)
+      console.log('[OrderManager] No position - checking for existing orders')
       
       const orderType = this.settings.orderType || 'LIMIT'
       const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
@@ -596,6 +847,25 @@ export class OrderManager {
         })
         
         if (matchingOrder) {
+          // Check if confidence degraded
+          const trackedOrder = this.activeOrders.get(matchingOrder.orderId)
+          const originalConfidence = trackedOrder?.entryConfidence || 'unknown'
+          const newConfidence = momentumXData.confidence || 'unknown'
+          
+          // Cancel if confidence dropped to low AND user doesn't trust low confidence
+          const confidenceDegraded = (originalConfidence === 'high' || originalConfidence === 'medium') && 
+                                     newConfidence === 'low'
+          const trustLowConfidence = this.settings.trustLowConfidence !== undefined 
+                                      ? this.settings.trustLowConfidence 
+                                      : false
+          
+          if (confidenceDegraded && !trustLowConfidence) {
+            console.log(`[OrderManager] ⚠️ Confidence degraded (${originalConfidence} → ${newConfidence}) and trust disabled - cancelling order ${matchingOrder.orderId}`)
+            await this.dexService.cancelOrder(symbol, matchingOrder.orderId)
+            this.activeOrders.delete(matchingOrder.orderId)
+            return // Don't place new order (low confidence not trusted)
+          }
+          
           console.log(`[OrderManager] ✅ Existing order at same price ($${entryPrice}) - keeping order ${matchingOrder.orderId}`)
           return // Skip - no need to cancel and replace
         }
@@ -735,18 +1005,89 @@ export class OrderManager {
     }
 
     try {
-      // Skip if a position already exists
+      // Check for existing position and open orders
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
-      console.log('[OrderManager] Position check:', { symbol, positionAmt })
+      const openOrders = await this.dexService.getOpenOrders(symbol)
+      
+      console.log('[OrderManager] Position and orders check:', { 
+        symbol, 
+        positionAmt, 
+        openOrdersCount: openOrders.length 
+      })
+      
+      // CASE 1: Partially filled (position exists + open orders exist)
+      if (positionAmt !== 0 && openOrders.length > 0) {
+        console.log('[OrderManager] 🔄 PARTIAL FILL detected - position exists with unfilled orders')
+        
+        const orderType = this.settings.orderType || 'LIMIT'
+        const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
+        
+        // Calculate unfilled quantity from open orders
+        let totalUnfilledQty = 0
+        for (const order of openOrders) {
+          const origQty = parseFloat(order.origQty || '0')
+          const executedQty = parseFloat(order.executedQty || '0')
+          const unfilledQty = origQty - executedQty
+          totalUnfilledQty += unfilledQty
+        }
+        
+        console.log(`[OrderManager] Unfilled quantity: ${totalUnfilledQty}`)
+        
+        // Cancel all unfilled orders
+        for (const order of openOrders) {
+          try {
+            await this.dexService.cancelOrder(symbol, order.orderId)
+            this.activeOrders.delete(order.orderId)
+            console.log(`[OrderManager] Cancelled partially filled order ${order.orderId}`)
+          } catch (error) {
+            console.error(`[OrderManager] Failed to cancel order ${order.orderId}:`, error)
+          }
+        }
+        
+        // Place new order for ONLY the unfilled amount at new price
+        if (totalUnfilledQty > 0 && orderType === 'LIMIT') {
+          console.log(`[OrderManager] Placing replacement order for unfilled ${totalUnfilledQty} at new price $${entryPrice}`)
+          
+          const orderParams = {
+            symbol,
+            side: asterSide,
+            type: orderType,
+            quantity: totalUnfilledQty,
+            price: entryPrice,
+            timeInForce: 'GTC',
+            newClientOrderId: `hopium_orderbook_${Date.now()}`
+          }
+          
+          const orderResponse = await this.dexService.placeOrder(orderParams)
+          console.log('[OrderManager] Replacement order placed:', orderResponse)
+          
+          // Track new order
+          this.activeOrders.set(orderResponse.orderId, {
+            orderId: orderResponse.orderId,
+            symbol,
+            side,
+            entryPrice: entryPrice,
+            quantity: totalUnfilledQty,
+            status: orderResponse.status,
+            takeProfit: this.settings.takeProfit,
+            stopLoss: this.settings.stopLoss,
+            createdAt: Date.now(),
+            entryConfidence: orderBookData.confidence || 'unknown'
+          })
+        }
+        
+        return // Done handling partial fill
+      }
+      
+      // CASE 2: Fully filled (position exists, no open orders)
       if (positionAmt !== 0) {
-        console.log('[OrderManager] Position already exists, skipping')
+        console.log('[OrderManager] Position fully filled, skipping new entry')
         return
       }
-
-      // Check existing orders - only cancel if price changed
-      const openOrders = await this.dexService.getOpenOrders(symbol)
-      console.log('[OrderManager] Open orders check:', { symbol, count: openOrders.length })
+      
+      // CASE 3: No position yet (only open orders or nothing)
+      console.log('[OrderManager] No position - checking for existing orders')
       
       const orderType = this.settings.orderType || 'LIMIT'
       const asterSide = side === 'LONG' ? 'BUY' : 'SELL'
@@ -762,6 +1103,25 @@ export class OrderManager {
         })
         
         if (matchingOrder) {
+          // Check if confidence degraded
+          const trackedOrder = this.activeOrders.get(matchingOrder.orderId)
+          const originalConfidence = trackedOrder?.entryConfidence || 'unknown'
+          const newConfidence = orderBookData.confidence || 'unknown'
+          
+          // Cancel if confidence dropped to low AND user doesn't trust low confidence
+          const confidenceDegraded = (originalConfidence === 'high' || originalConfidence === 'medium') && 
+                                     newConfidence === 'low'
+          const trustLowConfidence = this.settings.trustLowConfidence !== undefined 
+                                      ? this.settings.trustLowConfidence 
+                                      : false
+          
+          if (confidenceDegraded && !trustLowConfidence) {
+            console.log(`[OrderManager] ⚠️ Confidence degraded (${originalConfidence} → ${newConfidence}) and trust disabled - cancelling order ${matchingOrder.orderId}`)
+            await this.dexService.cancelOrder(symbol, matchingOrder.orderId)
+            this.activeOrders.delete(matchingOrder.orderId)
+            return // Don't place new order (low confidence not trusted)
+          }
+          
           console.log(`[OrderManager] ✅ Existing order at same price ($${entryPrice}) - keeping order ${matchingOrder.orderId}`)
           return // Skip - no need to cancel and replace
         }

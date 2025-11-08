@@ -519,7 +519,8 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
         stopLoss: settings.stopLoss,
         tpSlMode: settings.tpSlMode,
         positionSize: settings.positionSize,
-        orderType: settings.orderType
+        orderType: settings.orderType,
+        trustLowConfidence: settings.trustLowConfidence
       })
       
       orderManager.start()

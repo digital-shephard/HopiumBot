@@ -678,6 +678,50 @@ HopiumCore supports multiple trading strategies. When subscribing to a symbol, y
 - **Expected Hold**: 2-5 minutes per trade
 - **Best For**: High-leverage whipsaw trading (50x-100x), catching moves EARLY with leading indicators
 
+**5. Order Book Trading (Near Real-Time Order Flow)** ⚡ **NEW** 🔥⚡
+- **ID**: `"orderbook_trading"`
+- **Description**: Pure order book analysis using CVD, OBI, VWAP deviation, and spoof detection
+- **Signal Frequency**: Every 10 seconds (near real-time, 6 signals/minute)
+- **Data Source**: Direct WebSocket streams from AsterDex (`aggTrade` + `depth20@100ms`)
+- **Core Metrics**:
+  - **CVD**: Cumulative Volume Delta (tick-by-tick buy vs sell aggression)
+  - **OBI**: Order Book Imbalance (bid vs ask liquidity in top 10 levels)
+  - **Ask-Pull / Bid-Step**: 30-60s rolling changes in near-market depth
+  - **VWAP Deviation**: Price distance from volume-weighted average
+  - **Spoof Detection**: Identifies fake walls that appear/disappear without fills
+- **Composite Bias Score**: `(0.5 × CVD_slope) + (0.3 × OBI) - (0.2 × VWAP_dev)`
+- **Signal Triggers**:
+  - LONG: Bias > +0.2 (CVD rising + bid-heavy + asks pulling)
+  - SHORT: Bias < -0.2 (CVD falling + ask-heavy + bids pulling)
+  - NEUTRAL: Between thresholds
+- **Order Type**: Tight LIMIT orders in trigger zone
+- **TP/SL**: Dynamic based on wall locations (0.15-0.25% stops)
+- **Expected Hold**: 5-15 minutes per trade
+- **CSV Logging**: All metrics logged to `data/orderbook_logs/` for ML training
+- **Best For**: High-frequency scalping, detecting breakouts BEFORE candles move, order flow trading
+
+**6. Portfolio Scanner (Automatic Multi-Pair Selection)** ⚡ **NEW** 🔥🎯
+- **ID**: N/A (automatic broadcast, no subscription needed)
+- **Description**: Continuously scans all 30+ pairs and identifies top 3 trading opportunities using order book analysis
+- **Signal Frequency**: Every 30 seconds (only when portfolio changes)
+- **Architecture**: 3-stage pipeline:
+  1. Lightweight screener (10s) → top 10 candidates
+  2. Deep order book analysis (10s) → full signals
+  3. Portfolio selector (30s) → top 3 picks
+- **Signal Persistence**: 30 seconds minimum (filters noise)
+- **Key Features**:
+  - **No Manual Symbol Selection**: System chooses best 3 pairs automatically
+  - **Order Book Quality**: Full CVD, OBI, VWAP analysis
+  - **Multi-Factor Ranking**: Confidence, liquidity tier, bias strength, persistence
+  - **Tier-Based Sizing**: Automatic position sizing by liquidity tier
+  - **Exit Management**: Clear rules for when to close (signal flip, confidence drop, stop loss)
+- **Composite Scoring**: `(0.4 × Confidence) + (0.3 × BiasStrength) + (0.2 × OBIStrength) + (0.1 × Persistence) × TierMultiplier`
+- **Position Management**:
+  - Enter: All 3 picks simultaneously (confidence ≥ 75)
+  - Hold: While in top 3, confidence ≥ 70, same direction
+  - Exit: Signal flip, confidence < 70, stop loss
+- **Best For**: Multi-pair portfolio trading, automatic opportunity detection, active traders who want system to pick symbols
+
 #### Strategy Selection
 
 - **Default**: If no strategy is specified, `range_trading` is used
@@ -1517,603 +1561,367 @@ if (msg.type === 'momentum_x') {
 
 ---
 
-#### Hourly Opportunities Update 🚀 **NEW** (Multi-Pair Portfolio Trading)
+#### Order Book Trading Update ⚡ **NEW** 🔥⚡ (Near Real-Time Order Flow)
 
-The Hourly Scanner broadcasts opportunities to **ALL authenticated clients** automatically. No subscription needed!
-
-**Message Types:**
-
-##### 1. Hourly Opportunities (`hourly_opportunities`)
-
-Broadcast at **top of every hour (XX:00:00)** with the top 3-5 trading opportunities.
+Pushed automatically **every 10 seconds** when subscribed to the `orderbook_trading` strategy.
 
 **Message Structure:**
 ```typescript
-interface HourlyOpportunitiesMessage {
-  type: "hourly_opportunities";
+interface OrderBookSignalMessage {
+  type: "orderbook_signal";
+  symbol: string;
+  strategy: "orderbook_trading";
   data: {
+    symbol: string;
     timestamp: string;
-    hour_window: string;            // e.g., "14:00-15:00"
-    top_picks: Array<{
-      symbol: string;
-      direction: "LONG" | "SHORT";
-      confidence: number;           // 0-100 score
-      
-      // Score breakdown
-      momentum_score: number;       // 0-25 points
-      orderbook_score: number;      // 0-25 points
-      volume_score: number;         // 0-20 points
-      technical_score: number;      // 0-15 points
-      trend_score: number;          // 0-15 points
-      
-      // Execution quality
-      liquidity_tier: string;       // "Tier1" to "Tier4"
-      max_position_size: number;    // USD
-      max_leverage: number;
-      spread_quality: string;
-      
-      // Risk metrics
-      recent_volatility: number;
-      funding_rate: number;
-      
-      // Entry/exit
-      suggested_entry: number;
-      suggested_tp: number;
-      suggested_sl: number;
-      
-      // Context
-      signals: string[];
-      warnings: string[];
-    }>;
-    total_scanned: number;
-    scan_duration: string;
+    
+    // Signal
+    side: "LONG" | "SHORT" | "NEUTRAL";
+    bias_score: number;             // -1 to +1
+    confidence: "high" | "medium" | "low";
+    
+    // CVD (Cumulative Volume Delta)
+    cvd: number;
+    cvd_1min_ago: number;
+    cvd_slope: string;              // e.g., "+2.8σ"
+    cvd_slope_raw: number;
+    
+    // OBI (Order Book Imbalance)
+    obi: number;                    // -1 to +1
+    
+    // VWAP
+    vwap_dev: number;               // % deviation
+    
+    // Ask-Pull / Bid-Step
+    ask_pull_pct: number;
+    bid_step_pct: number;
+    
+    // Top bid/ask
+    top_bid: {
+      price: number;
+      size: number;
+      lifetime_sec: number;
+    };
+    top_ask: {
+      price: number;
+      size: number;
+      lifetime_sec: number;
+    };
+    
+    // Spoof detection
+    spoof_detection: {
+      recent_spoofs: number;
+      wall_velocity: "normal" | "high";
+      confidence_penalty: number;
+    };
+    
+    // Reasoning
+    reasoning: string[];
+    
+    // Entry
+    entry: {
+      side: "LONG" | "SHORT" | "NEUTRAL";
+      trigger_zone: [number, number];
+      stop_loss: number;
+      take_profit: number;
+    };
   };
 }
 ```
 
-**Example:**
+**Example (High Confidence LONG):**
 ```json
 {
-  "type": "hourly_opportunities",
+  "type": "orderbook_signal",
+  "symbol": "ETHUSDT",
+  "strategy": "orderbook_trading",
   "data": {
-    "timestamp": "2025-11-07T14:00:00Z",
-    "hour_window": "14:00-15:00",
-    "top_picks": [
-      {
-        "symbol": "SOL-PERP",
-        "direction": "LONG",
-        "confidence": 92,
-        "momentum_score": 25,
-        "orderbook_score": 23,
-        "volume_score": 18,
-        "technical_score": 12,
-        "trend_score": 14,
-        "liquidity_tier": "Tier1",
-        "max_position_size": 50000,
-        "max_leverage": 20,
-        "spread_quality": "Excellent",
-        "recent_volatility": 0.28,
-        "funding_rate": 0.0001,
-        "suggested_entry": 110.50,
-        "suggested_tp": 111.60,
-        "suggested_sl": 107.75,
-        "signals": [
-          "Strong momentum (+2.3% in 30min)",
-          "Buy pressure 3.2:1",
-          "Volume spike 1.8x"
-        ],
-        "warnings": []
-      },
-      {
-        "symbol": "AVAX-PERP",
-        "direction": "SHORT",
-        "confidence": 85,
-        "liquidity_tier": "Tier2",
-        "max_position_size": 10000,
-        "suggested_entry": 32.15,
-        "suggested_tp": 31.95,
-        "suggested_sl": 32.40
-      }
+    "symbol": "ETHUSDT",
+    "timestamp": "2025-11-08T12:34:56Z",
+    "side": "LONG",
+    "bias_score": 0.34,
+    "confidence": "high",
+    "cvd": 1250.5,
+    "cvd_1min_ago": 850.2,
+    "cvd_slope": "+2.8σ",
+    "obi": 0.14,
+    "vwap_dev": -0.10,
+    "ask_pull_pct": 35.0,
+    "bid_step_pct": 22.0,
+    "top_bid": {
+      "price": 3245.50,
+      "size": 125.5,
+      "lifetime_sec": 45
+    },
+    "top_ask": {
+      "price": 3245.75,
+      "size": 89.2,
+      "lifetime_sec": 12
+    },
+    "spoof_detection": {
+      "recent_spoofs": 0,
+      "wall_velocity": "normal",
+      "confidence_penalty": 0.0
+    },
+    "reasoning": [
+      "✅ CVD rising +2.8σ above mean (strong buy pressure)",
+      "✅ OBI at +0.14 (bid-heavy orderbook)",
+      "✅ Order book shift: Asks pulled 35%, Bids stepped 22%",
+      "✅ No recent spoofing detected",
+      "✅ Top bid wall stable for 45s (real buyer)",
+      "🟢 LONG SIGNAL (bias: +0.34, confidence: high)"
     ],
-    "total_scanned": 32,
-    "scan_duration": "2.3s"
+    "entry": {
+      "side": "LONG",
+      "trigger_zone": [3245.0, 3246.0],
+      "stop_loss": 3242.5,
+      "take_profit": 3250.0
+    }
   }
 }
 ```
 
 **Frontend Action:**
 ```javascript
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
+if (msg.type === 'orderbook_signal') {
+  const { data } = msg;
   
-  if (msg.type === 'hourly_opportunities') {
-    const { data } = msg;
-    
-    console.log(`🔔 NEW HOUR: ${data.hour_window}`);
-    console.log(`Scanned ${data.total_scanned} pairs in ${data.scan_duration}`);
-    console.log(`Top ${data.top_picks.length} opportunities found:\n`);
-    
-    data.top_picks.forEach((pick, i) => {
-      console.log(`${i+1}. ${pick.symbol} ${pick.direction} @ ${pick.confidence} confidence`);
-      console.log(`   Entry: $${pick.suggested_entry} | TP: $${pick.suggested_tp} | SL: $${pick.suggested_sl}`);
-      console.log(`   Tier: ${pick.liquidity_tier} | Max Size: $${pick.max_position_size}`);
-      console.log(`   Signals: ${pick.signals.join(', ')}\n`);
+  console.log(`[OrderBook] ${data.side} | Bias=${data.bias_score.toFixed(2)} | CVD=${data.cvd_slope} | OBI=${data.obi.toFixed(2)}`);
+  
+  // Check for spoofing before trading
+  if (data.spoof_detection.wall_velocity === 'high' && data.spoof_detection.recent_spoofs > 5) {
+    console.warn('⚠️ High spoofing activity - trade with caution');
+    if (data.confidence !== 'high') {
+      return; // Skip non-high confidence trades during spoofing
+    }
+  }
+  
+  if (data.side === 'LONG' && data.confidence === 'high') {
+    placeLimitOrder({
+      symbol: data.symbol,
+      side: 'BUY',
+      price: data.entry.trigger_zone[0],
+      takeProfit: data.entry.take_profit,
+      stopLoss: data.entry.stop_loss
     });
     
-    // Display opportunities in UI
-    displayHourlyOpportunities(data.top_picks, data.hour_window);
-  }
-};
-```
-
----
-
-##### 2. Mid-Hour Opportunities (`mid_hour_opportunities`)
-
-Broadcast at **mid-hour (XX:30:00)** when exceptional opportunities (≥90 confidence) are detected.
-
-**Message Structure:** Same as `hourly_opportunities` but only includes exceptional setups.
-
-**Example:**
-```json
-{
-  "type": "mid_hour_opportunities",
-  "data": {
-    "timestamp": "2025-11-07T14:30:00Z",
-    "hour_window": "14:30 Mid-Hour",
-    "top_picks": [
-      {
-        "symbol": "LINK-PERP",
-        "direction": "LONG",
-        "confidence": 94,
-        "liquidity_tier": "Tier2",
-        "suggested_entry": 15.25,
-        "suggested_tp": 15.40,
-        "suggested_sl": 14.95
-      }
-    ],
-    "total_scanned": 32
-  }
-}
-```
-
-**Frontend Action:**
-```javascript
-if (msg.type === 'mid_hour_opportunities') {
-  if (msg.data.top_picks.length > 0) {
-    console.log('⚡ EXCEPTIONAL MID-HOUR SETUP FOUND!');
-    
-    const pick = msg.data.top_picks[0];
-    showAlert({
-      title: 'Mid-Hour Opportunity',
-      message: `${pick.symbol} ${pick.direction} @ ${pick.confidence} confidence`,
-      data: pick
+    console.log(`✅ OrderBook LONG | CVD ${data.cvd_slope} | OBI ${data.obi.toFixed(2)}`);
+  } else if (data.side === 'SHORT' && data.confidence === 'high') {
+    placeLimitOrder({
+      symbol: data.symbol,
+      side: 'SELL',
+      price: data.entry.trigger_zone[1],
+      takeProfit: data.entry.take_profit,
+      stopLoss: data.entry.stop_loss
     });
   }
 }
 ```
 
+**Key Points:**
+- ✅ **Near real-time** - Updates every 10 seconds (6/minute)
+- ✅ **Direct WebSocket feed** - AsterDex aggTrade + depth20@100ms
+- ✅ **CVD tracking** - Tick-by-tick buy/sell aggression
+- ✅ **OBI calculation** - Real-time bid/ask imbalance
+- ✅ **Spoof detection** - Tracks wall pulls and velocity
+- ✅ **VWAP deviation** - Mean-reversion pressure
+- ✅ **CSV logging** - All metrics saved to data/orderbook_logs/
+- ⚠️ **High frequency** - Expect 30-60 signals/hour
+
 ---
 
-##### 3. Position Updates (`position_update`)
+#### Portfolio Scanner Update ⚡ **NEW** 🔥🎯 (Automatic Multi-Pair Selection)
 
-Broadcast when positions are opened, tranches added, or positions closed.
+Broadcast automatically **every 30 seconds** (when portfolio changes) to **ALL authenticated clients**. No subscription needed!
 
 **Message Structure:**
 ```typescript
-interface PositionUpdateMessage {
-  type: "position_update";
-  event: "open" | "tranche" | "close";
-  data: {
-    id: string;
+interface PortfolioPicksMessage {
+  type: "portfolio_picks";
+  timestamp: string;              // ISO 8601
+  update_interval: 30;            // seconds
+  picks: Array<{
+    // Identity
     symbol: string;
-    direction: "LONG" | "SHORT";
-    entry_time: string;
-    hour_window: string;
+    side: "LONG" | "SHORT";
+    confidence: number;           // 0-100
     
-    // Size
-    target_size: number;
-    current_size: number;
-    leverage: number;
-    
-    // Tranches
-    tranches_planned: number;
-    tranches_executed: number;
-    tranche_size: number;
-    next_tranche_time: string;
-    
-    // Prices
-    avg_entry_price: number;
-    current_price: number;
-    unrealized_pnl: number;
-    unrealized_pnl_percent: number;
-    
-    // Levels
+    // Entry/exit
+    entry_zone: [number, number]; // [low, high] price range
     take_profit: number;
     stop_loss: number;
     
-    // State
-    status: "ACTIVE" | "CLOSED";
-    stop_adding: boolean;
-    confidence: number;
+    // Order book metrics
+    bias_score: number;           // -1 to +1
+    cvd: number;
+    cvd_slope: string;            // e.g., "+2.8σ"
+    cvd_slope_raw: number;
+    obi: number;                  // -1 to +1
+    vwap_dev: number;             // %
+    ask_pull_pct: number;
+    bid_step_pct: number;
+    
+    // Screener metrics
+    momentum_score: number;       // 0-25
+    volume_score: number;         // 0-20
+    spread_quality: string;       // Excellent, Good, Fair, Poor
+    
+    // Market context
+    liquidity_tier: string;       // Tier1, Tier2, Tier3
+    max_position_size: number;    // USD
+    max_leverage: number;
+    
+    // Spoof detection
+    spoof_detection: {
+      recent_spoofs: number;
+      wall_velocity: "normal" | "high";
+      confidence_penalty: number;
+    };
+    
+    // Reasoning
+    reasoning: string[];
     warnings: string[];
-  };
+  }>;
+  dropped: string[];              // Symbols that left top 3
+  monitoring: number;             // Total symbols tracked
 }
 ```
 
-**Examples:**
-
-**Position Opened:**
+**Example (High Confidence Portfolio):**
 ```json
 {
-  "type": "position_update",
-  "event": "open",
-  "data": {
-    "id": "SOL-PERP_1730995200",
-    "symbol": "SOL-PERP",
-    "direction": "LONG",
-    "entry_time": "2025-11-07T14:00:00Z",
-    "hour_window": "14:00-15:00",
-    "target_size": 10000,
-    "current_size": 2500,
-    "leverage": 20,
-    "tranches_planned": 4,
-    "tranches_executed": 1,
-    "avg_entry_price": 110.50,
-    "take_profit": 111.60,
-    "stop_loss": 107.75,
-    "confidence": 92,
-    "status": "ACTIVE"
-  }
-}
-```
-
-**Tranche Added:**
-```json
-{
-  "type": "position_update",
-  "event": "tranche",
-  "data": {
-    "id": "SOL-PERP_1730995200",
-    "symbol": "SOL-PERP",
-    "tranches_executed": 2,
-    "current_size": 5000,
-    "avg_entry_price": 110.60,
-    "unrealized_pnl": 45.50,
-    "unrealized_pnl_percent": 0.82
-  }
-}
-```
-
-**Position Closed:**
-```json
-{
-  "type": "position_update",
-  "event": "close",
-  "data": {
-    "id": "SOL-PERP_1730995200",
-    "symbol": "SOL-PERP",
-    "status": "CLOSED",
-    "unrealized_pnl": 234.50,
-    "unrealized_pnl_percent": 2.35
-  }
+  "type": "portfolio_picks",
+  "timestamp": "2025-11-08T14:30:00Z",
+  "update_interval": 30,
+  "picks": [
+    {
+      "symbol": "BTCUSDT",
+      "side": "LONG",
+      "confidence": 87,
+      "entry_zone": [68450.00, 68550.00],
+      "take_profit": 68687.00,
+      "stop_loss": 68347.25,
+      "bias_score": 0.34,
+      "cvd": 1250.5,
+      "cvd_slope": "+2.8σ",
+      "cvd_slope_raw": 2.8,
+      "obi": 0.14,
+      "vwap_dev": -0.10,
+      "ask_pull_pct": 35.0,
+      "bid_step_pct": 22.0,
+      "momentum_score": 20.0,
+      "volume_score": 15.0,
+      "spread_quality": "Excellent",
+      "liquidity_tier": "Tier1",
+      "max_position_size": 50000,
+      "max_leverage": 20,
+      "spoof_detection": {
+        "recent_spoofs": 0,
+        "wall_velocity": "normal",
+        "confidence_penalty": 0.0
+      },
+      "reasoning": [
+        "✅ Bullish bias (+0.34)",
+        "✅ Bid-heavy orderbook (OBI: +0.14)",
+        "✅ CVD rising +2.8σ above mean",
+        "✅ Order book shift: Asks pulled 35%, Bids stepped 22%",
+        "🟢 HIGH CONFIDENCE LONG"
+      ],
+      "warnings": []
+    },
+    {
+      "symbol": "ETHUSDT",
+      "side": "SHORT",
+      "confidence": 82,
+      "entry_zone": [3245.00, 3246.00],
+      "take_profit": 3238.51,
+      "stop_loss": 3250.86,
+      "liquidity_tier": "Tier1",
+      "reasoning": [
+        "✅ Bearish bias (-0.28)",
+        "✅ Ask-heavy orderbook (OBI: -0.11)",
+        "🔴 HIGH CONFIDENCE SHORT"
+      ]
+    },
+    {
+      "symbol": "SOLUSDT",
+      "side": "LONG",
+      "confidence": 75,
+      "liquidity_tier": "Tier1"
+    }
+  ],
+  "dropped": [],
+  "monitoring": 32
 }
 ```
 
 **Frontend Action:**
 ```javascript
-if (msg.type === 'position_update') {
-  const { event, data } = msg;
-  
-  switch(event) {
-    case 'open':
-      console.log(`🎯 Opened ${data.symbol} ${data.direction}`);
-      console.log(`   Size: $${data.current_size} (tranche 1/4)`);
-      console.log(`   Entry: $${data.avg_entry_price} | Confidence: ${data.confidence}`);
-      
-      // Add to active positions UI
-      addPositionCard(data);
-      break;
-      
-    case 'tranche':
-      console.log(`📈 ${data.symbol} tranche ${data.tranches_executed}/4 added`);
-      console.log(`   New size: $${data.current_size}`);
-      console.log(`   PnL: $${data.unrealized_pnl.toFixed(2)} (${data.unrealized_pnl_percent.toFixed(2)}%)`);
-      
-      // Update position card
-      updatePositionCard(data);
-      break;
-      
-    case 'close':
-      console.log(`🔴 Closed ${data.symbol}`);
-      console.log(`   Final PnL: $${data.unrealized_pnl.toFixed(2)} (${data.unrealized_pnl_percent.toFixed(2)}%)`);
-      
-      // Remove from UI and add to history
-      removePositionCard(data.id);
-      addToHistory(data);
-      break;
-  }
-}
-```
-
----
-
-##### 4. Hour End Summary (`hour_end`)
-
-Broadcast at **end of hour (XX:59:00)** with complete hour performance.
-
-**Message Structure:**
-```typescript
-interface HourEndMessage {
-  type: "hour_end";
-  hour_window: string;
-  data: {
-    positions_closed: number;
-    total_pnl: number;
-    avg_pnl_percent: number;
-    positions: Array<{
-      symbol: string;
-      direction: string;
-      entry_price: number;
-      exit_price: number;
-      pnl: number;
-      pnl_percent: number;
-      tranches_executed: number;
-    }>;
-  };
-}
-```
-
-**Example:**
-```json
-{
-  "type": "hour_end",
-  "hour_window": "14:00-15:00",
-  "data": {
-    "positions_closed": 3,
-    "total_pnl": 457.32,
-    "avg_pnl_percent": 1.82,
-    "positions": [
-      {
-        "symbol": "SOL-PERP",
-        "direction": "LONG",
-        "entry_price": 110.50,
-        "exit_price": 113.10,
-        "pnl": 234.50,
-        "pnl_percent": 2.35,
-        "tranches_executed": 4
-      },
-      {
-        "symbol": "AVAX-PERP",
-        "direction": "SHORT",
-        "entry_price": 32.10,
-        "exit_price": 31.85,
-        "pnl": 155.25,
-        "pnl_percent": 0.78,
-        "tranches_executed": 3
-      },
-      {
-        "symbol": "LINK-PERP",
-        "direction": "LONG",
-        "entry_price": 15.25,
-        "exit_price": 15.35,
-        "pnl": 67.57,
-        "pnl_percent": 0.66,
-        "tranches_executed": 2
-      }
-    ]
-  }
-}
-```
-
-**Frontend Action:**
-```javascript
-if (msg.type === 'hour_end') {
-  const { hour_window, data } = msg;
-  
-  console.log(`\n🔚 HOUR END: ${hour_window}`);
-  console.log(`Positions: ${data.positions_closed}`);
-  console.log(`Total PnL: $${data.total_pnl.toFixed(2)}`);
-  console.log(`Average: ${data.avg_pnl_percent.toFixed(2)}%\n`);
-  
-  // Show detailed summary modal
-  showHourSummaryModal({
-    window: hour_window,
-    totalPnL: data.total_pnl,
-    avgPercent: data.avg_pnl_percent,
-    positions: data.positions
-  });
-  
-  // Update daily/weekly stats
-  updateDailyStats(data.total_pnl);
-  
-  // Add to performance history
-  addHourToHistory(hour_window, data);
-}
-```
-
----
-
-**Complete Hourly Scanner Frontend Handler:**
-
-```javascript
-class HourlyScannerHandler {
-  constructor() {
-    this.currentOpportunities = [];
-    this.activePositions = new Map();
-    this.hourHistory = [];
-  }
-  
-  handleMessage(msg) {
-    switch(msg.type) {
-      case 'hourly_opportunities':
-        this.onHourlyOpportunities(msg.data);
-        break;
-        
-      case 'mid_hour_opportunities':
-        this.onMidHourOpportunities(msg.data);
-        break;
-        
-      case 'position_update':
-        this.onPositionUpdate(msg.event, msg.data);
-        break;
-        
-      case 'hour_end':
-        this.onHourEnd(msg.hour_window, msg.data);
-        break;
-    }
-  }
-  
-  onHourlyOpportunities(data) {
-    this.currentOpportunities = data.top_picks;
-    
-    // Display opportunities table
-    const html = `
-      <div class="hourly-scan">
-        <h2>🔔 ${data.hour_window} Opportunities</h2>
-        <p>Scanned ${data.total_scanned} pairs in ${data.scan_duration}</p>
-        
-        <table>
-          <thead>
-            <tr>
-              <th>Symbol</th>
-              <th>Direction</th>
-              <th>Confidence</th>
-              <th>Tier</th>
-              <th>Entry</th>
-              <th>TP</th>
-              <th>SL</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.top_picks.map(pick => `
-              <tr>
-                <td>${pick.symbol}</td>
-                <td class="${pick.direction.toLowerCase()}">${pick.direction}</td>
-                <td>${pick.confidence}</td>
-                <td>${pick.liquidity_tier}</td>
-                <td>$${pick.suggested_entry.toFixed(2)}</td>
-                <td>$${pick.suggested_tp.toFixed(2)}</td>
-                <td>$${pick.suggested_sl.toFixed(2)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-    
-    document.getElementById('opportunities').innerHTML = html;
-  }
-  
-  onMidHourOpportunities(data) {
-    if (data.top_picks.length > 0) {
-      const pick = data.top_picks[0];
-      
-      // Show alert notification
-      showNotification({
-        title: '⚡ Mid-Hour Opportunity!',
-        message: `${pick.symbol} ${pick.direction} @ ${pick.confidence} confidence`,
-        type: 'success',
-        duration: 10000
-      });
-    }
-  }
-  
-  onPositionUpdate(event, data) {
-    if (event === 'open') {
-      this.activePositions.set(data.id, data);
-      this.renderPositions();
-    } else if (event === 'tranche') {
-      const pos = this.activePositions.get(data.id);
-      if (pos) {
-        Object.assign(pos, data);
-        this.renderPositions();
-      }
-    } else if (event === 'close') {
-      this.activePositions.delete(data.id);
-      this.renderPositions();
-      
-      // Show PnL notification
-      const color = data.unrealized_pnl > 0 ? 'success' : 'error';
-      showNotification({
-        title: `Position Closed: ${data.symbol}`,
-        message: `PnL: $${data.unrealized_pnl.toFixed(2)} (${data.unrealized_pnl_percent.toFixed(2)}%)`,
-        type: color
-      });
-    }
-  }
-  
-  onHourEnd(hourWindow, data) {
-    this.hourHistory.push({ window: hourWindow, ...data });
-    
-    // Show hour summary
-    showModal({
-      title: `📊 Hour Summary: ${hourWindow}`,
-      content: `
-        <div class="hour-summary">
-          <h3>Performance</h3>
-          <p class="total-pnl ${data.total_pnl > 0 ? 'positive' : 'negative'}">
-            $${data.total_pnl.toFixed(2)} (${data.avg_pnl_percent.toFixed(2)}%)
-          </p>
-          
-          <h3>Positions (${data.positions_closed})</h3>
-          <ul>
-            ${data.positions.map(pos => `
-              <li>
-                ${pos.symbol} ${pos.direction}: 
-                ${pos.pnl > 0 ? '+' : ''}$${pos.pnl.toFixed(2)} 
-                (${pos.pnl_percent.toFixed(2)}%)
-              </li>
-            `).join('')}
-          </ul>
-        </div>
-      `
-    });
-  }
-  
-  renderPositions() {
-    const html = `
-      <div class="active-positions">
-        <h2>Active Positions (${this.activePositions.size}/5)</h2>
-        ${Array.from(this.activePositions.values()).map(pos => `
-          <div class="position-card ${pos.direction.toLowerCase()}">
-            <h3>${pos.symbol} ${pos.direction}</h3>
-            <p>Entry: $${pos.avg_entry_price.toFixed(2)}</p>
-            <p>Current: $${pos.current_price.toFixed(2)}</p>
-            <p class="${pos.unrealized_pnl > 0 ? 'profit' : 'loss'}">
-              PnL: $${pos.unrealized_pnl.toFixed(2)} (${pos.unrealized_pnl_percent.toFixed(2)}%)
-            </p>
-            <p>Size: $${pos.current_size.toFixed(0)} (${pos.tranches_executed}/${pos.tranches_planned} tranches)</p>
-            <p>Next tranche: ${new Date(pos.next_tranche_time).toLocaleTimeString()}</p>
-          </div>
-        `).join('')}
-      </div>
-    `;
-    
-    document.getElementById('positions').innerHTML = html;
-  }
-}
-
-// Usage
-const handler = new HourlyScannerHandler();
-
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
-  handler.handleMessage(msg);
+  
+  if (msg.type === 'portfolio_picks') {
+    const { picks, dropped } = msg.data;
+    
+    console.log(`[Portfolio] ${picks.length} picks available`);
+    
+    // Log dropped symbols (close positions if you're holding)
+    if (dropped.length > 0) {
+      console.log(`⚠️ Dropped: ${dropped.join(', ')}`);
+      dropped.forEach(symbol => {
+        // Check if we have open position on this symbol
+        if (hasOpenPosition(symbol)) {
+          // Get current confidence for this symbol from elsewhere
+          // If confidence < 70, close position
+          console.log(`Considering closing ${symbol} position`);
+        }
+      });
+    }
+    
+    // Filter for high confidence only
+    const highConfPicks = picks.filter(p => 
+      p.confidence >= 75 && 
+      p.spoof_detection.wall_velocity === 'normal'
+    );
+    
+    console.log(`High confidence picks: ${highConfPicks.length}`);
+    
+    // Enter all 3 picks
+    highConfPicks.forEach(pick => {
+      if (!hasOpenPosition(pick.symbol)) {
+        console.log(`🎯 New opportunity: ${pick.symbol} ${pick.side} @ ${pick.confidence}%`);
+        console.log(`   Entry: $${pick.entry_zone[0]}-${pick.entry_zone[1]}`);
+        console.log(`   TP: $${pick.take_profit} | SL: $${pick.stop_loss}`);
+        console.log(`   Max Size: $${pick.max_position_size} | Max Leverage: ${pick.max_leverage}×`);
+        
+        // Place order
+        placeLimitOrder({
+          symbol: pick.symbol,
+          side: pick.side === 'LONG' ? 'BUY' : 'SELL',
+          price: pick.entry_zone[0], // Aggressive entry
+          takeProfit: pick.take_profit,
+          stopLoss: pick.stop_loss,
+          maxSize: pick.max_position_size,
+          maxLeverage: pick.max_leverage
+        });
+      }
+    });
+  }
 };
 ```
 
----
-
-**Hourly Scanner Key Points:**
-- ✅ **Automatic broadcasts** - No subscription needed (sent to all authenticated clients)
-- ✅ **Top of hour** - Scans all 30+ pairs and broadcasts top 3-5 picks
-- ✅ **Mid-hour check** - Exceptional opportunities (≥90 confidence only)
-- ✅ **Position lifecycle** - Full tracking from open to close
-- ✅ **Tranched entries** - 4 × 25% at 0, 15, 30, 45 minutes
-- ✅ **Hour summaries** - Complete performance breakdown
-- ✅ **Portfolio view** - Track 3-5 concurrent positions
-- 📚 **Full documentation:** See `MOMENTUM_X_HOURLY_GUIDE.md`
+**Key Points:**
+- ✅ **No subscription needed** - Automatic broadcast to all authenticated clients
+- ✅ **30-second updates** - Only when portfolio changes (reduces noise)
+- ✅ **Top 3 picks** - System selects best opportunities across all 30+ pairs
+- ✅ **Signal persistence** - All picks have been present ≥30 seconds (3 consecutive 10s intervals)
+- ✅ **Order book quality** - Full CVD, OBI, VWAP analysis per pick
+- ✅ **Tier-based sizing** - Automatic position sizing recommendations
+- ✅ **Exit tracking** - `dropped` array tells you which symbols left top 3
+- ✅ **Spoof detection** - Warns about fake walls
+- ⚠️ **Entry all 3 picks** - Portfolio optimized for 3 concurrent positions
+- ⚠️ **Close on signal flip** - If LONG → SHORT, exit immediately
+- 📚 **Full guide**: See `PORTFOLIO_SCANNER_GUIDE.md` for detailed documentation
 
 ---
 
@@ -3256,4 +3064,3 @@ For issues or questions:
 - Check `PROJECT_STATUS.md` for current implementation status
 - Review server logs for detailed error messages
 - See `README.md` for setup and configuration
-

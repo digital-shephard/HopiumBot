@@ -431,25 +431,11 @@ class HopiumWebSocket {
         console.log('🔮 Momentum X:', data.data.side, '| Regime:', data.data.market_regime, '| Layers:', data.data.layer_score + '/8');
         break;
         
-      case 'hourly_opportunities':
-        console.log('🔔 Hourly Scan:', data.data.top_picks.length, 'opportunities for', data.data.hour_window);
-        data.data.top_picks.forEach((pick, i) => {
-          console.log(`  ${i+1}. ${pick.symbol} ${pick.direction} @ ${pick.confidence} confidence`);
-        });
+      case 'orderbook_signal':
+        console.log('📊 OrderBook:', data.data.side, '| Bias:', data.data.bias_score.toFixed(2), '| CVD:', data.data.cvd_slope, '| OBI:', data.data.obi.toFixed(2));
         break;
         
-      case 'mid_hour_opportunities':
-        console.log('⚡ Mid-Hour:', data.data.top_picks.length, 'exceptional opportunities');
-        break;
-        
-      case 'position_update':
-        console.log('📊 Position:', data.event, data.data.symbol, `(${data.data.tranches_executed}/${data.data.tranches_planned} tranches)`);
-        break;
-        
-      case 'hour_end':
-        console.log('🔚 Hour End:', data.hour_window, '| PnL:', data.data.total_pnl.toFixed(2), `(${data.data.avg_pnl_percent.toFixed(2)}%)`);
-        break;
-        
+      
       case 'alert':
         console.log('⚠️ Alert:', data.data.description);
         break;
@@ -516,15 +502,16 @@ async function setupWebSocket() {
   
   // OR Scalp: High-frequency scalping (mean reversion)
   // wsClient.subscribe('BTCUSDT', 'scalp');  // 30-sec updates, both directions, volume farming
+  
+  // OR Order Book Trading: Near real-time order flow analysis 🔥⚡
+  // wsClient.subscribe('ETHUSDT', 'orderbook_trading');  // 10-sec updates, CVD+OBI+VWAP, spoof detection
 
   // 4. Listen for updates (handled by setupMessageHandlers)
   
-  // 5. Hourly Scanner: Multi-pair portfolio trading (NO subscription needed!)
-  // The hourly scanner broadcasts to ALL authenticated clients automatically:
-  // - hourly_opportunities (XX:00) - Top 3-5 picks for the hour
-  // - mid_hour_opportunities (XX:30) - Exceptional setups mid-hour
-  // - position_update - Position lifecycle events
-  // - hour_end (XX:59) - Hour performance summary
+  // 5. Portfolio Scanner: Automatic multi-pair selection (NO subscription needed!) 🎯
+  // The portfolio scanner broadcasts to ALL authenticated clients automatically:
+  // - portfolio_picks (every 30s when changed) - Top 3 opportunities across all pairs
+  // System does symbol selection for you - just enter the positions!
 }
 
 // Advanced Example: Scalp Strategy for Volume Farming
@@ -559,6 +546,148 @@ async function setupScalpTrading() {
   wsClient.subscribe('BTCUSDT', 'scalp');  // Subscribe to scalp strategy
   
   console.log('✅ Scalp strategy active - receiving updates every 30 seconds');
+}
+
+// Advanced Example: Portfolio Scanner (Automatic Multi-Pair Selection) 🎯
+async function setupPortfolioScanner() {
+  // 1. Authenticate
+  const auth = new HopiumCoreAuth('http://localhost:8080');
+  const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+  await auth.authenticate(accounts[0]);
+
+  // 2. Connect WebSocket (no subscription needed - automatic broadcast)
+  const wsClient = new HopiumWebSocket('http://localhost:8080', auth.token);
+  
+  // Track active positions
+  const activePositions = new Map(); // symbol -> position details
+  
+  // Override handleMessage to handle portfolio_picks
+  const originalHandler = wsClient.handleMessage.bind(wsClient);
+  wsClient.handleMessage = (data) => {
+    if (data.type === 'portfolio_picks') {
+      console.log(`\n[PORTFOLIO SCANNER] Update received`);
+      console.log(`Picks: ${data.picks.length} | Dropped: ${data.dropped.length} | Monitoring: ${data.monitoring} pairs`);
+      
+      // Handle dropped symbols (check if should close)
+      if (data.dropped.length > 0) {
+        data.dropped.forEach(symbol => {
+          if (activePositions.has(symbol)) {
+            console.log(`⚠️ ${symbol} dropped from top 3`);
+            // Check current confidence - close if < 70
+            // In real app, you'd fetch current signal data to check confidence
+            console.log(`   Consider closing ${symbol} position if confidence < 70%`);
+          }
+        });
+      }
+      
+      // Filter for high confidence picks
+      const highConfPicks = data.picks.filter(p => 
+        p.confidence >= 75 && 
+        p.spoof_detection.wall_velocity === 'normal'
+      );
+      
+      console.log(`\nHigh Confidence Picks (${highConfPicks.length}):`);
+      
+      // Enter all high confidence picks
+      highConfPicks.forEach((pick, i) => {
+        console.log(`\n${i + 1}. ${pick.symbol} ${pick.side} @ ${pick.confidence}% confidence`);
+        console.log(`   Entry Zone: $${pick.entry_zone[0]} - $${pick.entry_zone[1]}`);
+        console.log(`   TP: $${pick.take_profit} | SL: $${pick.stop_loss}`);
+        console.log(`   Tier: ${pick.liquidity_tier} | Max Size: $${pick.max_position_size} | Max Leverage: ${pick.max_leverage}×`);
+        console.log(`   Bias Score: ${pick.bias_score.toFixed(2)} | OBI: ${pick.obi.toFixed(2)}`);
+        console.log(`   Reasoning:`);
+        pick.reasoning.forEach(reason => console.log(`      ${reason}`));
+        
+        if (pick.warnings.length > 0) {
+          console.log(`   Warnings:`);
+          pick.warnings.forEach(warning => console.log(`      ⚠️ ${warning}`));
+        }
+        
+        // Check if we already have this position
+        if (activePositions.has(pick.symbol)) {
+          const existing = activePositions.get(pick.symbol);
+          
+          // Check for signal flip (LONG -> SHORT or vice versa)
+          if (existing.side !== pick.side) {
+            console.log(`   🔄 SIGNAL FLIP DETECTED! Was ${existing.side}, now ${pick.side}`);
+            console.log(`   🚨 CLOSE ${existing.side} POSITION IMMEDIATELY`);
+            // Close existing position
+            closePosition(pick.symbol);
+            activePositions.delete(pick.symbol);
+            
+            // Open new position in opposite direction
+            openPosition(pick);
+            activePositions.set(pick.symbol, {
+              side: pick.side,
+              entry: pick.entry_zone[0],
+              confidence: pick.confidence,
+              openedAt: new Date()
+            });
+          } else {
+            console.log(`   ✅ Position already open - holding`);
+          }
+        } else {
+          // New position - enter it
+          console.log(`   🎯 OPENING NEW ${pick.side} POSITION`);
+          
+          // Place order
+          openPosition(pick);
+          
+          // Track it
+          activePositions.set(pick.symbol, {
+            side: pick.side,
+            entry: pick.entry_zone[0],
+            confidence: pick.confidence,
+            openedAt: new Date()
+          });
+        }
+      });
+      
+      // Check if we should close positions not in current picks
+      activePositions.forEach((position, symbol) => {
+        const stillInPicks = data.picks.find(p => p.symbol === symbol);
+        
+        if (!stillInPicks) {
+          console.log(`\n⚠️ ${symbol} no longer in top picks`);
+          console.log(`   Close if confidence < 70% (would need to check elsewhere)`);
+        } else if (stillInPicks.confidence < 70) {
+          console.log(`\n🚨 ${symbol} confidence dropped to ${stillInPicks.confidence}%`);
+          console.log(`   CLOSING POSITION (below 70% threshold)`);
+          closePosition(symbol);
+          activePositions.delete(symbol);
+        }
+      });
+      
+      console.log(`\n📊 Active Positions: ${activePositions.size}/3`);
+      
+    } else {
+      originalHandler(data);
+    }
+  };
+  
+  // Helper functions (implement with your exchange API)
+  function openPosition(pick) {
+    console.log(`   📍 Placing LIMIT ${pick.side === 'LONG' ? 'BUY' : 'SELL'} order`);
+    console.log(`      Price: $${pick.entry_zone[0]} (aggressive entry)`);
+    console.log(`      Size: Calculated based on account and ${pick.liquidity_tier}`);
+    console.log(`      TP: $${pick.take_profit}`);
+    console.log(`      SL: $${pick.stop_loss}`);
+    // Your exchange API call here
+    // placeLimitOrder({ symbol: pick.symbol, side: pick.side, ... });
+  }
+  
+  function closePosition(symbol) {
+    console.log(`   🔴 Closing ${symbol} position at market`);
+    // Your exchange API call here
+    // closeMarketOrder({ symbol });
+  }
+
+  await wsClient.connectWithToken();
+  // NO SUBSCRIBE NEEDED - portfolio_picks broadcasts automatically!
+  
+  console.log('✅ Portfolio Scanner active - system will pick top 3 pairs automatically');
+  console.log('   Updates every 30 seconds (when portfolio changes)');
+  console.log('   Monitoring all 30+ pairs');
 }
 ```
 

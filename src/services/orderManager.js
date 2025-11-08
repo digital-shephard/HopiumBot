@@ -156,6 +156,15 @@ export class OrderManager {
         // Already have open orders, skip
         return
       }
+      
+      // CRITICAL: Check global position limit (max 3 positions)
+      // Only check if we're trying to open a NEW position (no existing position or orders)
+      const totalActivePositions = this.activePositions.size
+      if (totalActivePositions >= 3) {
+        console.log(`[OrderManager] 🚫 BLOCKED: Already have ${totalActivePositions}/3 positions - cannot open ${symbol}`)
+        console.log(`[OrderManager] Active positions:`, Array.from(this.activePositions.keys()))
+        return
+      }
 
       // Calculate position size - USE CAPITAL % AS MARGIN
       const accountBalance = await this.dexService.getAccountBalance()
@@ -259,6 +268,17 @@ export class OrderManager {
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
       const openOrders = await this.dexService.getOpenOrders(symbol)
+      
+      // CRITICAL: Check global position limit (max 3 positions)
+      // Only check if we're trying to open a NEW position (no existing position)
+      if (positionAmt === 0 && openOrders.length === 0) {
+        const totalActivePositions = this.activePositions.size
+        if (totalActivePositions >= 3) {
+          console.log(`[OrderManager] 🚫 BLOCKED: Already have ${totalActivePositions}/3 positions - cannot open ${symbol}`)
+          console.log(`[OrderManager] Active positions:`, Array.from(this.activePositions.keys()))
+          return
+        }
+      }
       
       console.log('[OrderManager] Position and orders check:', { 
         symbol, 
@@ -504,6 +524,17 @@ export class OrderManager {
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
       const openOrders = await this.dexService.getOpenOrders(symbol)
+      
+      // CRITICAL: Check global position limit (max 3 positions)
+      // Only check if we're trying to open a NEW position (no existing position)
+      if (positionAmt === 0 && openOrders.length === 0) {
+        const totalActivePositions = this.activePositions.size
+        if (totalActivePositions >= 3) {
+          console.log(`[OrderManager] 🚫 BLOCKED: Already have ${totalActivePositions}/3 positions - cannot open ${symbol}`)
+          console.log(`[OrderManager] Active positions:`, Array.from(this.activePositions.keys()))
+          return
+        }
+      }
       
       console.log('[OrderManager] Position and orders check:', { 
         symbol, 
@@ -753,6 +784,17 @@ export class OrderManager {
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
       const openOrders = await this.dexService.getOpenOrders(symbol)
+      
+      // CRITICAL: Check global position limit (max 3 positions)
+      // Only check if we're trying to open a NEW position (no existing position)
+      if (positionAmt === 0 && openOrders.length === 0) {
+        const totalActivePositions = this.activePositions.size
+        if (totalActivePositions >= 3) {
+          console.log(`[OrderManager] 🚫 BLOCKED: Already have ${totalActivePositions}/3 positions - cannot open ${symbol}`)
+          console.log(`[OrderManager] Active positions:`, Array.from(this.activePositions.keys()))
+          return
+        }
+      }
       
       console.log('[OrderManager] Position and orders check:', { 
         symbol, 
@@ -1009,6 +1051,17 @@ export class OrderManager {
       const existingPosition = await this.dexService.getPosition(symbol)
       const positionAmt = parseFloat(existingPosition.positionAmt || '0')
       const openOrders = await this.dexService.getOpenOrders(symbol)
+      
+      // CRITICAL: Check global position limit (max 3 positions)
+      // Only check if we're trying to open a NEW position (no existing position)
+      if (positionAmt === 0 && openOrders.length === 0) {
+        const totalActivePositions = this.activePositions.size
+        if (totalActivePositions >= 3) {
+          console.log(`[OrderManager] 🚫 BLOCKED: Already have ${totalActivePositions}/3 positions - cannot open ${symbol}`)
+          console.log(`[OrderManager] Active positions:`, Array.from(this.activePositions.keys()))
+          return
+        }
+      }
       
       console.log('[OrderManager] Position and orders check:', { 
         symbol, 

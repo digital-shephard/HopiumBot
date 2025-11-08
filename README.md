@@ -614,6 +614,29 @@ All settings are stored in localStorage and persist across sessions.
 - **Range/Momentum**: 10-15 pairs (more manageable)
 - Backend limits how many pairs are available to subscribe to
 
+### Portfolio Scanner (Auto Mode)
+
+**Overview:**
+The Portfolio Scanner is an automated multi-pair trading system that monitors 30+ symbols and selects the top 3 opportunities based on order book analysis.
+
+**Position Limit Enforcement:**
+- **Maximum 3 concurrent positions** - Strictly enforced across all signal handlers
+- **Global limit check** - All signal handlers (scalp, momentum, momentum X, order book, range trading) check the total active position count before opening new positions
+- **Order book reversals** - When a position is reversed (LONG→SHORT or SHORT→LONG), the new position replaces the old one, maintaining the 3-position limit
+- **Console logging** - Clear 🚫 BLOCKED messages when attempting to open position #4+ with list of active positions
+
+**How it works:**
+1. Server broadcasts `portfolio_picks` every 30 seconds with top 3 opportunities
+2. Frontend subscribes to order book trading strategy for each picked symbol
+3. Order book signals manage entry, exit, and position reversals
+4. Each signal handler enforces the 3-position limit before placing orders
+5. Active positions tracked in `orderManager.activePositions` Map
+
+**Critical Fix (2025-01-08):**
+- Fixed bug where order book reversals could exceed 3-position limit
+- Added position limit checks to all 5 signal handlers
+- Prevents portfolio scanner from opening more than 3 positions simultaneously
+
 ### Trading Flow
 
 1. User configures settings and clicks "Start"

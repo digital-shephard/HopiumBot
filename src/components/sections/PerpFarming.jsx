@@ -1566,6 +1566,12 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                     const notionalValue = marginToUse * leverage
                     const quantity = notionalValue / entryPrice
                     
+                    const maxAllowedMargin = capitalNum / 3
+                    if (marginToUse > maxAllowedMargin * 1.01) {
+                      throw new Error(`🚨 SAFETY CHECK FAILED: Trying to use $${marginToUse.toFixed(2)} margin but max allowed is $${maxAllowedMargin.toFixed(2)} (capital: $${capitalNum})`)
+                    }
+                    
+                    console.log(`[Portfolio] 🔒 Safety check: Margin $${marginToUse.toFixed(2)} <= Max $${maxAllowedMargin.toFixed(2)} ✓`)
                     console.log(`[Portfolio] Margin: $${marginToUse.toFixed(2)} @ ${leverage}x = Notional: $${notionalValue.toFixed(2)}`)
                     console.log(`[Portfolio] Placing order: ${quantity} @ $${entryPrice}`)
                     
@@ -1692,6 +1698,65 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
           console.log(`[PerpFarming] Auto Mode enabled - listening for portfolio scanner broadcasts`)
           setBotMessage('Auto Mode: Waiting for portfolio scanner... Monitoring all 30+ pairs')
           if (onBotMessageChange) onBotMessageChange('Auto Mode: Waiting for portfolio scanner... Monitoring all 30+ pairs')
+          
+          try {
+            console.log('[PerpFarming] Checking for existing open positions to resume...')
+            const allPositions = await orderManager.dexService.getAllPositions()
+            const openPositions = allPositions.filter(p => Math.abs(parseFloat(p.positionAmt || '0')) > 0)
+            
+            if (openPositions.length > 0) {
+              console.log(`[PerpFarming] Found ${openPositions.length} open position(s) - re-subscribing to order book signals`)
+              
+              const resumedPositions = []
+              const resumedSubscriptions = new Set()
+              
+              for (const pos of openPositions) {
+                const symbol = pos.symbol
+                const side = parseFloat(pos.positionAmt) > 0 ? 'LONG' : 'SHORT'
+                
+                wsClient.subscribe(symbol, 'orderbook_trading')
+                resumedSubscriptions.add(symbol)
+                
+                const posData = {
+                  symbol: symbol,
+                  side: side,
+                  entryPrice: parseFloat(pos.entryPrice),
+                  quantity: Math.abs(parseFloat(pos.positionAmt)),
+                  takeProfit: parseFloat(settings.takeProfit),
+                  stopLoss: parseFloat(settings.stopLoss),
+                  filledAt: Date.now(),
+                  entryConfidence: 'unknown',
+                  signalHistory: []
+                }
+                
+                orderManager.activePositions.set(symbol, posData)
+                
+                resumedPositions.push({
+                  symbol: symbol,
+                  side: side,
+                  entryPrice: parseFloat(pos.entryPrice),
+                  openedAt: Date.now()
+                })
+                
+                console.log(`[PerpFarming] ✅ Resumed ${symbol} ${side} position and subscribed to order book`)
+              }
+              
+              setPortfolioPositions(resumedPositions)
+              setPortfolioSubscriptions(resumedSubscriptions)
+              setTradingSymbols(openPositions.map(p => p.symbol))
+              
+              setBotMessages({})
+              lastMessageUpdateRef.current = {}
+              setBotMessage('Auto Mode resumed - monitoring active positions')
+              if (onBotMessageChange) onBotMessageChange('Auto Mode resumed - monitoring active positions')
+              
+              console.log('[PerpFarming] Successfully resumed Auto Mode with existing positions')
+            } else {
+              console.log('[PerpFarming] No existing positions to resume')
+            }
+          } catch (error) {
+            console.warn('[PerpFarming] Could not check for existing positions on resume:', error.message)
+          }
         }
         
         wsClientRef.current = wsClient

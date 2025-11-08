@@ -1204,20 +1204,27 @@ export class OrderManager {
         }
       }
 
-      // Calculate position size - USE CAPITAL % AS MARGIN
       const accountBalance = await this.dexService.getAccountBalance()
       const availableBalance = parseFloat(accountBalance.availableBalance || '0')
-      const positionSizePercent = this.settings.positionSize || 10
       const capitalLimit = parseFloat(this.settings.capital || '0')
       const leverage = this.settings.leverage || 1
       
-      // Position size % of capital IS the margin we want to use
-      const marginToUse = (capitalLimit * positionSizePercent) / 100
+      let marginToUse
+      if (this.settings.autoMode) {
+        marginToUse = capitalLimit / 3
+        console.log(`[OrderManager] 🤖 Auto Mode: Using capital/3 = $${marginToUse.toFixed(2)} margin`)
+      } else {
+        const positionSizePercent = this.settings.positionSize || 10
+        marginToUse = (capitalLimit * positionSizePercent) / 100
+        console.log(`[OrderManager] Manual Mode: Using ${positionSizePercent}% of capital = $${marginToUse.toFixed(2)} margin`)
+      }
       
-      // Actual position value = margin * leverage
+      const maxAllowedMargin = this.settings.autoMode ? (capitalLimit / 3) : capitalLimit
+      if (marginToUse > maxAllowedMargin * 1.01) {
+        throw new Error(`🚨 SAFETY: Trying to use $${marginToUse.toFixed(2)} margin but max is $${maxAllowedMargin.toFixed(2)}`)
+      }
+      
       const targetPositionValue = marginToUse * leverage
-      
-      // Make sure we have enough balance for the margin
       const maxPositionValue = availableBalance >= marginToUse ? targetPositionValue : availableBalance * leverage
 
       if (entryPrice <= 0) {
@@ -1239,9 +1246,9 @@ export class OrderManager {
         maxPositionValue,
         marginToUse,
         availableBalance,
-        positionSizePercent,
         leverage,
         capitalLimit,
+        autoMode: this.settings.autoMode,
         bias_score: orderBookData.bias_score,
         cvd_slope: orderBookData.cvd_slope,
         obi: orderBookData.obi,

@@ -162,6 +162,38 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     })
   }
 
+  // Filter botMessages to only include symbols with active positions
+  const filterActiveMessages = (messages, orderManager) => {
+    if (!orderManager) return messages
+    
+    const status = orderManager.getStatus()
+    const activeSymbols = new Set()
+    
+    // Get active positions
+    if (status.activePositions && status.activePositions.length > 0) {
+      status.activePositions.forEach(pos => {
+        if (pos.symbol) activeSymbols.add(pos.symbol)
+      })
+    }
+    
+    // Get pending orders (they will become positions)
+    if (status.activeOrders && status.activeOrders.length > 0) {
+      status.activeOrders.forEach(order => {
+        if (order.symbol) activeSymbols.add(order.symbol)
+      })
+    }
+    
+    // Filter messages to only include active symbols
+    const filtered = {}
+    for (const [sym, msg] of Object.entries(messages)) {
+      if (activeSymbols.has(sym)) {
+        filtered[sym] = msg
+      }
+    }
+    
+    return filtered
+  }
+
   const updateBotMessage = (symbol, message) => {
     const now = Date.now()
     const lastUpdate = lastMessageUpdateRef.current[symbol] || 0
@@ -172,16 +204,33 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
       return
     }
     
+    // Only update message if symbol has an active position or pending order
+    if (orderManagerRef.current) {
+      const status = orderManagerRef.current.getStatus()
+      const hasActivePosition = status.activePositions?.some(p => p.symbol === symbol)
+      const hasPendingOrder = status.activeOrders?.some(o => o.symbol === symbol)
+      
+      if (!hasActivePosition && !hasPendingOrder) {
+        console.log(`[BotMessage] Skipping update for ${symbol} - no active position or pending order`)
+        return
+      }
+    }
+    
     lastMessageUpdateRef.current[symbol] = now
     
     setBotMessages(prev => {
       const updated = { ...prev, [symbol]: message }
       
+      // Filter to only active positions before passing to parent
+      const filtered = orderManagerRef.current 
+        ? filterActiveMessages(updated, orderManagerRef.current)
+        : updated
+      
       if (onBotMessagesChange) {
-        onBotMessagesChange(updated)
+        onBotMessagesChange(filtered)
       }
       
-      const messageArray = Object.entries(updated)
+      const messageArray = Object.entries(filtered)
         .map(([sym, msg]) => `[${sym}] ${msg}`)
         .join('\n\n')
       
@@ -385,11 +434,16 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
         delete updated[symbol]
         delete lastMessageUpdateRef.current[symbol]
         
+        // Filter to only active positions before passing to parent
+        const filtered = orderManagerRef.current 
+          ? filterActiveMessages(updated, orderManagerRef.current)
+          : updated
+        
         if (onBotMessagesChange) {
-          onBotMessagesChange(updated)
+          onBotMessagesChange(filtered)
         }
         
-        const messageArray = Object.entries(updated)
+        const messageArray = Object.entries(filtered)
           .map(([sym, msg]) => `[${sym}] ${msg}`)
           .join('\n\n')
         
@@ -1822,6 +1876,42 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     
     return () => clearInterval(saveInterval)
   }, [isRunning, overallPnl, totalTrades])
+
+  // Periodically clean up messages for symbols without active positions
+  useEffect(() => {
+    if (!isRunning || !orderManagerRef.current) return
+    
+    const cleanupInterval = setInterval(() => {
+      setBotMessages(prev => {
+        const filtered = filterActiveMessages(prev, orderManagerRef.current)
+        
+        // Only update if messages were filtered out
+        if (Object.keys(filtered).length !== Object.keys(prev).length) {
+          console.log('[BotMessage] Cleaned up messages for inactive symbols')
+          
+          if (onBotMessagesChange) {
+            onBotMessagesChange(filtered)
+          }
+          
+          const messageArray = Object.entries(filtered)
+            .map(([sym, msg]) => `[${sym}] ${msg}`)
+            .join('\n\n')
+          
+          setBotMessage(messageArray || 'Waiting for signals...')
+          
+          if (onBotMessageChange) {
+            onBotMessageChange(messageArray || 'Waiting for signals...')
+          }
+          
+          return filtered
+        }
+        
+        return prev
+      })
+    }, 10000) // Check every 10 seconds
+    
+    return () => clearInterval(cleanupInterval)
+  }, [isRunning, onBotMessagesChange, onBotMessageChange])
 
   const handleCloseModal = () => {
     setShowModal(false)

@@ -1481,33 +1481,26 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
               return
             }
             
-            // Calculate capital per position
-            // CRITICAL: Always divide total capital by 3 (max positions)
-            // Do NOT divide by (existing + new) because that double-counts existing positions!
             const capitalNum = parseFloat(settings.capital)
             const newPicksToOpen = topPicks.slice(0, roomForNewPositions)
-            const capitalPerPosition = capitalNum / 3  // Always $150 / 3 = $50 per position
+            const capitalPerPosition = capitalNum / 3
             
             console.log(`[Portfolio] Capital: $${capitalNum} / 3 positions = $${capitalPerPosition.toFixed(2)} per position`)
             console.log(`[Portfolio] Will open ${newPicksToOpen.length} new position(s) with $${capitalPerPosition.toFixed(2)} each`)
             
-            // Process each pick
             const newPositions = []
             const newSubscriptions = new Set(portfolioSubscriptions)
             
             for (const pick of newPicksToOpen) {
               try {
-                // Check if we already have this position
                 const existingPos = portfolioPositions.find(p => p.symbol === pick.symbol)
                 
                 if (existingPos) {
-                  // Position already exists
                   console.log(`[Portfolio] ${pick.symbol} position already exists - will be managed by order book signals`)
                   newPositions.push(existingPos)
                   continue
                 }
                 
-                // CRITICAL: Re-check limit including new positions opened in THIS loop
                 const currentTotal = currentTotalActive + newPositions.length
                 if (currentTotal >= 3) {
                   console.log(`[Portfolio] 🚫 Reached max 3 active - stopping at ${pick.symbol}`)
@@ -1519,9 +1512,7 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                 console.log(`[Portfolio]   TP: $${pick.take_profit} | SL: $${pick.stop_loss}`)
                 console.log(`[Portfolio]   Target size: $${capitalPerPosition.toFixed(2)}`)
                 
-                const entryPrice = pick.entry_zone[0] // Use low end of entry zone
-                
-                // Try placing order with decreasing leverage until it works
+                const entryPrice = pick.entry_zone[0]
                 let result = null
                 let leverage = Math.min(parseInt(settings.leverage), pick.max_leverage || 125)
                 const minLeverage = 1
@@ -1530,14 +1521,14 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   try {
                     console.log(`[Portfolio] Trying ${pick.symbol} with ${leverage}x leverage...`)
                     
-                    // Set leverage
                     await orderManager.dexService.setLeverage(pick.symbol, leverage)
                     
-                    // Calculate quantity for EXACT $50 notional position
-                    // quantity * price = $50
-                    const quantity = capitalPerPosition / entryPrice
+                    const marginToUse = capitalPerPosition
+                    const notionalValue = marginToUse * leverage
+                    const quantity = notionalValue / entryPrice
                     
-                    console.log(`[Portfolio] Placing order: ${quantity} @ $${entryPrice} = $${(quantity * entryPrice).toFixed(2)}`)
+                    console.log(`[Portfolio] Margin: $${marginToUse.toFixed(2)} @ ${leverage}x = Notional: $${notionalValue.toFixed(2)}`)
+                    console.log(`[Portfolio] Placing order: ${quantity} @ $${entryPrice}`)
                     
                     // Place LIMIT order
                     result = await orderManager.dexService.placeOrder({
@@ -1556,7 +1547,6 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   } catch (error) {
                     console.log(`[Portfolio] Failed with ${leverage}x leverage: ${error.message}`)
                     
-                    // If it's a leverage/notional error, try lower leverage
                     if (error.message.includes('leverage') || 
                         error.message.includes('notional') || 
                         error.message.includes('Margin') ||
@@ -1564,7 +1554,6 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                       leverage = Math.max(1, Math.floor(leverage / 2))
                       console.log(`[Portfolio] Retrying with ${leverage}x leverage...`)
                     } else {
-                      // Different error, don't retry
                       throw error
                     }
                   }
@@ -1574,7 +1563,6 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   throw new Error(`Could not place order for ${pick.symbol} even at ${minLeverage}x leverage`)
                 }
                 
-                // CRITICAL: Add order to orderManager tracking so it gets moved to activePositions when filled
                 orderManager.activeOrders.set(result.orderId, {
                   orderId: result.orderId,
                   symbol: pick.symbol,
@@ -1585,12 +1573,11 @@ function PerpFarming({ onBotMessageChange, onBotStatusChange }) {
                   takeProfit: parseFloat(settings.takeProfit),
                   stopLoss: parseFloat(settings.stopLoss),
                   createdAt: Date.now(),
-                  entryConfidence: 'high' // Portfolio picks are high confidence
+                  entryConfidence: 'high'
                 })
                 
                 console.log(`[Portfolio] Tracking order ${result.orderId} for ${pick.symbol} in orderManager`)
                 
-                // Track this position in local state
                 const newPos = {
                   symbol: pick.symbol,
                   side: pick.side,

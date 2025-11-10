@@ -84,6 +84,12 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     if (savedSettings) {
       try {
         const settings = JSON.parse(savedSettings)
+        console.log('[PerpFarming] Loading settings from localStorage:', {
+          capital: settings.capital,
+          capitalParsed: parseFloat(settings.capital || '0'),
+          positionSize: settings.positionSize,
+          autoMode: settings.autoMode
+        })
         setAsterApiKey(settings.asterApiKey || '')
         setAsterSecretKey(settings.asterSecretKey || '')
         setCapital(settings.capital || '')
@@ -329,6 +335,12 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
         trailingIncrement,
         selectedPairs // Save selected pairs
       }
+      console.log('[PerpFarming] Saving settings to localStorage:', {
+        capital: settings.capital,
+        capitalParsed: parseFloat(settings.capital),
+        positionSize: settings.positionSize,
+        autoMode: settings.autoMode
+      })
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
       setShowModal(false)
 
@@ -631,11 +643,19 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     const orderManager = new OrderManager()
     orderManager.onError = handleError
     
+    const capitalParsed = parseFloat(settings.capital)
+    console.log('[PerpFarming] Initializing OrderManager with settings:', {
+      capitalRaw: settings.capital,
+      capitalParsed: capitalParsed,
+      positionSize: settings.positionSize,
+      autoMode: settings.autoMode
+    })
+    
     try {
       await orderManager.initialize({
         apiKey: settings.asterApiKey,
         secretKey: settings.asterSecretKey,
-        capital: parseFloat(settings.capital),
+        capital: capitalParsed,
         leverage: settings.leverage,
         takeProfit: settings.takeProfit,
         stopLoss: settings.stopLoss,
@@ -1565,16 +1585,52 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               })
             }
             
+            // Log all picks before filtering for debugging
+            console.log(`[Portfolio] Received ${picks.length} picks before filtering:`)
+            picks.forEach(p => {
+              const confidenceOk = p.confidence >= 70
+              const spoofOk = p.spoof_detection?.wall_velocity === 'normal' || p.spoof_detection?.wall_velocity === 'high'
+              console.log(`[Portfolio]   ${p.symbol}: confidence=${p.confidence}% (${confidenceOk ? '✓' : '✗'}), spoof=${p.spoof_detection?.wall_velocity || 'unknown'} (${spoofOk ? '✓' : '✗'})`)
+            })
+            
             // Sort by confidence and take top 3 (or less)
+            // Relaxed filter: confidence >= 70% AND (spoof velocity is normal OR high)
             const topPicks = picks
-              .filter(p => p.confidence >= 75 && p.spoof_detection?.wall_velocity === 'normal')
+              .filter(p => {
+                const confidenceOk = p.confidence >= 70
+                const spoofOk = p.spoof_detection?.wall_velocity === 'normal' || p.spoof_detection?.wall_velocity === 'high'
+                return confidenceOk && spoofOk
+              })
               .sort((a, b) => b.confidence - a.confidence)
               .slice(0, 3)
             
-            console.log(`[Portfolio] Top ${topPicks.length} picks after filtering:`, topPicks.map(p => `${p.symbol} (${p.confidence}%)`))
+            // Log warnings for picks with high spoof detection
+            topPicks.forEach(p => {
+              if (p.spoof_detection?.wall_velocity === 'high') {
+                console.log(`[Portfolio] ⚠️ WARNING: ${p.symbol} has HIGH spoof detection (${p.spoof_detection.recent_spoofs} recent spoofs) - proceeding with caution`)
+              }
+            })
+            
+            console.log(`[Portfolio] Top ${topPicks.length} picks after filtering:`, topPicks.map(p => `${p.symbol} (${p.confidence}%, spoof: ${p.spoof_detection?.wall_velocity || 'unknown'})`))
             
             if (topPicks.length === 0) {
-              console.log('[Portfolio] No high-quality picks available')
+              console.log('[Portfolio] ⚠️ No picks available (all filtered out)')
+              console.log('[Portfolio] Filter criteria: confidence >= 70% AND (spoof_detection.wall_velocity === "normal" OR "high")')
+              
+              // Log why picks were filtered
+              const filteredPicks = picks.filter(p => p.confidence < 70 || (p.spoof_detection?.wall_velocity !== 'normal' && p.spoof_detection?.wall_velocity !== 'high'))
+              if (filteredPicks.length > 0) {
+                console.log(`[Portfolio] Filtered out ${filteredPicks.length} pick(s):`)
+                filteredPicks.forEach(p => {
+                  const reasons = []
+                  if (p.confidence < 70) reasons.push(`low confidence (${p.confidence}% < 70%)`)
+                  if (p.spoof_detection?.wall_velocity !== 'normal' && p.spoof_detection?.wall_velocity !== 'high') {
+                    reasons.push(`spoof velocity not allowed (${p.spoof_detection?.wall_velocity || 'unknown'})`)
+                  }
+                  console.log(`[Portfolio]   ${p.symbol}: ${reasons.join(', ')}`)
+                })
+              }
+              
               return
             }
             

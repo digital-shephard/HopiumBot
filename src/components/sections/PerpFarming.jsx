@@ -403,25 +403,70 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
       
       const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
       
-      // Use absolute value of RAW string to preserve exact precision
-      const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
-      
       console.log(`[ClosePosition] Closing ${symbol} with Net PNL: $${currentNetPnl.toFixed(2)}`, {
         rawPositionAmt: positionAmtRaw,
-        quantityToClose: quantityStr,
         side: oppositeSide
       })
       
-      const result = await orderManager.dexService.placeOrder({
-        symbol: symbol,
-        side: oppositeSide,
-        type: 'MARKET',
-        quantity: quantityStr,
-        reduceOnly: true,
-        rawQuantity: true // Skip formatting - use exact positionAmt
-      })
+      // Iteratively close position, splitting into smaller chunks if needed
+      let remainingToClose = Math.abs(positionAmt)
+      let workingQuantity = remainingToClose
+      let ordersFilled = 0
       
-      console.log(`[ClosePosition] Order placed:`, result)
+      while (remainingToClose > 0.00001) { // Small tolerance for floating point
+        try {
+          // Try to close with current working quantity
+          const result = await orderManager.dexService.placeOrder({
+            symbol: symbol,
+            side: oppositeSide,
+            type: 'MARKET',
+            quantity: workingQuantity,
+            reduceOnly: true
+          })
+          
+          console.log(`[ClosePosition] Order ${ordersFilled + 1} placed: ${workingQuantity} @ MARKET`, result)
+          ordersFilled++
+          
+          // Check remaining position
+          const updatedPosition = await orderManager.dexService.getPosition(symbol)
+          const updatedAmt = Math.abs(parseFloat(updatedPosition.positionAmt || '0'))
+          
+          console.log(`[ClosePosition] Remaining after order ${ordersFilled}: ${updatedAmt}`)
+          
+          if (updatedAmt < 0.00001) {
+            // Position fully closed
+            console.log(`[ClosePosition] ✅ Position fully closed in ${ordersFilled} order(s)`)
+            break
+          }
+          
+          // Update remaining and working quantity for next iteration
+          remainingToClose = updatedAmt
+          workingQuantity = remainingToClose
+          
+        } catch (orderError) {
+          if (orderError.message.includes('Quantity greater than max quantity')) {
+            // Reduce working quantity by half and try again
+            workingQuantity = workingQuantity / 2
+            
+            console.log(`[ClosePosition] Quantity too large, reducing to ${workingQuantity} and retrying...`)
+            
+            // Safety check: if working quantity becomes too small, break
+            if (workingQuantity < 1) {
+              console.error(`[ClosePosition] ⚠️ Working quantity too small (${workingQuantity}), cannot continue`)
+              throw new Error(`Unable to close position: quantity constraints too restrictive`)
+            }
+          } else {
+            // Different error, re-throw
+            throw orderError
+          }
+        }
+        
+        // Safety check: prevent infinite loops
+        if (ordersFilled > 20) {
+          console.error(`[ClosePosition] ⚠️ Too many orders (${ordersFilled}), stopping`)
+          throw new Error(`Failed to close position after ${ordersFilled} attempts`)
+        }
+      }
       
       // IMMEDIATELY update overall stats with the Net PNL we have right now
       setOverallPnl(prev => {

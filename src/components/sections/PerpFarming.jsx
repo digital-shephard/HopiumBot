@@ -935,6 +935,9 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                 
                 // In Auto Mode, track trailing stops per symbol
                 if (settings.autoMode) {
+                  // Get dollar SL for hard stop protection
+                  const hardStopLoss = settings.tpSlMode === 'dollar' ? parseFloat(settings.stopLoss) : 0
+                  
                   // Check trailing stop per symbol
                   for (const position of status.activePositions) {
                     const symbol = position.symbol
@@ -952,6 +955,16 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                     const totalPosFees = entryFee + exitFee
                     const symbolNetPnl = unrealizedProfit - totalPosFees
                     
+                    // HARD STOP LOSS: Per-symbol SL check (even if trailing stop not activated)
+                    // Protects positions that go negative without ever reaching positive peak
+                    if (hardStopLoss > 0 && symbolNetPnl <= -hardStopLoss) {
+                      console.log(`[Hard SL] ${symbol} Stop Hit: Net PNL $${symbolNetPnl.toFixed(2)} <= -$${hardStopLoss.toFixed(2)}`)
+                      await closePosition(orderManager, symbol, symbolNetPnl)
+                      peakPnlPerSymbolRef.current.delete(symbol)
+                      trailingStopPerSymbolRef.current.delete(symbol)
+                      continue // Skip to next position
+                    }
+                    
                     // Track peak PNL per symbol
                     const currentPeak = peakPnlPerSymbolRef.current.get(symbol) || 0
                     if (symbolNetPnl > currentPeak) {
@@ -959,7 +972,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                     }
                     const symbolPeak = peakPnlPerSymbolRef.current.get(symbol) || 0
                     
-                    // Calculate trailing stop per symbol
+                    // Calculate trailing stop per symbol (only if peak is positive)
                     if (symbolPeak >= increment) {
                       const incrementsAchieved = Math.floor(symbolPeak / increment)
                       const symbolTrailingStop = Math.max((incrementsAchieved - 1) * increment, 0)

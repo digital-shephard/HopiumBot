@@ -77,6 +77,8 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
   const trailingStopRef = useRef(0)
   const bestBreakEvenPnlRef = useRef(Number.NEGATIVE_INFINITY) // Track best (closest to 0) PnL for breakeven loss tolerance
   const signalHistoryRef = useRef(new Map()) // Track signal history per symbol: { entryTime, signals: [], lastSide, lastConfidence }
+  const peakPnlPerSymbolRef = useRef(new Map()) // Track peak PNL per symbol for trailing stops in Auto Mode
+  const trailingStopPerSymbolRef = useRef(new Map()) // Track trailing stop per symbol for Auto Mode
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -437,6 +439,10 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
       
       // Clear signal history for this symbol
       signalHistoryRef.current.delete(symbol)
+      
+      // Clear trailing stop tracking for this symbol
+      peakPnlPerSymbolRef.current.delete(symbol)
+      trailingStopPerSymbolRef.current.delete(symbol)
       
       setTradingSymbols(prev => prev.filter(s => s !== symbol))
       console.log(`[ClosePosition] Removed ${symbol} from trading symbols`)
@@ -839,26 +845,73 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               if (settings.trailingBreakEven) {
                 const increment = parseFloat(settings.trailingIncrement) || 20
                 
-                // Calculate how many increments of profit we've achieved
-                // For every $X profit, stop loss moves up by $X
-                if (peakPnlRef.current >= increment) {
-                  // Calculate trailing stop: floor(peak / increment) * increment - increment
-                  // Example: If increment is $20 and peak is $65:
-                  // - We've hit 3 increments ($20, $40, $60)
-                  // - Stop loss is at $40 (2 increments, leaving room for 1 increment pullback)
-                  const incrementsAchieved = Math.floor(peakPnlRef.current / increment)
-                  const trailingStop = Math.max((incrementsAchieved - 1) * increment, 0)
-                  trailingStopRef.current = trailingStop
-                  
-                  // Check if current PNL dropped below trailing stop
-                  if (netPnl <= trailingStop) {
-                    console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStop.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)}, Increment: $${increment})`)
-                    // Close all positions
-                    for (const position of status.activePositions) {
-                      await closePosition(orderManager, position.symbol, netPnl)
+                // In Auto Mode, track trailing stops per symbol
+                if (settings.autoMode) {
+                  // Check trailing stop per symbol
+                  for (const position of status.activePositions) {
+                    const symbol = position.symbol
+                    const currentPosition = await orderManager.dexService.getPosition(symbol)
+                    const unrealizedProfit = parseFloat(currentPosition.unRealizedProfit || '0')
+                    const entryPrice = parseFloat(currentPosition.entryPrice || '0')
+                    const positionAmt = Math.abs(parseFloat(currentPosition.positionAmt || '0'))
+                    const markPrice = parseFloat(currentPosition.markPrice || '0')
+                    
+                    // Calculate fees for this symbol
+                    const entryNotional = positionAmt * entryPrice
+                    const exitNotional = positionAmt * markPrice
+                    const entryFee = entryNotional * ENTRY_FEE
+                    const exitFee = exitNotional * EXIT_FEE
+                    const totalPosFees = entryFee + exitFee
+                    const symbolNetPnl = unrealizedProfit - totalPosFees
+                    
+                    // Track peak PNL per symbol
+                    const currentPeak = peakPnlPerSymbolRef.current.get(symbol) || 0
+                    if (symbolNetPnl > currentPeak) {
+                      peakPnlPerSymbolRef.current.set(symbol, symbolNetPnl)
                     }
-                  } else {
-                    console.log(`[Trailing] Peak: $${peakPnlRef.current.toFixed(2)}, Stop: $${trailingStop.toFixed(2)}, Current: $${netPnl.toFixed(2)} (Increment: $${increment})`)
+                    const symbolPeak = peakPnlPerSymbolRef.current.get(symbol) || 0
+                    
+                    // Calculate trailing stop per symbol
+                    if (symbolPeak >= increment) {
+                      const incrementsAchieved = Math.floor(symbolPeak / increment)
+                      const symbolTrailingStop = Math.max((incrementsAchieved - 1) * increment, 0)
+                      trailingStopPerSymbolRef.current.set(symbol, symbolTrailingStop)
+                      
+                      // Check if current PNL dropped below trailing stop for this symbol
+                      if (symbolNetPnl <= symbolTrailingStop) {
+                        console.log(`[Trailing] ${symbol} Stop Hit: Net PNL $${symbolNetPnl.toFixed(2)} <= Trailing Stop $${symbolTrailingStop.toFixed(2)} (Peak: $${symbolPeak.toFixed(2)}, Increment: $${increment})`)
+                        await closePosition(orderManager, symbol, symbolNetPnl)
+                        // Remove from tracking
+                        peakPnlPerSymbolRef.current.delete(symbol)
+                        trailingStopPerSymbolRef.current.delete(symbol)
+                      } else {
+                        console.log(`[Trailing] ${symbol} Peak: $${symbolPeak.toFixed(2)}, Stop: $${symbolTrailingStop.toFixed(2)}, Current: $${symbolNetPnl.toFixed(2)} (Increment: $${increment})`)
+                      }
+                    }
+                  }
+                } else {
+                  // Manual Mode: Use total PNL (existing behavior)
+                  // Calculate how many increments of profit we've achieved
+                  // For every $X profit, stop loss moves up by $X
+                  if (peakPnlRef.current >= increment) {
+                    // Calculate trailing stop: floor(peak / increment) * increment - increment
+                    // Example: If increment is $20 and peak is $65:
+                    // - We've hit 3 increments ($20, $40, $60)
+                    // - Stop loss is at $40 (2 increments, leaving room for 1 increment pullback)
+                    const incrementsAchieved = Math.floor(peakPnlRef.current / increment)
+                    const trailingStop = Math.max((incrementsAchieved - 1) * increment, 0)
+                    trailingStopRef.current = trailingStop
+                    
+                    // Check if current PNL dropped below trailing stop
+                    if (netPnl <= trailingStop) {
+                      console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStop.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)}, Increment: $${increment})`)
+                      // Close all positions
+                      for (const position of status.activePositions) {
+                        await closePosition(orderManager, position.symbol, netPnl)
+                      }
+                    } else {
+                      console.log(`[Trailing] Peak: $${peakPnlRef.current.toFixed(2)}, Stop: $${trailingStop.toFixed(2)}, Current: $${netPnl.toFixed(2)} (Increment: $${increment})`)
+                    }
                   }
                 }
               }
@@ -2009,6 +2062,10 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
 
     // Clear Smart Mode signal history
     signalHistoryRef.current.clear()
+    
+    // Clear per-symbol trailing stop tracking
+    peakPnlPerSymbolRef.current.clear()
+    trailingStopPerSymbolRef.current.clear()
 
     setIsRunning(false)
     if (onBotStatusChange) onBotStatusChange(false)

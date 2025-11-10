@@ -2795,15 +2795,15 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                       <div className="risk-slider-container">
                         <input
                           type="range"
-                          min="5"
+                          min="1"
                           max="100"
-                          step="5"
+                          step="1"
                           value={trailingIncrement}
                           onChange={(e) => setTrailingIncrement(Number(e.target.value))}
                           className="risk-slider"
                         />
                         <div className="risk-slider-labels">
-                          <span>$5</span>
+                          <span>$1</span>
                           <span>$50</span>
                           <span>$100</span>
                         </div>

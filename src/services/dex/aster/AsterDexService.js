@@ -120,6 +120,38 @@ export class AsterDexService extends DexService {
   }
 
   /**
+   * Get MARKET_LOT_SIZE filter limits for a symbol
+   * Used to determine max quantity for MARKET orders when closing positions
+   */
+  async getMarketLotSize(symbol) {
+    const exchangeInfo = await this.getExchangeInfo()
+    const symbolInfo = exchangeInfo.symbols.find(s => s.symbol === symbol)
+    
+    if (!symbolInfo) {
+      throw new Error(`Symbol ${symbol} not found in exchange info`)
+    }
+
+    // Get MARKET_LOT_SIZE filter
+    const marketLotSizeFilter = symbolInfo.filters.find(f => f.filterType === 'MARKET_LOT_SIZE')
+    
+    if (!marketLotSizeFilter) {
+      // Fall back to LOT_SIZE if MARKET_LOT_SIZE not available
+      const lotSizeFilter = symbolInfo.filters.find(f => f.filterType === 'LOT_SIZE')
+      return {
+        minQty: parseFloat(lotSizeFilter?.minQty || '0'),
+        maxQty: parseFloat(lotSizeFilter?.maxQty || '999999999'),
+        stepSize: lotSizeFilter?.stepSize || '1'
+      }
+    }
+
+    return {
+      minQty: parseFloat(marketLotSizeFilter.minQty),
+      maxQty: parseFloat(marketLotSizeFilter.maxQty),
+      stepSize: marketLotSizeFilter.stepSize
+    }
+  }
+
+  /**
    * Format quantity according to symbol precision
    */
   formatQuantity(quantity, stepSize) {

@@ -205,6 +205,47 @@ npm run preview
 - Modern React setup with Vite
 - No-scroll, fullscreen experience
 
+## Recent Critical Fixes (Nov 2025)
+
+### Position Closing Reliability & PNL Accuracy
+
+**Problem**: "Quantity greater than max quantity" errors when closing positions + PNL being updated even when closes failed
+
+**Root Cause**:
+1. Large positions (e.g., 666,926 PUMP tokens) exceeded exchange's `MARKET_LOT_SIZE` `maxQty` limits
+2. Quantities weren't formatted to respect `stepSize` requirements
+3. PNL was updated BEFORE verifying positions closed successfully
+
+**Solution Implemented**:
+1. **Smart Chunk Closing** (`closePositionInChunks`):
+   - Fetches exact position amount from `/fapi/v2/positionRisk` API
+   - Queries `MARKET_LOT_SIZE` filter limits from exchange info
+   - Automatically splits large positions into multiple orders (95% of maxQty per chunk)
+   - Formats each chunk to respect `stepSize` (e.g., rounds 666926.123 → 666926 if stepSize is 1)
+   - Verifies remaining position after each order until fully closed
+
+2. **PNL Update Protection**:
+   - Restructured all exit strategies (TP/SL, Trailing Stop, Break-Even)
+   - Positions close FIRST, PNL updates ONLY if ALL positions close successfully
+   - Partial closes now clearly logged with warnings
+   - Failed closes prevent PNL corruption
+
+3. **Comprehensive Logging**:
+   - Detailed logs for market lot size limits per symbol
+   - Step-by-step chunk progress tracking
+   - Clear success/failure indicators (✅/❌)
+   - Diagnostic info on failures (chunk size, limits, stepSize)
+
+**Impact**: 
+- ✅ No more "max quantity" errors on large positions
+- ✅ PNL only updates when closes actually succeed
+- ✅ Multi-order splits handled transparently
+- ✅ Applied to all exit strategies uniformly
+
+**Files Modified**:
+- `src/services/dex/aster/AsterDexService.js` - Added `getMarketLotSize()` method
+- `src/components/sections/PerpFarming.jsx` - Updated all position close logic
+
 ## Tech Stack
 
 - React 18

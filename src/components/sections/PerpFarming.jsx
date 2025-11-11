@@ -389,84 +389,120 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     }
   }
 
+  // Helper function to format quantity according to stepSize (round down to valid step)
+  const formatQuantityToStepSize = (quantity, stepSize) => {
+    const step = parseFloat(stepSize)
+    const rounded = Math.floor(quantity / step) * step
+    const decimals = stepSize.includes('.') ? stepSize.split('.')[1].length : 0
+    return parseFloat(rounded.toFixed(decimals))
+  }
+
+  // Helper function to close position in chunks (respecting MARKET_LOT_SIZE limits)
+  const closePositionInChunks = async (orderManager, symbol, logPrefix = '[ClosePosition]') => {
+    // Get exact position amount from API
+    const position = await orderManager.dexService.getPosition(symbol)
+    const positionAmtRaw = position.positionAmt || '0'
+    const positionAmt = parseFloat(positionAmtRaw)
+    
+    if (positionAmt === 0) {
+      console.log(`${logPrefix} No position to close for ${symbol}`)
+      return
+    }
+    
+    const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
+    const totalToClose = Math.abs(positionAmt)
+    
+    console.log(`${logPrefix} Closing ${symbol} position: ${totalToClose}`, {
+      rawPositionAmt: positionAmtRaw,
+      side: oppositeSide
+    })
+    
+    // Get MARKET_LOT_SIZE limits for this symbol
+    let marketLotSize
+    try {
+      marketLotSize = await orderManager.dexService.getMarketLotSize(symbol)
+      console.log(`${logPrefix} Market lot size for ${symbol}:`, marketLotSize)
+    } catch (error) {
+      console.warn(`${logPrefix} Failed to get market lot size, using defaults:`, error.message)
+      marketLotSize = { minQty: 1, maxQty: 999999999, stepSize: '1' }
+    }
+    
+    // Split position into chunks if needed
+    let remainingToClose = totalToClose
+    let ordersFilled = 0
+    const maxChunkSize = marketLotSize.maxQty * 0.95 // Use 95% of max to be safe
+    
+    console.log(`${logPrefix} Will close ${remainingToClose} in chunks of max ${maxChunkSize} (stepSize: ${marketLotSize.stepSize})`)
+    
+    while (remainingToClose > parseFloat(marketLotSize.minQty) * 0.1) { // Must be above minQty
+      // Calculate chunk size for this order (capped by maxQty)
+      let chunkSize = Math.min(remainingToClose, maxChunkSize)
+      
+      // CRITICAL: Format to stepSize to respect exchange rules
+      chunkSize = formatQuantityToStepSize(chunkSize, marketLotSize.stepSize)
+      
+      // Ensure we don't try to close less than minQty
+      if (chunkSize < marketLotSize.minQty) {
+        console.log(`${logPrefix} Remaining ${remainingToClose} < minQty ${marketLotSize.minQty}, closing exact amount`)
+        chunkSize = remainingToClose
+      }
+      
+      console.log(`${logPrefix} Attempting to close chunk: ${chunkSize} (formatted to stepSize ${marketLotSize.stepSize})`)
+      
+      try {
+        // Place order to close this chunk
+        const result = await orderManager.dexService.placeOrder({
+          symbol: symbol,
+          side: oppositeSide,
+          type: 'MARKET',
+          quantity: chunkSize,
+          reduceOnly: true
+        })
+        
+        console.log(`${logPrefix} ✅ Order ${ordersFilled + 1} filled: ${chunkSize} @ MARKET`, result)
+        ordersFilled++
+        
+        // Check remaining position
+        const updatedPosition = await orderManager.dexService.getPosition(symbol)
+        const updatedAmt = Math.abs(parseFloat(updatedPosition.positionAmt || '0'))
+        
+        console.log(`${logPrefix} Remaining after order ${ordersFilled}: ${updatedAmt}`)
+        
+        if (updatedAmt < marketLotSize.minQty * 0.1) {
+          // Position fully closed (or remaining dust is negligible)
+          console.log(`${logPrefix} 🎉 Position fully closed in ${ordersFilled} order(s)`)
+          break
+        }
+        
+        // Update remaining for next iteration
+        remainingToClose = updatedAmt
+        
+      } catch (orderError) {
+        console.error(`${logPrefix} ❌ Error placing order ${ordersFilled + 1}:`, orderError.message)
+        console.error(`${logPrefix} Failed chunk details:`, {
+          chunkSize,
+          remaining: remainingToClose,
+          maxAllowed: marketLotSize.maxQty,
+          stepSize: marketLotSize.stepSize
+        })
+        
+        // Re-throw - let caller handle the error
+        throw orderError
+      }
+      
+      // Safety check: prevent infinite loops
+      if (ordersFilled > 50) {
+        console.error(`${logPrefix} ⚠️ Too many orders (${ordersFilled}), stopping`)
+        throw new Error(`Failed to close position after ${ordersFilled} attempts`)
+      }
+    }
+  }
+
   // Helper function to close a position and update stats
   const closePosition = async (orderManager, symbol, currentNetPnl) => {
     try {
-      const position = await orderManager.dexService.getPosition(symbol)
-      const positionAmtRaw = position.positionAmt || '0'
-      const positionAmt = parseFloat(positionAmtRaw)
-      
-      if (positionAmt === 0) {
-        console.log(`No position to close for ${symbol}`)
-        return
-      }
-      
-      const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
-      
-      console.log(`[ClosePosition] Closing ${symbol} with Net PNL: $${currentNetPnl.toFixed(2)}`, {
-        rawPositionAmt: positionAmtRaw,
-        side: oppositeSide
-      })
-      
-      // Iteratively close position, splitting into smaller chunks if needed
-      let remainingToClose = Math.abs(positionAmt)
-      let workingQuantity = remainingToClose
-      let ordersFilled = 0
-      
-      while (remainingToClose > 0.00001) { // Small tolerance for floating point
-        try {
-          // Try to close with current working quantity
-          const result = await orderManager.dexService.placeOrder({
-            symbol: symbol,
-            side: oppositeSide,
-            type: 'MARKET',
-            quantity: workingQuantity,
-            reduceOnly: true
-          })
-          
-          console.log(`[ClosePosition] Order ${ordersFilled + 1} placed: ${workingQuantity} @ MARKET`, result)
-          ordersFilled++
-          
-          // Check remaining position
-          const updatedPosition = await orderManager.dexService.getPosition(symbol)
-          const updatedAmt = Math.abs(parseFloat(updatedPosition.positionAmt || '0'))
-          
-          console.log(`[ClosePosition] Remaining after order ${ordersFilled}: ${updatedAmt}`)
-          
-          if (updatedAmt < 0.00001) {
-            // Position fully closed
-            console.log(`[ClosePosition] ✅ Position fully closed in ${ordersFilled} order(s)`)
-            break
-          }
-          
-          // Update remaining and working quantity for next iteration
-          remainingToClose = updatedAmt
-          workingQuantity = remainingToClose
-          
-        } catch (orderError) {
-          if (orderError.message.includes('Quantity greater than max quantity')) {
-            // Reduce working quantity by half and try again
-            workingQuantity = workingQuantity / 2
-            
-            console.log(`[ClosePosition] Quantity too large, reducing to ${workingQuantity} and retrying...`)
-            
-            // Safety check: if working quantity becomes too small, break
-            if (workingQuantity < 1) {
-              console.error(`[ClosePosition] ⚠️ Working quantity too small (${workingQuantity}), cannot continue`)
-              throw new Error(`Unable to close position: quantity constraints too restrictive`)
-            }
-          } else {
-            // Different error, re-throw
-            throw orderError
-          }
-        }
-        
-        // Safety check: prevent infinite loops
-        if (ordersFilled > 20) {
-          console.error(`[ClosePosition] ⚠️ Too many orders (${ordersFilled}), stopping`)
-          throw new Error(`Failed to close position after ${ordersFilled} attempts`)
-        }
-      }
+      // Close position in chunks (respecting market lot size limits)
+      await closePositionInChunks(orderManager, symbol, '[ClosePosition]')
       
       // IMMEDIATELY update overall stats with the Net PNL we have right now
       setOverallPnl(prev => {
@@ -866,48 +902,46 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               // Check Take Profit (use gross PNL before fees)
               if (takeProfitDollars > 0 && totalPnlDollars >= takeProfitDollars) {
                 console.log(`Take Profit hit: $${totalPnlDollars.toFixed(2)} >= $${takeProfitDollars.toFixed(2)} (gross, before fees)`)
-                console.log(`[TP/SL] Closing all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
+                console.log(`[TP/SL] Attempting to close all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
                 
-                // Close all positions and update overallPnl ONCE with total PNL
-                setOverallPnl(prev => {
-                  const newValue = prev + netPnl
-                  console.log(`[Stats] Dollar TP: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
-                  
-                  setTotalTrades(currentTrades => {
-                    const newTradeCount = currentTrades + status.activePositions.length
-                    saveStats(newValue, newTradeCount)
-                    return newTradeCount
-                  })
-                  
-                  return newValue
-                })
-                
-                // Close positions WITHOUT updating overallPnl (already updated above)
+                // FIRST: Try to close ALL positions - collect any errors
+                const closeResults = []
                 for (const position of status.activePositions) {
                   try {
-                    const positionAmtRaw = (await orderManager.dexService.getPosition(position.symbol)).positionAmt || '0'
-                    const positionAmt = parseFloat(positionAmtRaw)
-                    if (positionAmt === 0) continue
-                    
-                    const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
-                    const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
-                    
-                    await orderManager.dexService.placeOrder({
-                      symbol: position.symbol,
-                      side: oppositeSide,
-                      type: 'MARKET',
-                      quantity: quantityStr,
-                      reduceOnly: true,
-                      rawQuantity: true
-                    })
+                    await closePositionInChunks(orderManager, position.symbol, '[TP/SL]')
+                    closeResults.push({ symbol: position.symbol, success: true })
                     
                     signalHistoryRef.current.delete(position.symbol)
                     peakPnlPerSymbolRef.current.delete(position.symbol)
                     trailingStopPerSymbolRef.current.delete(position.symbol)
-                    console.log(`[TP/SL] Closed ${position.symbol}`)
+                    console.log(`[TP/SL] ✅ Successfully closed ${position.symbol}`)
                   } catch (error) {
-                    console.error(`[TP/SL] Failed to close ${position.symbol}:`, error.message)
+                    closeResults.push({ symbol: position.symbol, success: false, error: error.message })
+                    console.error(`[TP/SL] ❌ Failed to close ${position.symbol}:`, error.message)
                   }
+                }
+                
+                // Check if ALL positions closed successfully
+                const allClosed = closeResults.every(r => r.success)
+                const successCount = closeResults.filter(r => r.success).length
+                
+                if (allClosed) {
+                  // ONLY update PNL if ALL positions closed successfully
+                  setOverallPnl(prev => {
+                    const newValue = prev + netPnl
+                    console.log(`[Stats] ✅ Dollar TP SUCCESS: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
+                    
+                    setTotalTrades(currentTrades => {
+                      const newTradeCount = currentTrades + status.activePositions.length
+                      saveStats(newValue, newTradeCount)
+                      return newTradeCount
+                    })
+                    
+                    return newValue
+                  })
+                } else {
+                  console.error(`[TP/SL] ⚠️ PARTIAL CLOSE: ${successCount}/${status.activePositions.length} positions closed. PNL NOT updated.`)
+                  console.error('[TP/SL] Failed positions:', closeResults.filter(r => !r.success))
                 }
                 
                 setTradingSymbols([])
@@ -920,48 +954,46 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               // Check Stop Loss (use gross PNL before fees)
               if (!positionsClosed && stopLossDollars > 0 && totalPnlDollars <= -stopLossDollars) {
                 console.log(`Stop Loss hit: $${totalPnlDollars.toFixed(2)} <= -$${stopLossDollars.toFixed(2)} (gross, before fees)`)
-                console.log(`[TP/SL] Closing all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
+                console.log(`[TP/SL] Attempting to close all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
                 
-                // Close all positions and update overallPnl ONCE with total PNL
-                setOverallPnl(prev => {
-                  const newValue = prev + netPnl
-                  console.log(`[Stats] Dollar SL: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
-                  
-                  setTotalTrades(currentTrades => {
-                    const newTradeCount = currentTrades + status.activePositions.length
-                    saveStats(newValue, newTradeCount)
-                    return newTradeCount
-                  })
-                  
-                  return newValue
-                })
-                
-                // Close positions WITHOUT updating overallPnl (already updated above)
+                // FIRST: Try to close ALL positions - collect any errors
+                const closeResults = []
                 for (const position of status.activePositions) {
                   try {
-                    const positionAmtRaw = (await orderManager.dexService.getPosition(position.symbol)).positionAmt || '0'
-                    const positionAmt = parseFloat(positionAmtRaw)
-                    if (positionAmt === 0) continue
-                    
-                    const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
-                    const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
-                    
-                    await orderManager.dexService.placeOrder({
-                      symbol: position.symbol,
-                      side: oppositeSide,
-                      type: 'MARKET',
-                      quantity: quantityStr,
-                      reduceOnly: true,
-                      rawQuantity: true
-                    })
+                    await closePositionInChunks(orderManager, position.symbol, '[TP/SL]')
+                    closeResults.push({ symbol: position.symbol, success: true })
                     
                     signalHistoryRef.current.delete(position.symbol)
                     peakPnlPerSymbolRef.current.delete(position.symbol)
                     trailingStopPerSymbolRef.current.delete(position.symbol)
-                    console.log(`[TP/SL] Closed ${position.symbol}`)
+                    console.log(`[TP/SL] ✅ Successfully closed ${position.symbol}`)
                   } catch (error) {
-                    console.error(`[TP/SL] Failed to close ${position.symbol}:`, error.message)
+                    closeResults.push({ symbol: position.symbol, success: false, error: error.message })
+                    console.error(`[TP/SL] ❌ Failed to close ${position.symbol}:`, error.message)
                   }
+                }
+                
+                // Check if ALL positions closed successfully
+                const allClosed = closeResults.every(r => r.success)
+                const successCount = closeResults.filter(r => r.success).length
+                
+                if (allClosed) {
+                  // ONLY update PNL if ALL positions closed successfully
+                  setOverallPnl(prev => {
+                    const newValue = prev + netPnl
+                    console.log(`[Stats] ✅ Dollar SL SUCCESS: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
+                    
+                    setTotalTrades(currentTrades => {
+                      const newTradeCount = currentTrades + status.activePositions.length
+                      saveStats(newValue, newTradeCount)
+                      return newTradeCount
+                    })
+                    
+                    return newValue
+                  })
+                } else {
+                  console.error(`[TP/SL] ⚠️ PARTIAL CLOSE: ${successCount}/${status.activePositions.length} positions closed. PNL NOT updated.`)
+                  console.error('[TP/SL] Failed positions:', closeResults.filter(r => !r.success))
                 }
                 
                 setTradingSymbols([])
@@ -1051,48 +1083,46 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                     // Check if current PNL dropped below trailing stop
                     if (netPnl <= trailingStop) {
                       console.log(`Trailing Stop Hit: Net PNL $${netPnl.toFixed(2)} <= Trailing Stop $${trailingStop.toFixed(2)} (Peak: $${peakPnlRef.current.toFixed(2)}, Increment: $${increment})`)
-                      console.log(`[Trailing] Closing all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
+                      console.log(`[Trailing] Attempting to close all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
                       
-                      // Update overallPnl ONCE with total PNL
-                      setOverallPnl(prev => {
-                        const newValue = prev + netPnl
-                        console.log(`[Stats] Trailing SL: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
-                        
-                        setTotalTrades(currentTrades => {
-                          const newTradeCount = currentTrades + status.activePositions.length
-                          saveStats(newValue, newTradeCount)
-                          return newTradeCount
-                        })
-                        
-                        return newValue
-                      })
-                      
-                      // Close all positions WITHOUT updating overallPnl
+                      // FIRST: Try to close ALL positions - collect any errors
+                      const closeResults = []
                       for (const position of status.activePositions) {
                         try {
-                          const positionAmtRaw = (await orderManager.dexService.getPosition(position.symbol)).positionAmt || '0'
-                          const positionAmt = parseFloat(positionAmtRaw)
-                          if (positionAmt === 0) continue
-                          
-                          const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
-                          const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
-                          
-                          await orderManager.dexService.placeOrder({
-                            symbol: position.symbol,
-                            side: oppositeSide,
-                            type: 'MARKET',
-                            quantity: quantityStr,
-                            reduceOnly: true,
-                            rawQuantity: true
-                          })
+                          await closePositionInChunks(orderManager, position.symbol, '[Trailing]')
+                          closeResults.push({ symbol: position.symbol, success: true })
                           
                           signalHistoryRef.current.delete(position.symbol)
                           peakPnlPerSymbolRef.current.delete(position.symbol)
                           trailingStopPerSymbolRef.current.delete(position.symbol)
-                          console.log(`[Trailing] Closed ${position.symbol}`)
+                          console.log(`[Trailing] ✅ Successfully closed ${position.symbol}`)
                         } catch (error) {
-                          console.error(`[Trailing] Failed to close ${position.symbol}:`, error.message)
+                          closeResults.push({ symbol: position.symbol, success: false, error: error.message })
+                          console.error(`[Trailing] ❌ Failed to close ${position.symbol}:`, error.message)
                         }
+                      }
+                      
+                      // Check if ALL positions closed successfully
+                      const allClosed = closeResults.every(r => r.success)
+                      const successCount = closeResults.filter(r => r.success).length
+                      
+                      if (allClosed) {
+                        // ONLY update PNL if ALL positions closed successfully
+                        setOverallPnl(prev => {
+                          const newValue = prev + netPnl
+                          console.log(`[Stats] ✅ Trailing SL SUCCESS: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
+                          
+                          setTotalTrades(currentTrades => {
+                            const newTradeCount = currentTrades + status.activePositions.length
+                            saveStats(newValue, newTradeCount)
+                            return newTradeCount
+                          })
+                          
+                          return newValue
+                        })
+                      } else {
+                        console.error(`[Trailing] ⚠️ PARTIAL CLOSE: ${successCount}/${status.activePositions.length} positions closed. PNL NOT updated.`)
+                        console.error('[Trailing] Failed positions:', closeResults.filter(r => !r.success))
                       }
                       
                       setTradingSymbols([])
@@ -1120,48 +1150,46 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                 
                 if (netPnl >= 0) {
                   console.log(`Break-even hit: Net PNL $${netPnl.toFixed(2)} >= $0 (after fees)`)
-                  console.log(`[BreakEven] Closing all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
+                  console.log(`[BreakEven] Attempting to close all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
                   
-                  // Update overallPnl ONCE with total PNL
-                  setOverallPnl(prev => {
-                    const newValue = prev + netPnl
-                    console.log(`[Stats] BreakEven: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
-                    
-                    setTotalTrades(currentTrades => {
-                      const newTradeCount = currentTrades + status.activePositions.length
-                      saveStats(newValue, newTradeCount)
-                      return newTradeCount
-                    })
-                    
-                    return newValue
-                  })
-                  
-                  // Close all positions WITHOUT updating overallPnl
+                  // FIRST: Try to close ALL positions - collect any errors
+                  const closeResults = []
                   for (const position of status.activePositions) {
                     try {
-                      const positionAmtRaw = (await orderManager.dexService.getPosition(position.symbol)).positionAmt || '0'
-                      const positionAmt = parseFloat(positionAmtRaw)
-                      if (positionAmt === 0) continue
-                      
-                      const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
-                      const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
-                      
-                      await orderManager.dexService.placeOrder({
-                        symbol: position.symbol,
-                        side: oppositeSide,
-                        type: 'MARKET',
-                        quantity: quantityStr,
-                        reduceOnly: true,
-                        rawQuantity: true
-                      })
+                      await closePositionInChunks(orderManager, position.symbol, '[BreakEven]')
+                      closeResults.push({ symbol: position.symbol, success: true })
                       
                       signalHistoryRef.current.delete(position.symbol)
                       peakPnlPerSymbolRef.current.delete(position.symbol)
                       trailingStopPerSymbolRef.current.delete(position.symbol)
-                      console.log(`[BreakEven] Closed ${position.symbol}`)
+                      console.log(`[BreakEven] ✅ Successfully closed ${position.symbol}`)
                     } catch (error) {
-                      console.error(`[BreakEven] Failed to close ${position.symbol}:`, error.message)
+                      closeResults.push({ symbol: position.symbol, success: false, error: error.message })
+                      console.error(`[BreakEven] ❌ Failed to close ${position.symbol}:`, error.message)
                     }
+                  }
+                  
+                  // Check if ALL positions closed successfully
+                  const allClosed = closeResults.every(r => r.success)
+                  const successCount = closeResults.filter(r => r.success).length
+                  
+                  if (allClosed) {
+                    // ONLY update PNL if ALL positions closed successfully
+                    setOverallPnl(prev => {
+                      const newValue = prev + netPnl
+                      console.log(`[Stats] ✅ BreakEven SUCCESS: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
+                      
+                      setTotalTrades(currentTrades => {
+                        const newTradeCount = currentTrades + status.activePositions.length
+                        saveStats(newValue, newTradeCount)
+                        return newTradeCount
+                      })
+                      
+                      return newValue
+                    })
+                  } else {
+                    console.error(`[BreakEven] ⚠️ PARTIAL CLOSE: ${successCount}/${status.activePositions.length} positions closed. PNL NOT updated.`)
+                    console.error('[BreakEven] Failed positions:', closeResults.filter(r => !r.success))
                   }
                   
                   setTradingSymbols([])
@@ -1169,48 +1197,46 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   lastMessageUpdateRef.current = {}
                 } else if (withinTolerance && previouslyWasCloser) {
                   console.log(`Break-even loss tolerance hit: Net PNL $${netPnl.toFixed(2)} (was $${bestBreakEvenPnlRef.current.toFixed(2)}) within tolerance -$${lossTolerance}`)
-                  console.log(`[BreakEven] Closing all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
+                  console.log(`[BreakEven] Attempting to close all ${status.activePositions.length} positions with TOTAL Net PNL: $${netPnl.toFixed(2)}`)
                   
-                  // Update overallPnl ONCE with total PNL
-                  setOverallPnl(prev => {
-                    const newValue = prev + netPnl
-                    console.log(`[Stats] BreakEven Tolerance: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
-                    
-                    setTotalTrades(currentTrades => {
-                      const newTradeCount = currentTrades + status.activePositions.length
-                      saveStats(newValue, newTradeCount)
-                      return newTradeCount
-                    })
-                    
-                    return newValue
-                  })
-                  
-                  // Close all positions WITHOUT updating overallPnl
+                  // FIRST: Try to close ALL positions - collect any errors
+                  const closeResults = []
                   for (const position of status.activePositions) {
                     try {
-                      const positionAmtRaw = (await orderManager.dexService.getPosition(position.symbol)).positionAmt || '0'
-                      const positionAmt = parseFloat(positionAmtRaw)
-                      if (positionAmt === 0) continue
-                      
-                      const oppositeSide = positionAmt > 0 ? 'SELL' : 'BUY'
-                      const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
-                      
-                      await orderManager.dexService.placeOrder({
-                        symbol: position.symbol,
-                        side: oppositeSide,
-                        type: 'MARKET',
-                        quantity: quantityStr,
-                        reduceOnly: true,
-                        rawQuantity: true
-                      })
+                      await closePositionInChunks(orderManager, position.symbol, '[BreakEven]')
+                      closeResults.push({ symbol: position.symbol, success: true })
                       
                       signalHistoryRef.current.delete(position.symbol)
                       peakPnlPerSymbolRef.current.delete(position.symbol)
                       trailingStopPerSymbolRef.current.delete(position.symbol)
-                      console.log(`[BreakEven] Closed ${position.symbol}`)
+                      console.log(`[BreakEven] ✅ Successfully closed ${position.symbol}`)
                     } catch (error) {
-                      console.error(`[BreakEven] Failed to close ${position.symbol}:`, error.message)
+                      closeResults.push({ symbol: position.symbol, success: false, error: error.message })
+                      console.error(`[BreakEven] ❌ Failed to close ${position.symbol}:`, error.message)
                     }
+                  }
+                  
+                  // Check if ALL positions closed successfully
+                  const allClosed = closeResults.every(r => r.success)
+                  const successCount = closeResults.filter(r => r.success).length
+                  
+                  if (allClosed) {
+                    // ONLY update PNL if ALL positions closed successfully
+                    setOverallPnl(prev => {
+                      const newValue = prev + netPnl
+                      console.log(`[Stats] ✅ BreakEven Tolerance SUCCESS: Overall PNL: $${prev.toFixed(2)} + $${netPnl.toFixed(2)} = $${newValue.toFixed(2)}`)
+                      
+                      setTotalTrades(currentTrades => {
+                        const newTradeCount = currentTrades + status.activePositions.length
+                        saveStats(newValue, newTradeCount)
+                        return newTradeCount
+                      })
+                      
+                      return newValue
+                    })
+                  } else {
+                    console.error(`[BreakEven] ⚠️ PARTIAL CLOSE: ${successCount}/${status.activePositions.length} positions closed. PNL NOT updated.`)
+                    console.error('[BreakEven] Failed positions:', closeResults.filter(r => !r.success))
                   }
                   
                   setTradingSymbols([])

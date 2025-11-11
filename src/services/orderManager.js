@@ -1209,6 +1209,14 @@ export class OrderManager {
       const capitalLimit = parseFloat(this.settings.capital || '0')
       const configuredLeverage = this.settings.leverage || 1
       
+      // Debug logging for capital settings
+      console.log(`[OrderManager] Capital Settings Debug:`, {
+        rawCapital: this.settings.capital,
+        capitalLimit: capitalLimit,
+        positionSize: this.settings.positionSize,
+        autoMode: this.settings.autoMode
+      })
+      
       let marginToUse
       if (this.settings.autoMode) {
         marginToUse = capitalLimit / 3

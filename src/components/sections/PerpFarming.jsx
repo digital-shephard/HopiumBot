@@ -61,8 +61,9 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
   const [availableSymbols, setAvailableSymbols] = useState([]) // List of symbols from API
   const [selectedPairs, setSelectedPairs] = useState(['BTCUSDT']) // Default to BTC, max 5
   const [loadingSymbols, setLoadingSymbols] = useState(false)
-  const [portfolioPositions, setPortfolioPositions] = useState([]) // Track Auto Mode (Portfolio Scanner) positions
-  const [portfolioSubscriptions, setPortfolioSubscriptions] = useState(new Set()) // Track which symbols we've subscribed to for order book
+  const [portfolioPositions, setPortfolioPositions] = useState([]) // Track Auto Mode (Portfolio Scanner V2) positions
+  const [excludedPairs, setExcludedPairs] = useState([]) // Pairs to exclude from Auto Mode (manual trading)
+  const [showExclusionList, setShowExclusionList] = useState(false) // Toggle for exclusion list modal
   
   const orderManagerRef = useRef(null)
   const wsClientRef = useRef(null)
@@ -112,6 +113,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
         setTrailingBreakEven(settings.trailingBreakEven || false)
         setTrailingIncrement(settings.trailingIncrement !== undefined ? settings.trailingIncrement : 20)
         setSelectedPairs(settings.selectedPairs || ['BTCUSDT']) // Load selected pairs
+        setExcludedPairs(settings.excludedPairs || []) // Load excluded pairs
       } catch (error) {
         console.error('Error loading settings:', error)
       }
@@ -335,7 +337,8 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
         breakEvenLossTolerance,
         trailingBreakEven,
         trailingIncrement,
-        selectedPairs // Save selected pairs
+        selectedPairs, // Save selected pairs
+        excludedPairs // Save excluded pairs
       }
       console.log('[PerpFarming] Saving settings to localStorage:', {
         capital: settings.capital,
@@ -804,6 +807,42 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
         try {
           const status = orderManager.getStatus()
           const currentPositionCount = status.activePositions ? status.activePositions.length : 0
+          
+          // LOCAL INVALIDATION CHECK (Auto Mode Only) - Fast client-side check
+          if (settings.autoMode && status.activePositions && status.activePositions.length > 0) {
+            for (const position of status.activePositions) {
+              const portfolioPos = portfolioPositions.find(p => p.symbol === position.symbol)
+              if (portfolioPos && portfolioPos.invalidationPrice) {
+                const currentPosition = await orderManager.dexService.getPosition(position.symbol)
+                const markPrice = parseFloat(currentPosition.markPrice || '0')
+                const invalidationPrice = portfolioPos.invalidationPrice
+                
+                // Check if price crossed invalidation level
+                const isInvalidated = portfolioPos.side === 'LONG' 
+                  ? markPrice < invalidationPrice 
+                  : markPrice > invalidationPrice
+                
+                if (isInvalidated) {
+                  console.log(`[Local Invalidation] 🚨 ${position.symbol} ${portfolioPos.side} invalidated: price $${markPrice} crossed $${invalidationPrice}`)
+                  
+                  // Calculate PNL
+                  const unrealizedProfit = parseFloat(currentPosition.unRealizedProfit || '0')
+                  const entryPrice = parseFloat(currentPosition.entryPrice || '0')
+                  const positionAmt = Math.abs(parseFloat(currentPosition.positionAmt || '0'))
+                  const entryNotional = positionAmt * entryPrice
+                  const exitNotional = positionAmt * markPrice
+                  const totalFees = (entryNotional * ENTRY_FEE) + (exitNotional * EXIT_FEE)
+                  const symbolNetPnl = unrealizedProfit - totalFees
+                  
+                  // Close position immediately
+                  await closePosition(orderManager, position.symbol, symbolNetPnl)
+                  setPortfolioPositions(prev => prev.filter(p => p.symbol !== position.symbol))
+                  
+                  continue // Skip to next position
+                }
+              }
+            }
+          }
           
           // Sync tradingSymbols with actual active positions
           // This catches positions closed by orderManager directly (TP/SL, Smart Mode, etc.)
@@ -1909,82 +1948,116 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
           }
         }
         
-        // === AUTO MODE (PORTFOLIO SCANNER) HANDLERS ===
+        // === AUTO MODE (PORTFOLIO SCANNER V2) HANDLERS ===
         
-        // Handle portfolio picks - Top 3 opportunities across all pairs
+        // Handle portfolio picks - Top 3 opportunities using 4H swing structure
         wsClient.onPortfolioPicks = async (message) => {
           try {
             if (!settings.autoMode) return // Only process if Auto Mode enabled
             
-            console.log('[PerpFarming] 🎯 Received portfolio picks:', message)
+            console.log('[PerpFarming] 🎯 Received portfolio picks (V2):', message)
             
             const picksData = message?.data || message
-            if (!picksData || !picksData.picks) {
-              console.log('[PerpFarming] No picks data found')
+            if (!picksData || (!picksData.top_longs && !picksData.top_shorts)) {
+              console.log('[PerpFarming] No picks data found (expected top_longs/top_shorts)')
               return
             }
             
-            const { picks, dropped, monitoring } = picksData
+            const { top_longs = [], top_shorts = [], invalidated = [], monitoring = 0 } = picksData
             
-            console.log(`[Portfolio] ${picks.length} picks | ${dropped.length} dropped | ${monitoring} pairs monitored`)
+            console.log(`[Portfolio V2] ${top_longs.length} longs | ${top_shorts.length} shorts | ${invalidated.length} invalidated | ${monitoring} pairs monitored`)
             
-            // Log dropped symbols as warnings (don't auto-close, let order book signals decide)
-            if (dropped.length > 0) {
-              console.log(`[Portfolio] ⚠️ Symbols dropped from top 3: ${dropped.join(', ')}`)
-              dropped.forEach(symbol => {
+            // Handle invalidated symbols - CLOSE IMMEDIATELY
+            if (invalidated.length > 0) {
+              console.log(`[Portfolio V2] 🚨 INVALIDATED (structure break): ${invalidated.join(', ')}`)
+              
+              for (const symbol of invalidated) {
                 const existingPos = portfolioPositions.find(p => p.symbol === symbol)
                 if (existingPos) {
-                  console.log(`[Portfolio] ${symbol} still has open position - order book signals will manage exit`)
+                  console.log(`[Portfolio V2] Closing ${symbol} - trend invalidated`)
+                  
+                  // Get PNL for this symbol
+                  let symbolNetPnl = 0
+                  try {
+                    const symbolPosition = await orderManager.dexService.getPosition(symbol)
+                    const unrealizedProfit = parseFloat(symbolPosition.unRealizedProfit || '0')
+                    const entryPrice = parseFloat(symbolPosition.entryPrice || '0')
+                    const positionAmt = Math.abs(parseFloat(symbolPosition.positionAmt || '0'))
+                    const markPrice = parseFloat(symbolPosition.markPrice || '0')
+                    
+                    const entryNotional = positionAmt * entryPrice
+                    const exitNotional = positionAmt * markPrice
+                    const totalFees = (entryNotional * ENTRY_FEE) + (exitNotional * EXIT_FEE)
+                    symbolNetPnl = unrealizedProfit - totalFees
+                  } catch (error) {
+                    console.error(`[Portfolio V2] Failed to get PNL for ${symbol}:`, error)
+                  }
+                  
+                  await closePosition(orderManager, symbol, symbolNetPnl)
+                  
+                  // Remove from portfolio tracking
+                  setPortfolioPositions(prev => prev.filter(p => p.symbol !== symbol))
                 }
-              })
+              }
             }
             
-            // Log all picks before filtering for debugging
-            console.log(`[Portfolio] Received ${picks.length} picks before filtering:`)
-            picks.forEach(p => {
-              const confidenceOk = p.confidence >= 70
-              const spoofOk = p.spoof_detection?.wall_velocity === 'normal' || p.spoof_detection?.wall_velocity === 'high'
-              console.log(`[Portfolio]   ${p.symbol}: confidence=${p.confidence}% (${confidenceOk ? '✓' : '✗'}), spoof=${p.spoof_detection?.wall_velocity || 'unknown'} (${spoofOk ? '✓' : '✗'})`)
+            // Combine and filter picks (score >= 70 AND not excluded)
+            const allPicksBeforeExclusion = [
+              ...top_longs.map(p => ({ ...p, side: 'LONG' })),
+              ...top_shorts.map(p => ({ ...p, side: 'SHORT' }))
+            ].filter(p => p.score >= 70)
+            
+            const excludedList = settings.excludedPairs || []
+            const allPicks = allPicksBeforeExclusion.filter(p => !excludedList.includes(p.symbol))
+            
+            if (excludedList.length > 0) {
+              const excluded = allPicksBeforeExclusion.filter(p => excludedList.includes(p.symbol))
+              if (excluded.length > 0) {
+                console.log(`[Portfolio V2] 🚫 Excluded ${excluded.length} pair(s):`, excluded.map(p => p.symbol).join(', '))
+              }
+            }
+            
+            console.log(`[Portfolio V2] ${allPicks.length} picks with score >= 70 (after exclusions)`)
+            allPicks.forEach(p => {
+              console.log(`[Portfolio V2]   ${p.symbol} ${p.side}: score=${p.score}, state=${p.state}`)
             })
             
-            // Sort by confidence and take top 3 (or less)
-            // Relaxed filter: confidence >= 70% AND (spoof velocity is normal OR high)
-            const topPicks = picks
-              .filter(p => {
-                const confidenceOk = p.confidence >= 70
-                const spoofOk = p.spoof_detection?.wall_velocity === 'normal' || p.spoof_detection?.wall_velocity === 'high'
-                return confidenceOk && spoofOk
-              })
-              .sort((a, b) => b.confidence - a.confidence)
-              .slice(0, 3)
+            // LONG PRIORITY: Must include at least 1 LONG unless all longs have score < 50
+            const viableLongs = top_longs.filter(p => p.score >= 50)
+            const hasViableLongs = viableLongs.length > 0
             
-            // Log warnings for picks with high spoof detection
-            topPicks.forEach(p => {
-              if (p.spoof_detection?.wall_velocity === 'high') {
-                console.log(`[Portfolio] ⚠️ WARNING: ${p.symbol} has HIGH spoof detection (${p.spoof_detection.recent_spoofs} recent spoofs) - proceeding with caution`)
-              }
-            })
+            let selectedPicks = []
             
-            console.log(`[Portfolio] Top ${topPicks.length} picks after filtering:`, topPicks.map(p => `${p.symbol} (${p.confidence}%, spoof: ${p.spoof_detection?.wall_velocity || 'unknown'})`))
-            
-            if (topPicks.length === 0) {
-              console.log('[Portfolio] ⚠️ No picks available (all filtered out)')
-              console.log('[Portfolio] Filter criteria: confidence >= 70% AND (spoof_detection.wall_velocity === "normal" OR "high")')
+            if (hasViableLongs) {
+              // Ensure at least 1 LONG is included
+              const bestLong = allPicks
+                .filter(p => p.side === 'LONG')
+                .sort((a, b) => b.score - a.score)[0]
               
-              // Log why picks were filtered
-              const filteredPicks = picks.filter(p => p.confidence < 70 || (p.spoof_detection?.wall_velocity !== 'normal' && p.spoof_detection?.wall_velocity !== 'high'))
-              if (filteredPicks.length > 0) {
-                console.log(`[Portfolio] Filtered out ${filteredPicks.length} pick(s):`)
-                filteredPicks.forEach(p => {
-                  const reasons = []
-                  if (p.confidence < 70) reasons.push(`low confidence (${p.confidence}% < 70%)`)
-                  if (p.spoof_detection?.wall_velocity !== 'normal' && p.spoof_detection?.wall_velocity !== 'high') {
-                    reasons.push(`spoof velocity not allowed (${p.spoof_detection?.wall_velocity || 'unknown'})`)
-                  }
-                  console.log(`[Portfolio]   ${p.symbol}: ${reasons.join(', ')}`)
-                })
+              if (bestLong) {
+                selectedPicks.push(bestLong)
+                console.log(`[Portfolio V2] ✅ Guaranteed LONG: ${bestLong.symbol} (${bestLong.score})`)
               }
               
+              // Fill remaining 2 slots with highest confidence
+              const remaining = allPicks
+                .filter(p => p.symbol !== bestLong?.symbol)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 2)
+              
+              selectedPicks = [...selectedPicks, ...remaining]
+            } else {
+              // All longs < 50, just take top 3 by confidence
+              console.log(`[Portfolio V2] ⚠️ All longs have score < 50, using top confidence only`)
+              selectedPicks = allPicks
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 3)
+            }
+            
+            console.log(`[Portfolio V2] Selected ${selectedPicks.length} picks:`, selectedPicks.map(p => `${p.symbol} ${p.side} (${p.score})`))
+            
+            if (selectedPicks.length === 0) {
+              console.log('[Portfolio V2] ⚠️ No viable picks (all below score threshold)')
               return
             }
             
@@ -1994,150 +2067,185 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             const currentOrderCount = status.activeOrders ? status.activeOrders.length : 0
             const currentTotalActive = currentPositionCount + currentOrderCount
             
-            console.log(`[Portfolio] Current active: ${currentTotalActive}/3 (${currentPositionCount} positions + ${currentOrderCount} pending orders)`)
+            console.log(`[Portfolio V2] Current active: ${currentTotalActive}/3 (${currentPositionCount} positions + ${currentOrderCount} pending orders)`)
             
             // Calculate how many new positions we can open (max 3 total including pending orders)
             const roomForNewPositions = Math.max(0, 3 - currentTotalActive)
             
             if (roomForNewPositions === 0) {
-              console.log('[Portfolio] Already have 3 active (positions + orders) - no room for new entries')
-              console.log('[Portfolio] Active positions:', status.activePositions?.map(p => p.symbol))
-              console.log('[Portfolio] Pending orders:', status.activeOrders?.map(o => o.symbol))
+              console.log('[Portfolio V2] Already have 3 active (positions + orders) - no room for new entries')
+              console.log('[Portfolio V2] Active positions:', status.activePositions?.map(p => p.symbol))
+              console.log('[Portfolio V2] Pending orders:', status.activeOrders?.map(o => o.symbol))
               return
             }
             
             const capitalNum = parseFloat(settings.capital)
-            const newPicksToOpen = topPicks.slice(0, roomForNewPositions)
+            const newPicksToOpen = selectedPicks.slice(0, roomForNewPositions)
             const capitalPerPosition = capitalNum / 3
             
-            console.log(`[Portfolio] Capital: $${capitalNum} / 3 positions = $${capitalPerPosition.toFixed(2)} per position`)
-            console.log(`[Portfolio] Will open ${newPicksToOpen.length} new position(s) with $${capitalPerPosition.toFixed(2)} each`)
+            console.log(`[Portfolio V2] Capital: $${capitalNum} / 3 positions = $${capitalPerPosition.toFixed(2)} per position`)
+            console.log(`[Portfolio V2] Will open ${newPicksToOpen.length} new position(s) with $${capitalPerPosition.toFixed(2)} each`)
             
             const newPositions = []
-            const newSubscriptions = new Set(portfolioSubscriptions)
             
             for (const pick of newPicksToOpen) {
               try {
                 const existingPos = portfolioPositions.find(p => p.symbol === pick.symbol)
                 
                 if (existingPos) {
-                  console.log(`[Portfolio] ${pick.symbol} position already exists - will be managed by order book signals`)
+                  console.log(`[Portfolio V2] ${pick.symbol} position already exists - skipping`)
                   newPositions.push(existingPos)
                   continue
                 }
                 
                 const currentTotal = currentTotalActive + newPositions.length
                 if (currentTotal >= 3) {
-                  console.log(`[Portfolio] 🚫 Reached max 3 active - stopping at ${pick.symbol}`)
+                  console.log(`[Portfolio V2] 🚫 Reached max 3 active - stopping at ${pick.symbol}`)
                   break
                 }
                 
-                console.log(`[Portfolio] Opening ${pick.symbol} ${pick.side} @ ${pick.confidence}% confidence`)
-                console.log(`[Portfolio]   Entry: $${pick.entry_zone[0]}-${pick.entry_zone[1]}`)
-                console.log(`[Portfolio]   TP: $${pick.take_profit} | SL: $${pick.stop_loss}`)
-                console.log(`[Portfolio]   Target size: $${capitalPerPosition.toFixed(2)}`)
+                const [entryLow, entryHigh] = pick.entry_zone
+                const invalidationPrice = pick.invalidation_price
+                const stopLoss = pick.structure?.last_swing_low || pick.structure?.last_swing_high
                 
-                const entryPrice = pick.entry_zone[0]
-                let result = null
-                let leverage = Math.min(parseInt(settings.leverage), pick.max_leverage || 125)
+                console.log(`[Portfolio V2] Opening ${pick.symbol} ${pick.side} (score: ${pick.score})`)
+                console.log(`[Portfolio V2]   Entry Zone: $${entryLow} - $${entryHigh}`)
+                console.log(`[Portfolio V2]   Invalidation: $${invalidationPrice}`)
+                console.log(`[Portfolio V2]   Structure SL: $${stopLoss}`)
+                console.log(`[Portfolio V2]   User TP/SL: ${settings.tpSlMode === 'dollar' ? '$' : ''}${settings.takeProfit} / ${settings.tpSlMode === 'dollar' ? '$' : ''}${settings.stopLoss}`)
+                
+                // Set leverage
+                let leverage = Math.min(parseInt(settings.leverage), 125)
                 const minLeverage = 1
+                let orderResults = []
                 
-                while (leverage >= minLeverage && !result) {
+                while (leverage >= minLeverage && orderResults.length === 0) {
                   try {
-                    console.log(`[Portfolio] Trying ${pick.symbol} with ${leverage}x leverage...`)
-                    
+                    console.log(`[Portfolio V2] Setting ${leverage}x leverage for ${pick.symbol}...`)
                     await orderManager.dexService.setLeverage(pick.symbol, leverage)
                     
+                    // Calculate total quantity for this position
                     const marginToUse = capitalPerPosition
                     const notionalValue = marginToUse * leverage
-                    const quantity = notionalValue / entryPrice
                     
+                    // Safety check
                     const maxAllowedMargin = capitalNum / 3
                     if (marginToUse > maxAllowedMargin * 1.01) {
-                      throw new Error(`🚨 SAFETY CHECK FAILED: Trying to use $${marginToUse.toFixed(2)} margin but max allowed is $${maxAllowedMargin.toFixed(2)} (capital: $${capitalNum})`)
+                      throw new Error(`🚨 SAFETY CHECK FAILED: Margin $${marginToUse.toFixed(2)} > Max $${maxAllowedMargin.toFixed(2)}`)
                     }
                     
-                    console.log(`[Portfolio] 🔒 Safety check: Margin $${marginToUse.toFixed(2)} <= Max $${maxAllowedMargin.toFixed(2)} ✓`)
-                    console.log(`[Portfolio] Margin: $${marginToUse.toFixed(2)} @ ${leverage}x = Notional: $${notionalValue.toFixed(2)}`)
-                    console.log(`[Portfolio] Placing order: ${quantity} @ $${entryPrice}`)
+                    console.log(`[Portfolio V2] 🔒 Safety check: Margin $${marginToUse.toFixed(2)} <= Max $${maxAllowedMargin.toFixed(2)} ✓`)
+                    console.log(`[Portfolio V2] Margin: $${marginToUse.toFixed(2)} @ ${leverage}x = Notional: $${notionalValue.toFixed(2)}`)
                     
-                    // Place LIMIT order
-                    result = await orderManager.dexService.placeOrder({
+                    // SPLIT ORDER ENTRY
+                    // For LONG: 20% at entryHigh (fills first), 80% at entryLow (better price)
+                    // For SHORT: 20% at entryLow (fills first), 80% at entryHigh (better price)
+                    
+                    const price1 = pick.side === 'LONG' ? entryHigh : entryLow
+                    const price2 = pick.side === 'LONG' ? entryLow : entryHigh
+                    
+                    const qty1 = (notionalValue * 0.2) / price1
+                    const qty2 = (notionalValue * 0.8) / price2
+                    
+                    console.log(`[Portfolio V2] Split orders:`)
+                    console.log(`[Portfolio V2]   Order 1: 20% (${qty1.toFixed(4)}) @ $${price1} (fills first)`)
+                    console.log(`[Portfolio V2]   Order 2: 80% (${qty2.toFixed(4)}) @ $${price2} (better price)`)
+                    
+                    // Place Order 1 (20% - immediate entry)
+                    const result1 = await orderManager.dexService.placeOrder({
                       symbol: pick.symbol,
                       side: pick.side === 'LONG' ? 'BUY' : 'SELL',
                       type: 'LIMIT',
-                      price: entryPrice,
-                      quantity: quantity,
+                      price: price1,
+                      quantity: qty1,
                       timeInForce: 'GTC',
-                      newClientOrderId: `hopium_portfolio_${Date.now()}`
+                      newClientOrderId: `hopium_v2_20_${Date.now()}`
                     })
                     
-                    console.log(`[Portfolio] ✅ Order placed successfully with ${leverage}x leverage`)
+                    console.log(`[Portfolio V2] ✅ Order 1 placed: ${result1.orderId}`)
+                    orderResults.push(result1)
+                    
+                    // Place Order 2 (80% - better price)
+                    const result2 = await orderManager.dexService.placeOrder({
+                      symbol: pick.symbol,
+                      side: pick.side === 'LONG' ? 'BUY' : 'SELL',
+                      type: 'LIMIT',
+                      price: price2,
+                      quantity: qty2,
+                      timeInForce: 'GTC',
+                      newClientOrderId: `hopium_v2_80_${Date.now()}`
+                    })
+                    
+                    console.log(`[Portfolio V2] ✅ Order 2 placed: ${result2.orderId}`)
+                    orderResults.push(result2)
+                    
+                    console.log(`[Portfolio V2] ✅ Both orders placed successfully with ${leverage}x leverage`)
                     break
                     
                   } catch (error) {
-                    console.log(`[Portfolio] Failed with ${leverage}x leverage: ${error.message}`)
+                    console.log(`[Portfolio V2] Failed with ${leverage}x leverage: ${error.message}`)
                     
                     if (error.message.includes('leverage') || 
                         error.message.includes('notional') || 
                         error.message.includes('Margin') ||
                         error.message.includes('balance')) {
                       leverage = Math.max(1, Math.floor(leverage / 2))
-                      console.log(`[Portfolio] Retrying with ${leverage}x leverage...`)
+                      console.log(`[Portfolio V2] Retrying with ${leverage}x leverage...`)
                     } else {
                       throw error
                     }
                   }
                 }
                 
-                if (!result) {
-                  throw new Error(`Could not place order for ${pick.symbol} even at ${minLeverage}x leverage`)
+                if (orderResults.length === 0) {
+                  throw new Error(`Could not place orders for ${pick.symbol} even at ${minLeverage}x leverage`)
                 }
                 
-                orderManager.activeOrders.set(result.orderId, {
-                  orderId: result.orderId,
-                  symbol: pick.symbol,
-                  side: pick.side,
-                  entryPrice: entryPrice,
-                  quantity: result.executedQty || result.origQty,
-                  status: result.status,
-                  takeProfit: parseFloat(settings.takeProfit),
-                  stopLoss: parseFloat(settings.stopLoss),
-                  createdAt: Date.now(),
-                  entryConfidence: 'high'
-                })
-                
-                console.log(`[Portfolio] Tracking order ${result.orderId} for ${pick.symbol} in orderManager`)
+                // Track both orders in orderManager
+                for (const result of orderResults) {
+                  orderManager.activeOrders.set(result.orderId, {
+                    orderId: result.orderId,
+                    symbol: pick.symbol,
+                    side: pick.side,
+                    entryPrice: parseFloat(result.price),
+                    quantity: parseFloat(result.executedQty || result.origQty),
+                    status: result.status,
+                    takeProfit: parseFloat(settings.takeProfit),
+                    stopLoss: parseFloat(settings.stopLoss),
+                    createdAt: Date.now(),
+                    entryConfidence: 'high'
+                  })
+                  console.log(`[Portfolio V2] Tracking order ${result.orderId} in orderManager`)
+                }
                 
                 const newPos = {
                   symbol: pick.symbol,
                   side: pick.side,
-                  confidence: pick.confidence,
-                  entryPrice: entryPrice,
+                  score: pick.score,
+                  state: pick.state,
                   entryZone: pick.entry_zone,
-                  takeProfit: pick.take_profit,
-                  stopLoss: pick.stop_loss,
+                  invalidationPrice: invalidationPrice,  // SAVE FOR LOCAL CHECKS
+                  structureStopLoss: stopLoss,
+                  userTakeProfit: parseFloat(settings.takeProfit),
+                  userStopLoss: parseFloat(settings.stopLoss),
+                  tpSlMode: settings.tpSlMode,
                   size: capitalPerPosition,
                   leverage: leverage,
-                  orderId: result.orderId,
+                  orderIds: orderResults.map(r => r.orderId),
                   openedAt: Date.now()
                 }
                 
                 newPositions.push(newPos)
                 
-                // Subscribe to order book strategy for this symbol
-                wsClient.subscribe(pick.symbol, 'orderbook_trading')
-                newSubscriptions.add(pick.symbol)
-                
-                console.log(`[Portfolio] ✅ Opened ${pick.symbol} position and subscribed to order book updates`)
+                console.log(`[Portfolio V2] ✅ Opened ${pick.symbol} position with split orders`)
               } catch (error) {
-                console.error(`[Portfolio] Failed to open ${pick.symbol}:`, error.message)
+                console.error(`[Portfolio V2] Failed to open ${pick.symbol}:`, error.message)
                 handleError(`Failed to open ${pick.symbol}: ${error.message}`)
               }
             }
             
             setPortfolioPositions(prev => {
-              // Merge with existing positions (keep ones not in new picks)
+              // Merge with existing positions
               const merged = [...prev]
               for (const newPos of newPositions) {
                 if (!merged.find(p => p.symbol === newPos.symbol)) {
@@ -2146,7 +2254,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               }
               return merged
             })
-            setPortfolioSubscriptions(newSubscriptions)
+            
             setTradingSymbols(prev => {
               const symbols = [...new Set([...prev, ...newPositions.map(p => p.symbol)])]
               return symbols
@@ -2154,6 +2262,49 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             
           } catch (error) {
             handleError(`Failed to handle portfolio picks: ${error.message}`)
+          }
+        }
+        
+        // Handle invalidation status responses
+        wsClient.onTrendInvalidationStatus = async (message) => {
+          try {
+            if (!settings.autoMode) return
+            
+            console.log('[Invalidation Status]:', message)
+            
+            const { symbol, payload } = message
+            const { is_invalidated, trend_state, current_state, score } = payload
+            
+            if (is_invalidated) {
+              console.log(`[Invalidation] 🚨 ${symbol} trend invalidated (${trend_state} broke)`)
+              
+              const existingPos = portfolioPositions.find(p => p.symbol === symbol)
+              if (existingPos) {
+                // Get PNL for this symbol
+                let symbolNetPnl = 0
+                try {
+                  const symbolPosition = await orderManager.dexService.getPosition(symbol)
+                  const unrealizedProfit = parseFloat(symbolPosition.unRealizedProfit || '0')
+                  const entryPrice = parseFloat(symbolPosition.entryPrice || '0')
+                  const positionAmt = Math.abs(parseFloat(symbolPosition.positionAmt || '0'))
+                  const markPrice = parseFloat(symbolPosition.markPrice || '0')
+                  
+                  const entryNotional = positionAmt * entryPrice
+                  const exitNotional = positionAmt * markPrice
+                  const totalFees = (entryNotional * ENTRY_FEE) + (exitNotional * EXIT_FEE)
+                  symbolNetPnl = unrealizedProfit - totalFees
+                } catch (error) {
+                  console.error(`[Invalidation] Failed to get PNL for ${symbol}:`, error)
+                }
+                
+                await closePosition(orderManager, symbol, symbolNetPnl)
+                setPortfolioPositions(prev => prev.filter(p => p.symbol !== symbol))
+              }
+            } else {
+              console.log(`[Invalidation] ✅ ${symbol} still valid (${trend_state}, state: ${current_state}, score: ${score})`)
+            }
+          } catch (error) {
+            handleError(`Failed to handle invalidation status: ${error.message}`)
           }
         }
         
@@ -2191,17 +2342,13 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             const openPositions = allPositions.filter(p => Math.abs(parseFloat(p.positionAmt || '0')) > 0)
             
             if (openPositions.length > 0) {
-              console.log(`[PerpFarming] Found ${openPositions.length} open position(s) - re-subscribing to order book signals`)
+              console.log(`[PerpFarming] Found ${openPositions.length} open position(s) - resuming tracking`)
               
               const resumedPositions = []
-              const resumedSubscriptions = new Set()
               
               for (const pos of openPositions) {
                 const symbol = pos.symbol
                 const side = parseFloat(pos.positionAmt) > 0 ? 'LONG' : 'SHORT'
-                
-                wsClient.subscribe(symbol, 'orderbook_trading')
-                resumedSubscriptions.add(symbol)
                 
                 const posData = {
                   symbol: symbol,
@@ -2221,22 +2368,22 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   symbol: symbol,
                   side: side,
                   entryPrice: parseFloat(pos.entryPrice),
+                  invalidationPrice: null, // Will be set by next portfolio broadcast
                   openedAt: Date.now()
                 })
                 
-                console.log(`[PerpFarming] ✅ Resumed ${symbol} ${side} position and subscribed to order book`)
+                console.log(`[PerpFarming] ✅ Resumed ${symbol} ${side} position`)
               }
               
               setPortfolioPositions(resumedPositions)
-              setPortfolioSubscriptions(resumedSubscriptions)
               setTradingSymbols(openPositions.map(p => p.symbol))
               
               setBotMessages({})
               lastMessageUpdateRef.current = {}
-              setBotMessage('Auto Mode resumed - monitoring active positions')
-              if (onBotMessageChange) onBotMessageChange('Auto Mode resumed - monitoring active positions')
+              setBotMessage('Auto Mode V2 resumed - waiting for next scanner update (invalidation prices will sync)')
+              if (onBotMessageChange) onBotMessageChange('Auto Mode V2 resumed - waiting for next scanner update')
               
-              console.log('[PerpFarming] Successfully resumed Auto Mode with existing positions')
+              console.log('[PerpFarming] Successfully resumed Auto Mode V2 with existing positions')
             } else {
               console.log('[PerpFarming] No existing positions to resume')
             }
@@ -2336,9 +2483,33 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     return () => clearInterval(cleanupInterval)
   }, [isRunning, onBotMessagesChange, onBotMessageChange])
 
+  // Poll for invalidation checks every 30 seconds (Auto Mode V2)
+  useEffect(() => {
+    if (!isRunning || !autoMode || !wsClientRef.current || portfolioPositions.length === 0) return
+    
+    console.log('[Invalidation Poll] Starting 30s poll for', portfolioPositions.length, 'positions')
+    
+    const invalidationPoll = setInterval(() => {
+      portfolioPositions.forEach(pos => {
+        console.log(`[Invalidation Poll] Checking ${pos.symbol}...`)
+        wsClientRef.current.send(JSON.stringify({
+          type: 'check_trend_invalidation',
+          symbol: pos.symbol,
+          id: Date.now()
+        }))
+      })
+    }, 30000) // Poll every 30 seconds
+    
+    return () => {
+      console.log('[Invalidation Poll] Stopping poll')
+      clearInterval(invalidationPoll)
+    }
+  }, [isRunning, autoMode, portfolioPositions])
+
   const handleCloseModal = () => {
     setShowModal(false)
     setShowPairSelection(false) // Reset to settings view
+    setShowExclusionList(false) // Reset exclusion list view
     setValidationError('') // Clear error when closing modal
   }
 
@@ -2585,12 +2756,23 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               <img src={asterLogo} alt="Aster Logo" className="logo-image" />
             </div>
           </div>
-          <button 
-            className={`setup-button ${isRunning ? 'stop-button' : ''}`}
-            onClick={() => isRunning ? handleStop() : setShowModal(true)}
-          >
-            {isRunning ? 'Stop' : 'Setup'}
-          </button>
+          <div className="bot-controls">
+            {isRunning && (
+              <button 
+                className="settings-icon-button"
+                onClick={() => setShowModal(true)}
+                title="Edit Settings"
+              >
+                ⚙️
+              </button>
+            )}
+            <button 
+              className={`setup-button ${isRunning ? 'stop-button' : ''}`}
+              onClick={() => isRunning ? handleStop() : setShowModal(true)}
+            >
+              {isRunning ? 'Stop' : 'Setup'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2600,13 +2782,18 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
           <div className="risk-modal" onClick={(e) => e.stopPropagation()}>
             <button className="risk-modal-close" onClick={handleCloseModal}>×</button>
             <div className="risk-modal-wrapper">
-              <h2 className="risk-modal-title">{showPairSelection ? 'Select Pairs' : 'Risk Settings'}</h2>
+              <h2 className="risk-modal-title">
+                {showPairSelection ? 'Select Pairs' : showExclusionList ? 'Exclude Pairs' : 'Risk Settings'}
+              </h2>
               
-              {/* Back button when in pair selection view */}
-              {showPairSelection && (
+              {/* Back button when in pair selection or exclusion list view */}
+              {(showPairSelection || showExclusionList) && (
                 <button 
                   className="pair-back-button"
-                  onClick={() => setShowPairSelection(false)}
+                  onClick={() => {
+                    setShowPairSelection(false)
+                    setShowExclusionList(false)
+                  }}
                 >
                   ← Back to Settings
                 </button>
@@ -2614,8 +2801,49 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               
               <div className="risk-modal-content">
               
-              {/* Pair Selection View */}
-              {showPairSelection ? (
+              {/* Exclusion List View */}
+              {showExclusionList ? (
+                <div className="pair-selection-content">
+                  <div className="pair-selection-info">
+                    <p>Select pairs to <strong>EXCLUDE</strong> from Auto Mode</p>
+                    <p>⚠️ Bot will never open or close these pairs (manual trading protection)</p>
+                    <p className="pair-selection-count">
+                      {excludedPairs.length} excluded
+                    </p>
+                  </div>
+                  
+                  {loadingSymbols ? (
+                    <div className="loading-symbols">Loading available pairs...</div>
+                  ) : (
+                    <div className="pairs-list">
+                      {availableSymbols.map((symbol) => {
+                        const isExcluded = excludedPairs.includes(symbol)
+                        
+                        return (
+                          <label 
+                            key={symbol} 
+                            className={`pair-checkbox-item ${isExcluded ? 'selected' : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isExcluded}
+                              onChange={() => {
+                                setExcludedPairs(prev => 
+                                  isExcluded 
+                                    ? prev.filter(s => s !== symbol)
+                                    : [...prev, symbol]
+                                )
+                              }}
+                            />
+                            <span className="pair-symbol">{symbol}</span>
+                            {isExcluded && <span className="check-mark">🚫</span>}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : showPairSelection ? (
                 <div className="pair-selection-content">
                   <div className="pair-selection-info">
                     <p>Select up to 5 trading pairs to track simultaneously</p>
@@ -2670,8 +2898,33 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   </span>
                 </label>
                 <div className="breakeven-description">
-                  Automatically monitors ALL 30+ pairs and selects top 3 opportunities using order book analysis. Opens positions with LIMIT orders, subscribes to real-time order flow for each, and holds until signals reverse. Exits are managed by order book signals + Smart Mode. Your capital is split evenly across 3 positions. Manual strategy settings are ignored.
+                  🎯 <strong>V2 Swing Structure Scanner:</strong> Monitors 154 pairs every 5 minutes using 4H swing analysis. Automatically selects top 3 opportunities (always includes ≥1 LONG unless all longs score &lt;50). Enters with split orders (20% immediate + 80% at better price) and exits on structure break (invalidation_price). Capital splits evenly across 3 positions. Manual strategy ignored.
                 </div>
+                
+                {/* Exclusion List Button - Only show when Auto Mode enabled */}
+                {autoMode && (
+                  <div className="exclusion-list-section" style={{ marginTop: '12px' }}>
+                    <button 
+                      className="pair-selection-button"
+                      onClick={() => setShowExclusionList(true)}
+                      type="button"
+                    >
+                      <span className="pair-count">
+                        {excludedPairs.length === 0 ? 'No pairs excluded' : `${excludedPairs.length} pair${excludedPairs.length !== 1 ? 's' : ''} excluded`}
+                      </span>
+                      <span className="pair-arrow">→</span>
+                    </button>
+                    {excludedPairs.length > 0 && (
+                      <div className="selected-pairs-preview">
+                        🚫 {excludedPairs.slice(0, 3).join(', ')}
+                        {excludedPairs.length > 3 && ` +${excludedPairs.length - 3} more`}
+                      </div>
+                    )}
+                    <div className="breakeven-description" style={{ marginTop: '8px' }}>
+                      Exclude pairs you're trading manually. Bot will never touch these pairs.
+                    </div>
+                  </div>
+                )}
               </div>
               
               {/* Pair Selection Button - Only show when not in pair selection view AND Auto Mode is OFF */}

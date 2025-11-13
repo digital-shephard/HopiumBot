@@ -700,27 +700,40 @@ HopiumCore supports multiple trading strategies. When subscribing to a symbol, y
 - **CSV Logging**: All metrics logged to `data/orderbook_logs/` for ML training
 - **Best For**: High-frequency scalping, detecting breakouts BEFORE candles move, order flow trading
 
-**6. Portfolio Scanner (Automatic Multi-Pair Selection)** ⚡ **NEW** 🔥🎯
+**6. Portfolio Scanner V2 (Swing Structure Trading)** ⚡ **V2 REWRITE** 🔥🎯
 - **ID**: N/A (automatic broadcast, no subscription needed)
-- **Description**: Continuously scans all 30+ pairs and identifies top 3 trading opportunities using order book analysis
-- **Signal Frequency**: Every 30 seconds (only when portfolio changes)
-- **Architecture**: 3-stage pipeline:
-  1. Lightweight screener (10s) → top 10 candidates
-  2. Deep order book analysis (10s) → full signals
-  3. Portfolio selector (30s) → top 3 picks
-- **Signal Persistence**: 30 seconds minimum (filters noise)
+- **Description**: Scans all 154 pairs every 5 minutes to identify strongest uptrends/downtrends on 4H timeframe using swing structure analysis
+- **Signal Frequency**: Every 5 minutes (full market scan)
+- **Timeframe**: 4H candles for swing detection, 15M candles for entry confirmation
+- **Architecture**: Single-pass structure detection:
+  1. Construct 4H candles from 1-min snapshots
+  2. Detect swing highs/lows (N=2 non-repainting pivots)
+  3. Classify trend: UPTREND (HH/HL), DOWNTREND (LL/LH), or NEUTRAL
+  4. Score trend strength (0-100) and rank all tokens
+  5. Output top 5 longs + top 5 shorts
+- **100-Point Scoring System**:
+  - Structure count (swing progression): 40 pts
+  - Price vs EMA50: 20 pts
+  - EMA50 slope: 15 pts
+  - ADX(14): 15 pts
+  - ATR & spread quality gate: 10 pts
+- **Signal States**:
+  - `IDENTIFIED`: Strong trend detected (score ≥70)
+  - `IN_PULLBACK`: Price within 1% of EMA50
+  - `ENTRY_CONFIRMED`: 15m confirmation candle fired (ENTER NOW)
+  - `INVALIDATED`: Break of structure (CLOSE POSITION)
 - **Key Features**:
-  - **No Manual Symbol Selection**: System chooses best 3 pairs automatically
-  - **Order Book Quality**: Full CVD, OBI, VWAP analysis
-  - **Multi-Factor Ranking**: Confidence, liquidity tier, bias strength, persistence
-  - **Tier-Based Sizing**: Automatic position sizing by liquidity tier
-  - **Exit Management**: Clear rules for when to close (signal flip, confidence drop, stop loss)
-- **Composite Scoring**: `(0.4 × Confidence) + (0.3 × BiasStrength) + (0.2 × OBIStrength) + (0.1 × Persistence) × TierMultiplier`
+  - **No symbol preferences**: Pure trend strength ranking across all 154 tokens
+  - **Structure-based stops**: SL at swing lows/highs (not arbitrary %)
+  - **Invalidation detection**: Automatically detects break of structure (new LL/HH)
+  - **On-demand checks**: Query specific symbols for invalidation status
+  - **Context-aware scoring**: EMA/ADX weights adjust based on data availability
+  - **Entry confirmation**: 15M candle confirmation required before entering
 - **Position Management**:
-  - Enter: All 3 picks simultaneously (confidence ≥ 75)
-  - Hold: While in top 3, confidence ≥ 70, same direction
-  - Exit: Signal flip, confidence < 70, stop loss
-- **Best For**: Multi-pair portfolio trading, automatic opportunity detection, active traders who want system to pick symbols
+  - Enter: Only on `ENTRY_CONFIRMED` state (score ≥80 recommended)
+  - Hold: Monitor invalidation status every 30-60 seconds
+  - Exit: Immediately on `INVALIDATED` or stop loss hit
+- **Best For**: Swing trading, trending markets, multi-day position holds, structural trend following
 
 #### Strategy Selection
 
@@ -889,6 +902,64 @@ Send a ping to check connection health. Server responds with pong.
   "type": "pong",
   "id": 4
 }
+```
+
+---
+
+#### Check Trend Invalidation
+
+Check if a specific symbol's trend has been invalidated (break of structure). Used for monitoring open positions.
+
+**Message**:
+```json
+{
+  "type": "check_trend_invalidation",
+  "symbol": "ETHUSDT",
+  "id": 5
+}
+```
+
+**Parameters**:
+- `symbol` (required): Trading pair to check (e.g., "ETHUSDT")
+- `id` (optional): Request ID for tracking responses
+
+**Response**:
+```json
+{
+  "type": "trend_invalidation_status",
+  "symbol": "ETHUSDT",
+  "id": 5,
+  "payload": {
+    "is_invalidated": false,
+    "trend_state": "UPTREND",
+    "current_state": "IN_PULLBACK",
+    "score": 87,
+    "last_updated": "2025-11-12T14:30:00Z"
+  }
+}
+```
+
+**Use Cases**:
+- **Position Monitoring**: Check if your open position's trend broke while holding
+- **Pre-Entry Validation**: Verify trend is still valid before entering
+- **Risk Management**: Set up automated checks every 30-60 seconds
+
+**TypeScript Example**:
+```typescript
+function checkTrendInvalidation(ws: WebSocket, symbol: string, id: number) {
+  ws.send(JSON.stringify({
+    type: 'check_trend_invalidation',
+    symbol: symbol,
+    id: id
+  }));
+}
+
+// Monitor position every 30 seconds
+setInterval(() => {
+  if (hasOpenPosition('ETHUSDT')) {
+    checkTrendInvalidation(ws, 'ETHUSDT', Date.now());
+  }
+}, 30000);
 ```
 
 ---
@@ -1730,198 +1801,387 @@ if (msg.type === 'orderbook_signal') {
 
 ---
 
-#### Portfolio Scanner Update ⚡ **NEW** 🔥🎯 (Automatic Multi-Pair Selection)
+#### Portfolio Scanner V2 Update 🔥🎯 **SWING STRUCTURE TRADING** (4H Timeframe)
 
-Broadcast automatically **every 30 seconds** (when portfolio changes) to **ALL authenticated clients**. No subscription needed!
+Broadcast automatically **every 5 minutes** to **ALL authenticated clients** after market scan completes. No subscription needed!
+
+**Strategy**: Swing structure-based trend detection on 4H timeframe. Identifies tokens in clear uptrends (HH/HL) or downtrends (LL/LH) and ranks them by trend strength score (0-100).
 
 **Message Structure:**
 ```typescript
-interface PortfolioPicksMessage {
+interface PortfolioScannerV2Message {
   type: "portfolio_picks";
   timestamp: string;              // ISO 8601
-  update_interval: 30;            // seconds
-  picks: Array<{
-    // Identity
-    symbol: string;
-    side: "LONG" | "SHORT";
-    confidence: number;           // 0-100
-    
-    // Entry/exit
-    entry_zone: [number, number]; // [low, high] price range
-    take_profit: number;
-    stop_loss: number;
-    
-    // Order book metrics
-    bias_score: number;           // -1 to +1
-    cvd: number;
-    cvd_slope: string;            // e.g., "+2.8σ"
-    cvd_slope_raw: number;
-    obi: number;                  // -1 to +1
-    vwap_dev: number;             // %
-    ask_pull_pct: number;
-    bid_step_pct: number;
-    
-    // Screener metrics
-    momentum_score: number;       // 0-25
-    volume_score: number;         // 0-20
-    spread_quality: string;       // Excellent, Good, Fair, Poor
-    
-    // Market context
-    liquidity_tier: string;       // Tier1, Tier2, Tier3
-    max_position_size: number;    // USD
-    max_leverage: number;
-    
-    // Spoof detection
-    spoof_detection: {
-      recent_spoofs: number;
-      wall_velocity: "normal" | "high";
-      confidence_penalty: number;
-    };
-    
-    // Reasoning
-    reasoning: string[];
-    warnings: string[];
-  }>;
-  dropped: string[];              // Symbols that left top 3
-  monitoring: number;             // Total symbols tracked
+  update_interval: 300;           // seconds (5 minutes)
+  scan_time: number;              // Time taken to scan all symbols (ms)
+  
+  // Top ranked signals (separated by direction)
+  top_longs: SwingTrendSignal[];  // Top 5 long candidates
+  top_shorts: SwingTrendSignal[]; // Top 5 short candidates
+  
+  invalidated: string[];          // Symbols that broke structure since last scan
+  monitoring: number;             // Total symbols tracked (154)
+}
+
+interface SwingTrendSignal {
+  // Identity
+  symbol: string;
+  side: "LONG" | "SHORT";
+  state: "IDENTIFIED" | "IN_PULLBACK" | "ENTRY_CONFIRMED" | "INVALIDATED";
+  score: number;                  // 0-100 trend strength score
+  confidence: number;             // Same as score (for compatibility)
+  timestamp: string;              // ISO 8601
+  trend_state: "UPTREND" | "DOWNTREND";
+  
+  // Swing Structure (4H timeframe)
+  structure: {
+    higher_highs: number;         // Count of HH
+    higher_lows: number;          // Count of HL
+    lower_highs: number;          // Count of LH
+    lower_lows: number;           // Count of LL
+    last_swing_high: number;      // Most recent swing high price
+    last_swing_low: number;       // Most recent swing low price
+    swing_count: number;          // Total HH+HL or LL+LH
+  };
+  
+  // Entry Conditions
+  entry_conditions: {
+    in_pullback: boolean;         // Price within 1% of EMA50?
+    current_price: number;
+    ema50: number;                // 50-period EMA on 4H
+    distance_to_ema_pct: number;  // % distance to EMA50
+    confirmed_entry: boolean;     // 15m confirmation candle fired?
+  };
+  
+  // Risk Management (Structure-Based)
+  stop_loss: number;              // Below last swing low (longs) / above last swing high (shorts)
+  invalidation_price: number;     // Break of structure level (new LL/HH)
+  take_profit: number;            // Optional swing target (4% from entry)
+  
+  // Technical Metrics
+  metrics: {
+    ema50_slope: number;          // EMA slope (rate of change)
+    adx: number;                  // ADX(14) trend strength
+    atr: number;                  // ATR(14) volatility
+    spread_pct: number;           // Current bid-ask spread %
+    data_quality: number;         // 0.4-1.0 (based on bar count)
+  };
+  
+  // Score Breakdown (100-point system)
+  score_breakdown: {
+    structure_score: number;      // 0-40 pts
+    price_vs_ema_score: number;   // 0-20 pts
+    ema_slope_score: number;      // 0-15 pts
+    adx_score: number;            // 0-15 pts
+    quality_gate: number;         // 0 or 10 pts (ATR + spread)
+  };
+  
+  // Reasoning
+  reasoning: string[];
+  warnings: string[];
+  
+  // Legacy fields (for compatibility)
+  spread_quality: string;         // Excellent, Good, Fair, Poor
+  liquidity_tier: string;         // Tier1, Tier2, Tier3
 }
 ```
 
-**Example (High Confidence Portfolio):**
+**Example Broadcast (Strong Trends Detected):**
 ```json
 {
   "type": "portfolio_picks",
-  "timestamp": "2025-11-08T14:30:00Z",
-  "update_interval": 30,
-  "picks": [
-    {
-      "symbol": "BTCUSDT",
-      "side": "LONG",
-      "confidence": 87,
-      "entry_zone": [68450.00, 68550.00],
-      "take_profit": 68687.00,
-      "stop_loss": 68347.25,
-      "bias_score": 0.34,
-      "cvd": 1250.5,
-      "cvd_slope": "+2.8σ",
-      "cvd_slope_raw": 2.8,
-      "obi": 0.14,
-      "vwap_dev": -0.10,
-      "ask_pull_pct": 35.0,
-      "bid_step_pct": 22.0,
-      "momentum_score": 20.0,
-      "volume_score": 15.0,
-      "spread_quality": "Excellent",
-      "liquidity_tier": "Tier1",
-      "max_position_size": 50000,
-      "max_leverage": 20,
-      "spoof_detection": {
-        "recent_spoofs": 0,
-        "wall_velocity": "normal",
-        "confidence_penalty": 0.0
-      },
-      "reasoning": [
-        "✅ Bullish bias (+0.34)",
-        "✅ Bid-heavy orderbook (OBI: +0.14)",
-        "✅ CVD rising +2.8σ above mean",
-        "✅ Order book shift: Asks pulled 35%, Bids stepped 22%",
-        "🟢 HIGH CONFIDENCE LONG"
-      ],
-      "warnings": []
-    },
+  "timestamp": "2025-11-12T14:30:00Z",
+  "update_interval": 300,
+  "scan_time": 6514,
+  "top_longs": [
     {
       "symbol": "ETHUSDT",
-      "side": "SHORT",
-      "confidence": 82,
-      "entry_zone": [3245.00, 3246.00],
-      "take_profit": 3238.51,
-      "stop_loss": 3250.86,
-      "liquidity_tier": "Tier1",
+      "side": "LONG",
+      "state": "ENTRY_CONFIRMED",
+      "score": 87,
+      "confidence": 87,
+      "timestamp": "2025-11-12T14:30:00Z",
+      "trend_state": "UPTREND",
+      
+      "structure": {
+        "higher_highs": 4,
+        "higher_lows": 3,
+        "lower_highs": 0,
+        "lower_lows": 0,
+        "last_swing_high": 3280.50,
+        "last_swing_low": 3120.30,
+        "swing_count": 7
+      },
+      
+      "entry_conditions": {
+        "in_pullback": true,
+        "current_price": 3245.00,
+        "ema50": 3240.00,
+        "distance_to_ema_pct": 0.15,
+        "confirmed_entry": true
+      },
+      
+      "stop_loss": 3110.00,
+      "invalidation_price": 3115.00,
+      "take_profit": 3375.00,
+      
+      "metrics": {
+        "ema50_slope": 0.0035,
+        "adx": 28.5,
+        "atr": 45.20,
+        "spread_pct": 0.03,
+        "data_quality": 1.0
+      },
+      
+      "score_breakdown": {
+        "structure_score": 40.0,
+        "price_vs_ema_score": 18.5,
+        "ema_slope_score": 13.2,
+        "adx_score": 12.0,
+        "quality_gate": 10.0
+      },
+      
       "reasoning": [
-        "✅ Bearish bias (-0.28)",
-        "✅ Ask-heavy orderbook (OBI: -0.11)",
-        "🔴 HIGH CONFIDENCE SHORT"
-      ]
+        "✅ Strong UPTREND: 4 HH, 3 HL confirmed",
+        "✅ Price 0.15% above EMA50 (healthy)",
+        "✅ ADX 28.5 (strong trend)",
+        "🎯 15m confirmation candle triggered - ENTRY READY"
+      ],
+      "warnings": [],
+      
+      "spread_quality": "Excellent",
+      "liquidity_tier": "Tier1"
     },
     {
       "symbol": "SOLUSDT",
       "side": "LONG",
-      "confidence": 75,
-      "liquidity_tier": "Tier1"
+      "state": "IN_PULLBACK",
+      "score": 82,
+      "confidence": 82,
+      "trend_state": "UPTREND",
+      "structure": {
+        "higher_highs": 3,
+        "higher_lows": 3,
+        "swing_count": 6
+      },
+      "entry_conditions": {
+        "in_pullback": true,
+        "current_price": 153.50,
+        "ema50": 152.80,
+        "distance_to_ema_pct": 0.46,
+        "confirmed_entry": false
+      },
+      "stop_loss": 148.20,
+      "invalidation_price": 148.00,
+      "reasoning": [
+        "✅ Strong UPTREND: 3 HH, 3 HL confirmed",
+        "⏳ Pullback active - waiting for 15m confirmation"
+      ]
     }
   ],
-  "dropped": [],
-  "monitoring": 32
+  
+  "top_shorts": [
+    {
+      "symbol": "XRPUSDT",
+      "side": "SHORT",
+      "state": "IDENTIFIED",
+      "score": 85,
+      "confidence": 85,
+      "trend_state": "DOWNTREND",
+      
+      "structure": {
+        "higher_highs": 0,
+        "higher_lows": 0,
+        "lower_highs": 4,
+        "lower_lows": 3,
+        "last_swing_high": 0.58,
+        "last_swing_low": 0.52,
+        "swing_count": 7
+      },
+      
+      "entry_conditions": {
+        "in_pullback": false,
+        "current_price": 0.5420,
+        "ema50": 0.5550,
+        "distance_to_ema_pct": 2.34,
+        "confirmed_entry": false
+      },
+      
+      "stop_loss": 0.5810,
+      "invalidation_price": 0.5820,
+      "take_profit": 0.5200,
+      
+      "metrics": {
+        "ema50_slope": -0.0042,
+        "adx": 32.1,
+        "atr": 0.0085,
+        "spread_pct": 0.05,
+        "data_quality": 1.0
+      },
+      
+      "reasoning": [
+        "✅ Strong DOWNTREND: 4 LH, 3 LL confirmed",
+        "✅ Price 2.34% below EMA50 (healthy)",
+        "✅ ADX 32.1 (very strong trend)",
+        "📊 Identified strong trend (score: 85/100)"
+      ]
+    }
+  ],
+  
+  "invalidated": ["BTCUSDT"],
+  "monitoring": 154
 }
 ```
 
-**Frontend Action:**
-```javascript
+**Frontend Action (React/TypeScript):**
+```typescript
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
   
   if (msg.type === 'portfolio_picks') {
-    const { picks, dropped } = msg.data;
+    const { top_longs, top_shorts, invalidated } = msg;
     
-    console.log(`[Portfolio] ${picks.length} picks available`);
+    console.log(`[Portfolio V2] Scan complete: ${top_longs.length} longs, ${top_shorts.length} shorts`);
     
-    // Log dropped symbols (close positions if you're holding)
-    if (dropped.length > 0) {
-      console.log(`⚠️ Dropped: ${dropped.join(', ')}`);
-      dropped.forEach(symbol => {
-        // Check if we have open position on this symbol
+    // Handle invalidated symbols (CLOSE POSITIONS IMMEDIATELY)
+    if (invalidated.length > 0) {
+      console.warn(`⚠️ INVALIDATED (break of structure): ${invalidated.join(', ')}`);
+      invalidated.forEach(symbol => {
         if (hasOpenPosition(symbol)) {
-          // Get current confidence for this symbol from elsewhere
-          // If confidence < 70, close position
-          console.log(`Considering closing ${symbol} position`);
+          console.log(`🚨 CLOSING ${symbol} - trend invalidated!`);
+          closePosition(symbol);
         }
       });
     }
     
-    // Filter for high confidence only
-    const highConfPicks = picks.filter(p => 
-      p.confidence >= 75 && 
-      p.spoof_detection.wall_velocity === 'normal'
-    );
+    // Process long candidates
+    top_longs.forEach(pick => {
+      console.log(`📈 LONG: ${pick.symbol} | Score: ${pick.score}/100 | State: ${pick.state}`);
+      console.log(`   Structure: ${pick.structure.higher_highs} HH, ${pick.structure.higher_lows} HL`);
+      console.log(`   Entry: ${pick.entry_conditions.confirmed_entry ? '🎯 READY' : '⏳ WAITING'}`);
+      
+      // Only enter on ENTRY_CONFIRMED state (15m confirmation fired)
+      if (pick.state === 'ENTRY_CONFIRMED' && pick.score >= 80) {
+        if (!hasOpenPosition(pick.symbol)) {
+          placeLimitOrder({
+            symbol: pick.symbol,
+            side: 'BUY',
+            price: pick.entry_conditions.current_price,
+            takeProfit: pick.take_profit,
+            stopLoss: pick.stop_loss
+          });
+          
+          console.log(`✅ Entered LONG ${pick.symbol} @ $${pick.entry_conditions.current_price}`);
+          console.log(`   SL: $${pick.stop_loss} (below swing low $${pick.structure.last_swing_low})`);
+          console.log(`   TP: $${pick.take_profit}`);
+        }
+      }
+    });
     
-    console.log(`High confidence picks: ${highConfPicks.length}`);
-    
-    // Enter all 3 picks
-    highConfPicks.forEach(pick => {
-      if (!hasOpenPosition(pick.symbol)) {
-        console.log(`🎯 New opportunity: ${pick.symbol} ${pick.side} @ ${pick.confidence}%`);
-        console.log(`   Entry: $${pick.entry_zone[0]}-${pick.entry_zone[1]}`);
-        console.log(`   TP: $${pick.take_profit} | SL: $${pick.stop_loss}`);
-        console.log(`   Max Size: $${pick.max_position_size} | Max Leverage: ${pick.max_leverage}×`);
-        
-        // Place order
-        placeLimitOrder({
-          symbol: pick.symbol,
-          side: pick.side === 'LONG' ? 'BUY' : 'SELL',
-          price: pick.entry_zone[0], // Aggressive entry
-          takeProfit: pick.take_profit,
-          stopLoss: pick.stop_loss,
-          maxSize: pick.max_position_size,
-          maxLeverage: pick.max_leverage
-        });
+    // Process short candidates
+    top_shorts.forEach(pick => {
+      console.log(`📉 SHORT: ${pick.symbol} | Score: ${pick.score}/100 | State: ${pick.state}`);
+      console.log(`   Structure: ${pick.structure.lower_highs} LH, ${pick.structure.lower_lows} LL`);
+      
+      if (pick.state === 'ENTRY_CONFIRMED' && pick.score >= 80) {
+        if (!hasOpenPosition(pick.symbol)) {
+          placeLimitOrder({
+            symbol: pick.symbol,
+            side: 'SELL',
+            price: pick.entry_conditions.current_price,
+            takeProfit: pick.take_profit,
+            stopLoss: pick.stop_loss
+          });
+        }
       }
     });
   }
 };
 ```
 
+**Check Trend Invalidation (On-Demand Query):**
+
+Clients can query specific symbols to check if their trend has been invalidated:
+
+```typescript
+// Send invalidation check request
+function checkTrendInvalidation(ws: WebSocket, symbol: string) {
+  ws.send(JSON.stringify({
+    type: 'check_trend_invalidation',
+    symbol: symbol
+  }));
+}
+
+// Handle invalidation status response
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  
+  if (msg.type === 'trend_invalidation_status') {
+    console.log(`[${msg.symbol}] Invalidated: ${msg.is_invalidated}`);
+    console.log(`  Trend: ${msg.trend_state} | State: ${msg.current_state} | Score: ${msg.score}`);
+    
+    if (msg.is_invalidated && hasOpenPosition(msg.symbol)) {
+      console.warn(`🚨 ${msg.symbol} trend broke - closing position!`);
+      closePosition(msg.symbol);
+    }
+  }
+};
+
+// Example: Check every 30 seconds while holding position
+setInterval(() => {
+  if (hasOpenPosition('ETHUSDT')) {
+    checkTrendInvalidation(ws, 'ETHUSDT');
+  }
+}, 30000);
+```
+
+**Invalidation Check Request:**
+```json
+{
+  "type": "check_trend_invalidation",
+  "symbol": "ETHUSDT"
+}
+```
+
+**Invalidation Status Response:**
+```json
+{
+  "type": "trend_invalidation_status",
+  "symbol": "ETHUSDT",
+  "is_invalidated": false,
+  "trend_state": "UPTREND",
+  "current_state": "IN_PULLBACK",
+  "score": 87,
+  "last_updated": "2025-11-12T14:30:00Z"
+}
+```
+
 **Key Points:**
+- ✅ **V2 Architecture** - Complete rewrite using 4H swing structure analysis
+- ✅ **5-minute updates** - Full market scan every 5 minutes (vs 30s in V1)
+- ✅ **154 symbols analyzed** - No preferences, pure trend strength scoring
+- ✅ **Top 5 longs + Top 5 shorts** - Separated by direction
 - ✅ **No subscription needed** - Automatic broadcast to all authenticated clients
-- ✅ **30-second updates** - Only when portfolio changes (reduces noise)
-- ✅ **Top 3 picks** - System selects best opportunities across all 30+ pairs
-- ✅ **Signal persistence** - All picks have been present ≥30 seconds (3 consecutive 10s intervals)
-- ✅ **Order book quality** - Full CVD, OBI, VWAP analysis per pick
-- ✅ **Tier-based sizing** - Automatic position sizing recommendations
-- ✅ **Exit tracking** - `dropped` array tells you which symbols left top 3
-- ✅ **Spoof detection** - Warns about fake walls
-- ⚠️ **Entry all 3 picks** - Portfolio optimized for 3 concurrent positions
-- ⚠️ **Close on signal flip** - If LONG → SHORT, exit immediately
-- 📚 **Full guide**: See `PORTFOLIO_SCANNER_GUIDE.md` for detailed documentation
+- ✅ **Structure-based** - Detects HH/HL (uptrends) and LL/LH (downtrends) on 4H candles
+- ✅ **100-point scoring**:
+  - Structure count (HH/HL or LL/LH): 40 pts
+  - Price vs EMA50: 20 pts
+  - EMA50 slope: 15 pts
+  - ADX trend strength: 15 pts
+  - ATR & spread gate: 10 pts
+- ✅ **Signal states**:
+  - `IDENTIFIED`: Strong trend detected (score ≥70)
+  - `IN_PULLBACK`: Price within 1% of EMA50
+  - `ENTRY_CONFIRMED`: 15m confirmation candle fired (READY TO ENTER)
+  - `INVALIDATED`: Break of structure (CLOSE POSITION)
+- ✅ **Invalidation detection** - Automatically detects when trends break
+- ✅ **On-demand invalidation checks** - Query specific symbols via WebSocket
+- ✅ **Structure-based stops** - SL below last swing low (longs) / above last swing high (shorts)
+- ✅ **Context-aware scoring** - EMA/ADX weights adjust based on data quality
+- ⚠️ **Wait for ENTRY_CONFIRMED** - Don't enter on IDENTIFIED or IN_PULLBACK states
+- ⚠️ **Close on invalidation** - Exit immediately when `invalidated` array includes your symbol
+- ⚠️ **Requires 3.5+ days data** - Need 21 4H candles minimum for swing detection
+- 📚 **Swing detection**: N=2 lookback/lookahead (last 2 candles can't be swings - expected behavior)
 
 ---
 

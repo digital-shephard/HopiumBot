@@ -80,6 +80,9 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
   const signalHistoryRef = useRef(new Map()) // Track signal history per symbol: { entryTime, signals: [], lastSide, lastConfidence }
   const peakPnlPerSymbolRef = useRef(new Map()) // Track peak PNL per symbol for trailing stops in Auto Mode
   const trailingStopPerSymbolRef = useRef(new Map()) // Track trailing stop per symbol for Auto Mode
+  const signalStatusPollRef = useRef(null) // Track signal status poll interval
+  const portfolioPositionsRef = useRef([]) // Current portfolio positions (for polling)
+  const excludedPairsRef = useRef([]) // Current excluded pairs (for polling)
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -2700,48 +2703,76 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     return () => clearInterval(cleanupInterval)
   }, [isRunning, onBotMessagesChange, onBotMessageChange])
 
+  // Keep refs in sync with state
+  useEffect(() => {
+    portfolioPositionsRef.current = portfolioPositions
+  }, [portfolioPositions])
+  
+  useEffect(() => {
+    excludedPairsRef.current = excludedPairs
+  }, [excludedPairs])
+  
   // Poll for full signal status every 5 minutes (Auto Mode V2)
   // Gets fresh reasoning + invalidation status + score updates
   useEffect(() => {
-    if (!isRunning || !autoMode || !wsClientRef.current || portfolioPositions.length === 0) return
-    
-    // Filter out excluded pairs
-    const excludedList = excludedPairs || []
-    const positionsToCheck = portfolioPositions.filter(p => !excludedList.includes(p.symbol))
-    
-    if (positionsToCheck.length === 0) {
-      console.log('[Signal Status Poll] No positions to check (all excluded)')
+    if (!isRunning || !autoMode || !wsClientRef.current) {
+      // Clean up poll if stopped or Auto Mode disabled
+      if (signalStatusPollRef.current) {
+        console.log('[Signal Status Poll] Stopping poll (bot stopped or Auto Mode disabled)')
+        clearInterval(signalStatusPollRef.current)
+        signalStatusPollRef.current = null
+      }
       return
     }
     
-    console.log('[Signal Status Poll] Starting 5min poll for', positionsToCheck.length, 'positions')
-    if (excludedList.length > 0) {
-      console.log('[Signal Status Poll] Skipping excluded pairs:', excludedList.join(', '))
-    }
-    
-    // Poll function
-    const pollSignalStatus = () => {
-      positionsToCheck.forEach(pos => {
-        console.log(`[Signal Status Poll] Requesting full analysis for ${pos.symbol}...`)
-        try {
-          wsClientRef.current.getSignalStatus(pos.symbol)
-        } catch (error) {
-          console.warn(`[Signal Status Poll] Failed to request ${pos.symbol}:`, error.message)
+    // Only set up poll ONCE when bot starts in Auto Mode
+    if (!signalStatusPollRef.current) {
+      console.log('[Signal Status Poll] Setting up 5min poll')
+      
+      // Poll function (reads from refs for current values)
+      const pollSignalStatus = () => {
+        // Get current positions from ref
+        const currentPositions = portfolioPositionsRef.current
+        if (currentPositions.length === 0) {
+          console.log('[Signal Status Poll] No positions to check')
+          return
         }
-      })
+        
+        // Filter out excluded pairs from ref
+        const currentExcluded = excludedPairsRef.current || []
+        const positionsToCheck = currentPositions.filter(p => !currentExcluded.includes(p.symbol))
+        
+        if (positionsToCheck.length === 0) {
+          console.log('[Signal Status Poll] No positions to check (all excluded)')
+          return
+        }
+        
+        console.log(`[Signal Status Poll] Checking ${positionsToCheck.length} position(s):`, positionsToCheck.map(p => p.symbol).join(', '))
+        positionsToCheck.forEach(pos => {
+          try {
+            wsClientRef.current.getSignalStatus(pos.symbol)
+          } catch (error) {
+            console.warn(`[Signal Status Poll] Failed to request ${pos.symbol}:`, error.message)
+          }
+        })
+      }
+      
+      // Call immediately when poll starts
+      pollSignalStatus()
+      
+      // Then every 5 minutes
+      signalStatusPollRef.current = setInterval(pollSignalStatus, 300000)
     }
-    
-    // Call immediately on mount
-    pollSignalStatus()
-    
-    // Then every 5 minutes
-    const signalStatusPoll = setInterval(pollSignalStatus, 300000)
     
     return () => {
-      console.log('[Signal Status Poll] Stopping poll')
-      clearInterval(signalStatusPoll)
+      // Cleanup on unmount only
+      if (signalStatusPollRef.current) {
+        console.log('[Signal Status Poll] Cleanup on unmount')
+        clearInterval(signalStatusPollRef.current)
+        signalStatusPollRef.current = null
+      }
     }
-  }, [isRunning, autoMode, portfolioPositions, excludedPairs])
+  }, [isRunning, autoMode]) // Only depend on isRunning and autoMode
 
   const handleCloseModal = () => {
     setShowModal(false)

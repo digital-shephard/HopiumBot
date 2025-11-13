@@ -808,7 +808,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
           const status = orderManager.getStatus()
           const currentPositionCount = status.activePositions ? status.activePositions.length : 0
           
-          // LOCAL INVALIDATION CHECK (Auto Mode Only) - Fast client-side check
+          // === AUTO MODE POSITION MANAGEMENT ===
           if (settings.autoMode && status.activePositions && status.activePositions.length > 0) {
             const excludedList = settings.excludedPairs || []
             
@@ -819,33 +819,116 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               }
               
               const portfolioPos = portfolioPositions.find(p => p.symbol === position.symbol)
-              if (portfolioPos && portfolioPos.invalidationPrice) {
-                const currentPosition = await orderManager.dexService.getPosition(position.symbol)
-                const markPrice = parseFloat(currentPosition.markPrice || '0')
+              if (!portfolioPos) continue
+              
+              const currentPosition = await orderManager.dexService.getPosition(position.symbol)
+              const markPrice = parseFloat(currentPosition.markPrice || '0')
+              const unrealizedProfit = parseFloat(currentPosition.unRealizedProfit || '0')
+              const entryPrice = parseFloat(currentPosition.entryPrice || '0')
+              const positionAmt = Math.abs(parseFloat(currentPosition.positionAmt || '0'))
+              
+              // Calculate Net PNL for this symbol
+              const entryNotional = positionAmt * entryPrice
+              const exitNotional = positionAmt * markPrice
+              const totalFees = (entryNotional * ENTRY_FEE) + (exitNotional * EXIT_FEE)
+              const symbolNetPnl = unrealizedProfit - totalFees
+              
+              // 1. LOCAL INVALIDATION CHECK (Highest Priority)
+              if (portfolioPos.invalidationPrice) {
                 const invalidationPrice = portfolioPos.invalidationPrice
-                
-                // Check if price crossed invalidation level
                 const isInvalidated = portfolioPos.side === 'LONG' 
                   ? markPrice < invalidationPrice 
                   : markPrice > invalidationPrice
                 
                 if (isInvalidated) {
                   console.log(`[Local Invalidation] 🚨 ${position.symbol} ${portfolioPos.side} invalidated: price $${markPrice} crossed $${invalidationPrice}`)
-                  
-                  // Calculate PNL
-                  const unrealizedProfit = parseFloat(currentPosition.unRealizedProfit || '0')
-                  const entryPrice = parseFloat(currentPosition.entryPrice || '0')
-                  const positionAmt = Math.abs(parseFloat(currentPosition.positionAmt || '0'))
-                  const entryNotional = positionAmt * entryPrice
-                  const exitNotional = positionAmt * markPrice
-                  const totalFees = (entryNotional * ENTRY_FEE) + (exitNotional * EXIT_FEE)
-                  const symbolNetPnl = unrealizedProfit - totalFees
-                  
-                  // Close position immediately
                   await closePosition(orderManager, position.symbol, symbolNetPnl)
                   setPortfolioPositions(prev => prev.filter(p => p.symbol !== position.symbol))
-                  
                   continue // Skip to next position
+                }
+              }
+              
+              // 2. INTELLIGENT TP TRAILING (Auto Mode Only)
+              const serverTP = portfolioPos.serverTP
+              if (serverTP && !portfolioPos.tpHit) {
+                // Check if TP price reached
+                const tpReached = portfolioPos.side === 'LONG' 
+                  ? markPrice >= serverTP 
+                  : markPrice <= serverTP
+                
+                if (tpReached) {
+                  console.log(`[Auto TP] 🎯 ${position.symbol} TP HIT! Server TP: $${serverTP}, Current: $${markPrice}, Net PNL: $${symbolNetPnl.toFixed(2)}`)
+                  
+                  // Calculate trailing increment (% move from entry to TP)
+                  const priceMove = Math.abs(serverTP - entryPrice)
+                  const trailingIncrement = priceMove // Use absolute price increment
+                  
+                  console.log(`[Auto TP] Setting SL at TP: $${serverTP} | Trail increment: $${trailingIncrement.toFixed(6)} | Initial PNL: $${symbolNetPnl.toFixed(2)}`)
+                  
+                  // Update position to enable trailing
+                  setPortfolioPositions(prev => prev.map(p => 
+                    p.symbol === position.symbol 
+                      ? { 
+                          ...p, 
+                          tpHit: true,
+                          tpHitPrice: markPrice,
+                          tpHitPnl: symbolNetPnl,
+                          trailingIncrement: trailingIncrement,
+                          currentSL: serverTP,  // Set SL at TP (even if negative PNL)
+                          isTrailing: true
+                        }
+                      : p
+                  ))
+                  
+                  updateBotMessage(position.symbol, `🎯 TP HIT @ $${serverTP.toFixed(6)} | Net PNL: ${symbolNetPnl >= 0 ? '+' : ''}$${symbolNetPnl.toFixed(2)} | Trailing SL active`)
+                }
+              }
+              
+              // 3. TRAILING STOP CHECK (After TP Hit)
+              if (portfolioPos.isTrailing && portfolioPos.currentSL) {
+                const currentSL = portfolioPos.currentSL
+                const trailingIncrement = portfolioPos.trailingIncrement
+                const tpHitPnl = portfolioPos.tpHitPnl || 0
+                
+                // Check if SL hit
+                const slHit = portfolioPos.side === 'LONG' 
+                  ? markPrice <= currentSL 
+                  : markPrice >= currentSL
+                
+                if (slHit) {
+                  console.log(`[Auto Trailing] 🛑 ${position.symbol} Trailing SL HIT! Price $${markPrice} hit SL $${currentSL}`)
+                  console.log(`[Auto Trailing] Initial TP PNL: $${tpHitPnl.toFixed(2)}, Final PNL: $${symbolNetPnl.toFixed(2)}`)
+                  await closePosition(orderManager, position.symbol, symbolNetPnl)
+                  setPortfolioPositions(prev => prev.filter(p => p.symbol !== position.symbol))
+                  continue
+                }
+                
+                // Trail upward if price moved favorably
+                const priceFromTP = portfolioPos.side === 'LONG' 
+                  ? markPrice - portfolioPos.tpHitPrice 
+                  : portfolioPos.tpHitPrice - markPrice
+                
+                if (priceFromTP > 0) {
+                  // Calculate new SL based on price movement beyond TP
+                  const incrementsAchieved = Math.floor(priceFromTP / trailingIncrement)
+                  
+                  if (incrementsAchieved > 0) {
+                    const newSL = portfolioPos.side === 'LONG'
+                      ? portfolioPos.serverTP + (incrementsAchieved * trailingIncrement)
+                      : portfolioPos.serverTP - (incrementsAchieved * trailingIncrement)
+                    
+                    if (newSL !== currentSL) {
+                      console.log(`[Auto Trailing] 📈 ${position.symbol} SL trailing: $${currentSL.toFixed(6)} → $${newSL.toFixed(6)} (${incrementsAchieved} increment${incrementsAchieved > 1 ? 's' : ''})`)
+                      
+                      setPortfolioPositions(prev => prev.map(p => 
+                        p.symbol === position.symbol 
+                          ? { ...p, currentSL: newSL }
+                          : p
+                      ))
+                      
+                      updateBotMessage(position.symbol, `📈 Trailing @ $${newSL.toFixed(6)} | Net PNL: ${symbolNetPnl >= 0 ? '+' : ''}$${symbolNetPnl.toFixed(2)} | Gain from TP: +$${(symbolNetPnl - tpHitPnl).toFixed(2)}`)
+                    }
+                  }
                 }
               }
             }
@@ -2242,13 +2325,18 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   entryZone: pick.entry_zone,
                   invalidationPrice: invalidationPrice,  // SAVE FOR LOCAL CHECKS
                   structureStopLoss: stopLoss,
-                  userTakeProfit: parseFloat(settings.takeProfit),
-                  userStopLoss: parseFloat(settings.stopLoss),
-                  tpSlMode: settings.tpSlMode,
                   size: capitalPerPosition,
                   leverage: leverage,
                   orderIds: orderResults.map(r => r.orderId),
-                  openedAt: Date.now()
+                  openedAt: Date.now(),
+                  // Intelligent TP Trailing (Auto Mode)
+                  serverTP: pick.take_profit,  // Server's structure-based TP
+                  tpHit: false,  // Becomes true when price reaches TP
+                  tpHitPrice: null,  // Price when TP first hit
+                  tpHitPnl: null,  // Net PNL when TP first hit
+                  trailingIncrement: null,  // Set when TP hit (price % from entry to TP)
+                  currentSL: null,  // Set to TP price when hit, then trails upward
+                  isTrailing: false  // Becomes true after TP hit
                 }
                 
                 newPositions.push(newPos)
@@ -2275,26 +2363,40 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               return merged
             })
             
-            // Update bot messages for ALL portfolio positions (new + existing) with latest reasoning
+            // Update bot messages and TP data for ALL portfolio positions (new + existing)
             // Check FULL list (top_longs + top_shorts), not just selected 3
             const allSignals = [
               ...top_longs.map(p => ({ ...p, side: 'LONG' })),
               ...top_shorts.map(p => ({ ...p, side: 'SHORT' }))
             ]
             
-            // Update messages for all positions we're holding
+            // Update messages and TP targets for all positions we're holding
             const allActiveSymbols = [...portfolioPositions.map(p => p.symbol), ...newPositions.map(p => p.symbol)]
             for (const symbol of allActiveSymbols) {
               const signal = allSignals.find(s => s.symbol === symbol)
               
               if (signal) {
-                const reasoning = signal.reasoning?.join(' ') || `${signal.side} ${symbol} @ ${signal.score}/100`
-                updateBotMessage(symbol, reasoning)
-                console.log(`[Portfolio V2] Updated message for ${symbol}: score=${signal.score}, state=${signal.state}`)
+                // Update serverTP if not already set (for resumed positions)
+                setPortfolioPositions(prev => prev.map(p => 
+                  p.symbol === symbol && !p.serverTP
+                    ? { ...p, serverTP: signal.take_profit, invalidationPrice: signal.invalidation_price }
+                    : p
+                ))
+                
+                // Update message (unless already trailing)
+                const existingPos = portfolioPositions.find(p => p.symbol === symbol)
+                if (!existingPos?.isTrailing) {
+                  const reasoning = signal.reasoning?.join(' ') || `${signal.side} ${symbol} @ ${signal.score}/100`
+                  updateBotMessage(symbol, reasoning)
+                  console.log(`[Portfolio V2] Updated message for ${symbol}: score=${signal.score}, state=${signal.state}`)
+                }
               } else {
                 // Position held but no longer in scanner results (dropped below threshold?)
                 console.log(`[Portfolio V2] ⚠️ ${symbol} position held but not in scanner results - using fallback message`)
-                updateBotMessage(symbol, `Holding ${portfolioPositions.find(p => p.symbol === symbol)?.side || 'position'} - monitoring for invalidation`)
+                const existingPos = portfolioPositions.find(p => p.symbol === symbol)
+                if (!existingPos?.isTrailing) {
+                  updateBotMessage(symbol, `Holding ${existingPos?.side || 'position'} - monitoring for invalidation`)
+                }
               }
             }
             
@@ -2359,18 +2461,35 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               return
             }
             
-            // Update bot message with fresh reasoning
-            const reasoningText = reasoning?.join(' ') || `${payload.side} ${symbol} @ ${score}/100 | State: ${state}`
-            updateBotMessage(symbol, reasoningText)
+            // Update bot message with fresh reasoning (unless already trailing)
+            const existingPos = portfolioPositions.find(p => p.symbol === symbol)
+            if (!existingPos?.isTrailing) {
+              const reasoningText = reasoning?.join(' ') || `${payload.side} ${symbol} @ ${score}/100 | State: ${state}`
+              updateBotMessage(symbol, reasoningText)
+            }
             
-            // Update invalidation price in portfolio position (in case it changed)
-            setPortfolioPositions(prev => prev.map(p => 
-              p.symbol === symbol 
-                ? { ...p, invalidationPrice: invalidation_price, score: score, state: state }
-                : p
-            ))
+            // Update portfolio position data (preserve trailing state if already active)
+            setPortfolioPositions(prev => prev.map(p => {
+              if (p.symbol === symbol) {
+                return {
+                  ...p,
+                  invalidationPrice: invalidation_price,
+                  score: score,
+                  state: state,
+                  serverTP: payload.take_profit || p.serverTP,  // Update TP (preserve if already set)
+                  // Preserve trailing state - don't reset if already trailing
+                  tpHit: p.tpHit,
+                  tpHitPrice: p.tpHitPrice,
+                  tpHitPnl: p.tpHitPnl,
+                  trailingIncrement: p.trailingIncrement,
+                  currentSL: p.currentSL,
+                  isTrailing: p.isTrailing
+                }
+              }
+              return p
+            }))
             
-            console.log(`[Signal Status] ✅ ${symbol} updated: score=${score}, state=${state}`)
+            console.log(`[Signal Status] ✅ ${symbol} updated: score=${score}, state=${state}, serverTP=${payload.take_profit || 'unchanged'}`)
           } catch (error) {
             handleError(`Failed to handle signal status: ${error.message}`)
           }
@@ -2449,12 +2568,20 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   side: side,
                   entryPrice: parseFloat(pos.entryPrice),
                   invalidationPrice: null, // Will be set by next portfolio broadcast
-                  openedAt: Date.now()
+                  openedAt: Date.now(),
+                  // TP Trailing fields (will sync from next broadcast)
+                  serverTP: null,
+                  tpHit: false,
+                  tpHitPrice: null,
+                  tpHitPnl: null,
+                  trailingIncrement: null,
+                  currentSL: null,
+                  isTrailing: false
                 })
                 
                 // Update bot message for resumed position
                 const unrealizedPnl = parseFloat(pos.unRealizedProfit || '0')
-                updateBotMessage(symbol, `${side} position resumed @ $${parseFloat(pos.entryPrice).toFixed(4)} | PNL: ${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)} (awaiting next scanner update for invalidation price)`)
+                updateBotMessage(symbol, `${side} position resumed @ $${parseFloat(pos.entryPrice).toFixed(4)} | PNL: ${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)} (awaiting next scanner update)`)
                 
                 console.log(`[PerpFarming] ✅ Resumed ${symbol} ${side} position`)
               }
@@ -3182,6 +3309,9 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                 </div>
               </div>
 
+              {/* TP/SL Settings - Hide in Auto Mode (uses server's structure-based targets) */}
+              {!autoMode && (
+              <>
               <div className="risk-form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <label className="risk-label" style={{ margin: 0 }}>TP/SL Mode</label>
@@ -3294,6 +3424,8 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   </div>
                 </div>
               </div>
+              </>
+              )}
 
               {/* Order Type - Hide if Auto Mode (uses MARKET only) */}
               {!autoMode && (
@@ -3376,7 +3508,8 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               </div>
               )}
 
-              {/* Exit Strategy - Available for all modes */}
+              {/* Exit Strategy - Hide in Auto Mode (uses intelligent TP trailing) */}
+              {!autoMode && (
               <div className="risk-form-group">
                 <label className="risk-label">Exit Strategy</label>
                 
@@ -3483,6 +3616,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   </span>
                 </label>
               </div>
+              )}
 
               {validationError && (
                 <div className="risk-error-message">

@@ -2253,6 +2253,10 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                 
                 newPositions.push(newPos)
                 
+                // Update bot message with reasoning for this position
+                const reasoning = pick.reasoning?.join(' ') || `${pick.side} ${pick.symbol} @ ${pick.score}/100`
+                updateBotMessage(pick.symbol, reasoning)
+                
                 console.log(`[Portfolio V2] ✅ Opened ${pick.symbol} position with split orders`)
               } catch (error) {
                 console.error(`[Portfolio V2] Failed to open ${pick.symbol}:`, error.message)
@@ -2270,6 +2274,17 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               }
               return merged
             })
+            
+            // Update bot messages for ALL portfolio positions (new + existing) with latest reasoning
+            for (const pick of selectedPicks) {
+              const hasPosition = portfolioPositions.find(p => p.symbol === pick.symbol) || 
+                                 newPositions.find(p => p.symbol === pick.symbol)
+              
+              if (hasPosition) {
+                const reasoning = pick.reasoning?.join(' ') || `${pick.side} ${pick.symbol} @ ${pick.score}/100`
+                updateBotMessage(pick.symbol, reasoning)
+              }
+            }
             
             setTradingSymbols(prev => {
               const symbols = [...new Set([...prev, ...newPositions.map(p => p.symbol)])]
@@ -2399,6 +2414,10 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   invalidationPrice: null, // Will be set by next portfolio broadcast
                   openedAt: Date.now()
                 })
+                
+                // Update bot message for resumed position
+                const unrealizedPnl = parseFloat(pos.unRealizedProfit || '0')
+                updateBotMessage(symbol, `${side} position resumed @ $${parseFloat(pos.entryPrice).toFixed(4)} | PNL: ${unrealizedPnl >= 0 ? '+' : ''}$${unrealizedPnl.toFixed(2)} (awaiting next scanner update for invalidation price)`)
                 
                 console.log(`[PerpFarming] ✅ Resumed ${symbol} ${side} position`)
               }

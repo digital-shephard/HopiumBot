@@ -810,7 +810,14 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
           
           // LOCAL INVALIDATION CHECK (Auto Mode Only) - Fast client-side check
           if (settings.autoMode && status.activePositions && status.activePositions.length > 0) {
+            const excludedList = settings.excludedPairs || []
+            
             for (const position of status.activePositions) {
+              // Skip excluded pairs
+              if (excludedList.includes(position.symbol)) {
+                continue
+              }
+              
               const portfolioPos = portfolioPositions.find(p => p.symbol === position.symbol)
               if (portfolioPos && portfolioPos.invalidationPrice) {
                 const currentPosition = await orderManager.dexService.getPosition(position.symbol)
@@ -861,10 +868,14 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             
             // Also sync portfolioPositions if in Auto Mode
             if (settings.autoMode) {
+              const excludedList = settings.excludedPairs || []
               setPortfolioPositions(prev => {
-                const filtered = prev.filter(p => activeSymbols.includes(p.symbol))
+                // Filter to only active positions AND not excluded
+                const filtered = prev.filter(p => 
+                  activeSymbols.includes(p.symbol) && !excludedList.includes(p.symbol)
+                )
                 if (filtered.length !== prev.length) {
-                  console.log('[PNL Poll] Syncing portfolio positions - removed closed positions')
+                  console.log('[PNL Poll] Syncing portfolio positions - removed closed/excluded positions')
                   return filtered
                 }
                 return prev
@@ -2341,12 +2352,24 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             const allPositions = await orderManager.dexService.getAllPositions()
             const openPositions = allPositions.filter(p => Math.abs(parseFloat(p.positionAmt || '0')) > 0)
             
-            if (openPositions.length > 0) {
-              console.log(`[PerpFarming] Found ${openPositions.length} open position(s) - resuming tracking`)
+            // Filter out excluded pairs
+            const excludedList = settings.excludedPairs || []
+            const allowedPositions = openPositions.filter(p => !excludedList.includes(p.symbol))
+            
+            if (excludedList.length > 0) {
+              const excludedPositions = openPositions.filter(p => excludedList.includes(p.symbol))
+              if (excludedPositions.length > 0) {
+                console.log(`[PerpFarming] 🚫 Found ${excludedPositions.length} excluded position(s) - NOT resuming:`, excludedPositions.map(p => p.symbol).join(', '))
+                console.log('[PerpFarming] ℹ️ These positions are protected from Auto Mode (manual trading)')
+              }
+            }
+            
+            if (allowedPositions.length > 0) {
+              console.log(`[PerpFarming] Found ${allowedPositions.length} open position(s) to resume (after exclusions)`)
               
               const resumedPositions = []
               
-              for (const pos of openPositions) {
+              for (const pos of allowedPositions) {
                 const symbol = pos.symbol
                 const side = parseFloat(pos.positionAmt) > 0 ? 'LONG' : 'SHORT'
                 
@@ -2376,7 +2399,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               }
               
               setPortfolioPositions(resumedPositions)
-              setTradingSymbols(openPositions.map(p => p.symbol))
+              setTradingSymbols(allowedPositions.map(p => p.symbol))
               
               setBotMessages({})
               lastMessageUpdateRef.current = {}
@@ -2487,10 +2510,22 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
   useEffect(() => {
     if (!isRunning || !autoMode || !wsClientRef.current || portfolioPositions.length === 0) return
     
-    console.log('[Invalidation Poll] Starting 30s poll for', portfolioPositions.length, 'positions')
+    // Filter out excluded pairs
+    const excludedList = excludedPairs || []
+    const positionsToCheck = portfolioPositions.filter(p => !excludedList.includes(p.symbol))
+    
+    if (positionsToCheck.length === 0) {
+      console.log('[Invalidation Poll] No positions to check (all excluded)')
+      return
+    }
+    
+    console.log('[Invalidation Poll] Starting 30s poll for', positionsToCheck.length, 'positions')
+    if (excludedList.length > 0) {
+      console.log('[Invalidation Poll] Skipping excluded pairs:', excludedList.join(', '))
+    }
     
     const invalidationPoll = setInterval(() => {
-      portfolioPositions.forEach(pos => {
+      positionsToCheck.forEach(pos => {
         console.log(`[Invalidation Poll] Checking ${pos.symbol}...`)
         wsClientRef.current.send(JSON.stringify({
           type: 'check_trend_invalidation',
@@ -2504,7 +2539,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
       console.log('[Invalidation Poll] Stopping poll')
       clearInterval(invalidationPoll)
     }
-  }, [isRunning, autoMode, portfolioPositions])
+  }, [isRunning, autoMode, portfolioPositions, excludedPairs])
 
   const handleCloseModal = () => {
     setShowModal(false)

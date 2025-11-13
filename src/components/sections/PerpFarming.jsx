@@ -2413,9 +2413,13 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
         // Handle full signal status responses (every 5 minutes)
         wsClient.onSignalStatus = async (message) => {
           try {
-            if (!settings.autoMode) return
+            if (!settings.autoMode) {
+              console.log('[Signal Status] Skipping - Auto Mode not enabled')
+              return
+            }
             
-            console.log('[Signal Status]:', message)
+            console.log('[Signal Status] Received message:', message)
+            console.log('[Signal Status] Message type:', typeof message, 'Keys:', Object.keys(message))
             
             const { symbol, payload } = message
             
@@ -2713,16 +2717,23 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
       console.log('[Signal Status Poll] Skipping excluded pairs:', excludedList.join(', '))
     }
     
-    const signalStatusPoll = setInterval(() => {
+    // Poll function
+    const pollSignalStatus = () => {
       positionsToCheck.forEach(pos => {
         console.log(`[Signal Status Poll] Requesting full analysis for ${pos.symbol}...`)
-        wsClientRef.current.send(JSON.stringify({
-          type: 'get_signal_status',
-          symbol: pos.symbol,
-          id: Date.now()
-        }))
+        try {
+          wsClientRef.current.getSignalStatus(pos.symbol)
+        } catch (error) {
+          console.warn(`[Signal Status Poll] Failed to request ${pos.symbol}:`, error.message)
+        }
       })
-    }, 300000) // Poll every 5 minutes (300 seconds)
+    }
+    
+    // Call immediately on mount
+    pollSignalStatus()
+    
+    // Then every 5 minutes
+    const signalStatusPoll = setInterval(pollSignalStatus, 300000)
     
     return () => {
       console.log('[Signal Status Poll] Stopping poll')

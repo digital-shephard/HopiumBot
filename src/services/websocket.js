@@ -536,6 +536,43 @@ export class HopiumWebSocketClient {
     })
   }
 
+  /**
+   * Request full signal status for a specific symbol
+   * 
+   * @param {string} symbol - Trading pair symbol (e.g., 'SKYUSDT')
+   * @throws {Error} If WebSocket is not connected
+   * 
+   * @example
+   * ```javascript
+   * client.getSignalStatus('SKYUSDT')
+   * ```
+   */
+  getSignalStatus(symbol) {
+    if (!this.isConnected()) {
+      throw new Error('WebSocket not connected')
+    }
+
+    this._sendMessage({
+      type: 'get_signal_status',
+      symbol: symbol
+    })
+  }
+
+  /**
+   * Send a raw message to the WebSocket server
+   * Use this for custom message types not covered by other methods
+   * 
+   * @param {Object} message - Raw message object
+   * @throws {Error} If WebSocket is not connected
+   */
+  send(message) {
+    if (!this.isConnected()) {
+      throw new Error('WebSocket not connected')
+    }
+
+    this.ws.send(JSON.stringify(message))
+  }
+
   // ============================================================================
   // Message Handling
   // ============================================================================

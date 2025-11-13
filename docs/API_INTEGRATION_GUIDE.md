@@ -908,7 +908,7 @@ Send a ping to check connection health. Server responds with pong.
 
 #### Check Trend Invalidation
 
-Check if a specific symbol's trend has been invalidated (break of structure). Used for monitoring open positions.
+Check if a specific symbol's trend has been invalidated (break of structure). **Lightweight check** - returns basic status only.
 
 **Message**:
 ```json
@@ -940,27 +940,141 @@ Check if a specific symbol's trend has been invalidated (break of structure). Us
 ```
 
 **Use Cases**:
-- **Position Monitoring**: Check if your open position's trend broke while holding
-- **Pre-Entry Validation**: Verify trend is still valid before entering
-- **Risk Management**: Set up automated checks every 30-60 seconds
+- **Quick invalidation check**: Is the trend broken? (yes/no)
+- **Lightweight monitoring**: Minimal data transfer
+
+---
+
+#### Get Signal Status (Full Analysis)
+
+Get complete signal analysis for a specific symbol with updated reasoning. **Full reanalysis** if cached data is >30 seconds old.
+
+**Message**:
+```json
+{
+  "type": "get_signal_status",
+  "symbol": "SKYUSDT",
+  "id": 6
+}
+```
+
+**Parameters**:
+- `symbol` (required): Trading pair to analyze
+- `id` (optional): Request ID for tracking responses
+
+**Response**:
+```json
+{
+  "type": "signal_status",
+  "symbol": "SKYUSDT",
+  "id": 6,
+  "payload": {
+    "symbol": "SKYUSDT",
+    "side": "LONG",
+    "state": "ENTRY_CONFIRMED",
+    "score": 100,
+    "confidence": 100,
+    "timestamp": "2025-11-13T02:25:00Z",
+    "trend_state": "UPTREND",
+    "structure": {
+      "higher_highs": 4,
+      "higher_lows": 3,
+      "swing_count": 11
+    },
+    "entry_conditions": {
+      "in_pullback": true,
+      "current_price": 0.05810,
+      "ema50": 0.05742,
+      "distance_to_ema_pct": 1.18,
+      "confirmed_entry": true
+    },
+    "stop_loss": 0.05121,
+    "invalidation_price": 0.05204,
+    "take_profit": 0.06039,
+    "metrics": {
+      "ema50_slope": 0.0207,
+      "adx": 51.6,
+      "atr": 0.00176,
+      "spread_pct": 1.60,
+      "data_quality": 1.0
+    },
+    "score_breakdown": {
+      "structure_score": 40,
+      "price_vs_ema_score": 20,
+      "ema_slope_score": 15,
+      "adx_score": 15,
+      "quality_gate": 10
+    },
+    "reasoning": [
+      "✅ Strong UPTREND: 4 HH, 3 HL confirmed",
+      "✅ Price 1.18% above EMA50 (healthy)",
+      "✅ ADX 51.6 (very strong trend)",
+      "🎯 15m confirmation candle triggered - ENTRY READY"
+    ]
+  }
+}
+```
+
+**Use Cases**:
+- **Position monitoring**: Check if state changed from IDENTIFIED → IN_PULLBACK → ENTRY_CONFIRMED
+- **Score tracking**: Monitor if trend strength is degrading (100 → 85 → 70)
+- **Entry timing**: Wait for state to reach ENTRY_CONFIRMED before entering
+- **Updated reasoning**: Get fresh analysis with current market conditions
 
 **TypeScript Example**:
 ```typescript
-function checkTrendInvalidation(ws: WebSocket, symbol: string, id: number) {
+// Send signal status request
+function getSignalStatus(ws: WebSocket, symbol: string) {
   ws.send(JSON.stringify({
-    type: 'check_trend_invalidation',
+    type: 'get_signal_status',
     symbol: symbol,
-    id: id
+    id: Date.now()
   }));
 }
 
-// Monitor position every 30 seconds
+// Handle full signal response
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  
+  if (msg.type === 'signal_status') {
+    const signal = msg.payload;
+    
+    if (signal.status === 'NOT_FOUND') {
+      console.log(`${msg.symbol} - No trend detected`);
+      return;
+    }
+    
+    console.log(`[${signal.symbol}] State: ${signal.state} | Score: ${signal.score}/100`);
+    console.log(`  Structure: ${signal.structure.swing_count} swings`);
+    console.log(`  Entry: ${signal.entry_conditions.confirmed_entry ? '✅ READY' : '⏳ WAITING'}`);
+    
+    // Check if you should enter now
+    if (signal.state === 'ENTRY_CONFIRMED' && signal.score >= 80) {
+      console.log('🎯 ENTRY SIGNAL - Place order now!');
+    }
+    
+    // Check if you should exit
+    if (signal.state === 'INVALIDATED') {
+      console.log('🚨 TREND BROKE - Close position immediately!');
+    }
+    
+    // Display updated reasoning
+    signal.reasoning.forEach(reason => console.log(`  ${reason}`));
+  }
+};
+
+// Example: Monitor position every 30 seconds with full analysis
 setInterval(() => {
-  if (hasOpenPosition('ETHUSDT')) {
-    checkTrendInvalidation(ws, 'ETHUSDT', Date.now());
+  if (hasOpenPosition('SKYUSDT')) {
+    getSignalStatus(ws, 'SKYUSDT');
   }
 }, 30000);
 ```
+
+**Smart Caching**:
+- Returns cached data if last full scan was <30 seconds ago (fast)
+- Performs fresh analysis if cached data is older (ensures accuracy)
+- You can safely call this every 30 seconds without performance hit
 
 ---
 

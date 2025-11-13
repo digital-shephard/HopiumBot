@@ -160,6 +160,19 @@ export class HopiumWebSocketClient {
   onPortfolioPicks = null
 
   /**
+   * Called when a signal status message is received (full signal analysis)
+   * @type {Function}
+   * @param {Object} message - Signal status message
+   * @param {string} message.symbol - Trading pair symbol
+   * @param {Object} message.payload - Signal data
+   * @param {string} message.payload.state - Signal state (IDENTIFIED, IN_PULLBACK, ENTRY_CONFIRMED, INVALIDATED)
+   * @param {number} message.payload.score - Trend strength score (0-100)
+   * @param {string[]} message.payload.reasoning - Array of reasoning strings
+   * @param {number} message.payload.invalidation_price - Structure break price
+   */
+  onSignalStatus = null
+
+  /**
    * Called when an alert message is received
    * @type {Function}
    * @param {Object} data - Alert message data
@@ -698,6 +711,22 @@ export class HopiumWebSocketClient {
           
           // Pass the full message structure
           this.onPortfolioPicks(portfolioMessage)
+        }
+        break
+
+      case 'signal_status':
+        if (this.onSignalStatus) {
+          // Server sends full signal analysis for a specific symbol
+          console.log('[WebSocket] Received signal_status:', message)
+          
+          // Extract signal data from message structure
+          const signalMessage = message.fullMessage || message.message || message.payload || message
+          const signalData = signalMessage?.data || signalMessage
+          
+          console.log('[WebSocket] Extracted signal data:', signalData)
+          
+          // Pass the full message structure (contains symbol and payload)
+          this.onSignalStatus(signalMessage)
         }
         break
 

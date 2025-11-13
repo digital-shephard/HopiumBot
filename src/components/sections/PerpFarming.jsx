@@ -2276,13 +2276,25 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             })
             
             // Update bot messages for ALL portfolio positions (new + existing) with latest reasoning
-            for (const pick of selectedPicks) {
-              const hasPosition = portfolioPositions.find(p => p.symbol === pick.symbol) || 
-                                 newPositions.find(p => p.symbol === pick.symbol)
+            // Check FULL list (top_longs + top_shorts), not just selected 3
+            const allSignals = [
+              ...top_longs.map(p => ({ ...p, side: 'LONG' })),
+              ...top_shorts.map(p => ({ ...p, side: 'SHORT' }))
+            ]
+            
+            // Update messages for all positions we're holding
+            const allActiveSymbols = [...portfolioPositions.map(p => p.symbol), ...newPositions.map(p => p.symbol)]
+            for (const symbol of allActiveSymbols) {
+              const signal = allSignals.find(s => s.symbol === symbol)
               
-              if (hasPosition) {
-                const reasoning = pick.reasoning?.join(' ') || `${pick.side} ${pick.symbol} @ ${pick.score}/100`
-                updateBotMessage(pick.symbol, reasoning)
+              if (signal) {
+                const reasoning = signal.reasoning?.join(' ') || `${signal.side} ${symbol} @ ${signal.score}/100`
+                updateBotMessage(symbol, reasoning)
+                console.log(`[Portfolio V2] Updated message for ${symbol}: score=${signal.score}, state=${signal.state}`)
+              } else {
+                // Position held but no longer in scanner results (dropped below threshold?)
+                console.log(`[Portfolio V2] ⚠️ ${symbol} position held but not in scanner results - using fallback message`)
+                updateBotMessage(symbol, `Holding ${portfolioPositions.find(p => p.symbol === symbol)?.side || 'position'} - monitoring for invalidation`)
               }
             }
             
@@ -2296,18 +2308,31 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
           }
         }
         
-        // Handle invalidation status responses
-        wsClient.onTrendInvalidationStatus = async (message) => {
+        // Handle full signal status responses (every 5 minutes)
+        wsClient.onSignalStatus = async (message) => {
           try {
             if (!settings.autoMode) return
             
-            console.log('[Invalidation Status]:', message)
+            console.log('[Signal Status]:', message)
             
             const { symbol, payload } = message
-            const { is_invalidated, trend_state, current_state, score } = payload
             
-            if (is_invalidated) {
-              console.log(`[Invalidation] 🚨 ${symbol} trend invalidated (${trend_state} broke)`)
+            // Check if signal was not found (symbol dropped out of all trends)
+            if (payload.status === 'NOT_FOUND') {
+              console.log(`[Signal Status] ⚠️ ${symbol} - No trend detected (dropped out of scanner)`)
+              
+              const existingPos = portfolioPositions.find(p => p.symbol === symbol)
+              if (existingPos) {
+                updateBotMessage(symbol, `⚠️ Trend lost - holding position, monitoring for exit`)
+              }
+              return
+            }
+            
+            const { state, score, reasoning, invalidation_price } = payload
+            
+            // Check for INVALIDATED state
+            if (state === 'INVALIDATED') {
+              console.log(`[Signal Status] 🚨 ${symbol} INVALIDATED (structure broke)`)
               
               const existingPos = portfolioPositions.find(p => p.symbol === symbol)
               if (existingPos) {
@@ -2325,17 +2350,29 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   const totalFees = (entryNotional * ENTRY_FEE) + (exitNotional * EXIT_FEE)
                   symbolNetPnl = unrealizedProfit - totalFees
                 } catch (error) {
-                  console.error(`[Invalidation] Failed to get PNL for ${symbol}:`, error)
+                  console.error(`[Signal Status] Failed to get PNL for ${symbol}:`, error)
                 }
                 
                 await closePosition(orderManager, symbol, symbolNetPnl)
                 setPortfolioPositions(prev => prev.filter(p => p.symbol !== symbol))
               }
-            } else {
-              console.log(`[Invalidation] ✅ ${symbol} still valid (${trend_state}, state: ${current_state}, score: ${score})`)
+              return
             }
+            
+            // Update bot message with fresh reasoning
+            const reasoningText = reasoning?.join(' ') || `${payload.side} ${symbol} @ ${score}/100 | State: ${state}`
+            updateBotMessage(symbol, reasoningText)
+            
+            // Update invalidation price in portfolio position (in case it changed)
+            setPortfolioPositions(prev => prev.map(p => 
+              p.symbol === symbol 
+                ? { ...p, invalidationPrice: invalidation_price, score: score, state: state }
+                : p
+            ))
+            
+            console.log(`[Signal Status] ✅ ${symbol} updated: score=${score}, state=${state}`)
           } catch (error) {
-            handleError(`Failed to handle invalidation status: ${error.message}`)
+            handleError(`Failed to handle signal status: ${error.message}`)
           }
         }
         
@@ -2530,7 +2567,8 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     return () => clearInterval(cleanupInterval)
   }, [isRunning, onBotMessagesChange, onBotMessageChange])
 
-  // Poll for invalidation checks every 30 seconds (Auto Mode V2)
+  // Poll for full signal status every 5 minutes (Auto Mode V2)
+  // Gets fresh reasoning + invalidation status + score updates
   useEffect(() => {
     if (!isRunning || !autoMode || !wsClientRef.current || portfolioPositions.length === 0) return
     
@@ -2539,29 +2577,29 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
     const positionsToCheck = portfolioPositions.filter(p => !excludedList.includes(p.symbol))
     
     if (positionsToCheck.length === 0) {
-      console.log('[Invalidation Poll] No positions to check (all excluded)')
+      console.log('[Signal Status Poll] No positions to check (all excluded)')
       return
     }
     
-    console.log('[Invalidation Poll] Starting 30s poll for', positionsToCheck.length, 'positions')
+    console.log('[Signal Status Poll] Starting 5min poll for', positionsToCheck.length, 'positions')
     if (excludedList.length > 0) {
-      console.log('[Invalidation Poll] Skipping excluded pairs:', excludedList.join(', '))
+      console.log('[Signal Status Poll] Skipping excluded pairs:', excludedList.join(', '))
     }
     
-    const invalidationPoll = setInterval(() => {
+    const signalStatusPoll = setInterval(() => {
       positionsToCheck.forEach(pos => {
-        console.log(`[Invalidation Poll] Checking ${pos.symbol}...`)
+        console.log(`[Signal Status Poll] Requesting full analysis for ${pos.symbol}...`)
         wsClientRef.current.send(JSON.stringify({
-          type: 'check_trend_invalidation',
+          type: 'get_signal_status',
           symbol: pos.symbol,
           id: Date.now()
         }))
       })
-    }, 30000) // Poll every 30 seconds
+    }, 300000) // Poll every 5 minutes (300 seconds)
     
     return () => {
-      console.log('[Invalidation Poll] Stopping poll')
-      clearInterval(invalidationPoll)
+      console.log('[Signal Status Poll] Stopping poll')
+      clearInterval(signalStatusPoll)
     }
   }, [isRunning, autoMode, portfolioPositions, excludedPairs])
 

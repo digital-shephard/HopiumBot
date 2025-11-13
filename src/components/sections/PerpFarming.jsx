@@ -2421,10 +2421,12 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             console.log('[Signal Status] Received message:', message)
             console.log('[Signal Status] Message type:', typeof message, 'Keys:', Object.keys(message))
             
-            const { symbol, payload } = message
+            // WebSocket client already extracts payload, so message IS the signal data
+            const signal = message
+            const symbol = signal.symbol
             
             // Check if signal was not found (symbol dropped out of all trends)
-            if (payload.status === 'NOT_FOUND') {
+            if (signal.status === 'NOT_FOUND') {
               console.log(`[Signal Status] ⚠️ ${symbol} - No trend detected (dropped out of scanner)`)
               
               const existingPos = portfolioPositions.find(p => p.symbol === symbol)
@@ -2434,7 +2436,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               return
             }
             
-            const { state, score, reasoning, invalidation_price } = payload
+            const { state, score, reasoning, invalidation_price, take_profit, side } = signal
             
             // Check for INVALIDATED state
             if (state === 'INVALIDATED') {
@@ -2468,7 +2470,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             // Update bot message with fresh reasoning (unless already trailing)
             const existingPos = portfolioPositions.find(p => p.symbol === symbol)
             if (!existingPos?.isTrailing) {
-              const reasoningText = reasoning?.join(' ') || `${payload.side} ${symbol} @ ${score}/100 | State: ${state}`
+              const reasoningText = reasoning?.join(' ') || `${side} ${symbol} @ ${score}/100 | State: ${state}`
               updateBotMessage(symbol, reasoningText)
             }
             
@@ -2480,7 +2482,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   invalidationPrice: invalidation_price,
                   score: score,
                   state: state,
-                  serverTP: payload.take_profit || p.serverTP,  // Update TP (preserve if already set)
+                  serverTP: take_profit || p.serverTP,  // Update TP (preserve if already set)
                   // Preserve trailing state - don't reset if already trailing
                   tpHit: p.tpHit,
                   tpHitPrice: p.tpHitPrice,
@@ -2493,7 +2495,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               return p
             }))
             
-            console.log(`[Signal Status] ✅ ${symbol} updated: score=${score}, state=${state}, serverTP=${payload.take_profit || 'unchanged'}`)
+            console.log(`[Signal Status] ✅ ${symbol} updated: score=${score}, state=${state}, serverTP=${take_profit || 'unchanged'}`)
           } catch (error) {
             handleError(`Failed to handle signal status: ${error.message}`)
           }

@@ -2119,39 +2119,95 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               console.log(`[Portfolio V2]   ${p.symbol} ${p.side}: score=${p.score}, state=${p.state}`)
             })
             
-            // LONG PRIORITY: Must include at least 1 LONG unless all longs have score < 50
-            const viableLongs = top_longs.filter(p => p.score >= 50)
-            const hasViableLongs = viableLongs.length > 0
+            // ADAPTIVE ALLOCATION BASED ON BTC MARKET BIAS
+            // Get BTC bias from any pick (all picks share same BTC state)
+            const btcBias = allPicks[0]?.market_bias || 'BTC_NEUTRAL'
+            const btcScore = allPicks[0]?.btc_score || 0
+            
+            console.log(`[Portfolio V2] 🔍 BTC Market Bias: ${btcBias} (score: ${btcScore})`)
+            
+            // Sort picks by score
+            const sortedLongs = allPicks.filter(p => p.side === 'LONG').sort((a, b) => b.score - a.score)
+            const sortedShorts = allPicks.filter(p => p.side === 'SHORT').sort((a, b) => b.score - a.score)
             
             let selectedPicks = []
             
-            if (hasViableLongs) {
-              // Ensure at least 1 LONG is included
-              const bestLong = allPicks
-                .filter(p => p.side === 'LONG')
-                .sort((a, b) => b.score - a.score)[0]
+            if (btcBias === 'BTC_BULLISH') {
+              // BTC BULLISH: 2 LONGs + 1 SHORT (2/3 long bias)
+              console.log(`[Portfolio V2] 📈 BTC Bullish - Allocating 2 LONGs + 1 SHORT`)
               
-              if (bestLong) {
-                selectedPicks.push(bestLong)
-                console.log(`[Portfolio V2] ✅ Guaranteed LONG: ${bestLong.symbol} (${bestLong.score})`)
+              // Take top 2 longs
+              const longsToAdd = sortedLongs.slice(0, 2)
+              // Take top 1 short
+              const shortsToAdd = sortedShorts.slice(0, 1)
+              
+              selectedPicks = [...longsToAdd, ...shortsToAdd]
+              
+              console.log(`[Portfolio V2]   LONGs: ${longsToAdd.map(p => `${p.symbol}(${p.score})`).join(', ')}`)
+              console.log(`[Portfolio V2]   SHORT: ${shortsToAdd.map(p => `${p.symbol}(${p.score})`).join(', ')}`)
+              
+            } else if (btcBias === 'BTC_BEARISH') {
+              // BTC BEARISH: 1 LONG + 2 SHORTs (2/3 short bias)
+              console.log(`[Portfolio V2] 📉 BTC Bearish - Allocating 1 LONG + 2 SHORTs`)
+              
+              // Take top 1 long
+              const longsToAdd = sortedLongs.slice(0, 1)
+              // Take top 2 shorts
+              const shortsToAdd = sortedShorts.slice(0, 2)
+              
+              selectedPicks = [...longsToAdd, ...shortsToAdd]
+              
+              console.log(`[Portfolio V2]   LONG: ${longsToAdd.map(p => `${p.symbol}(${p.score})`).join(', ')}`)
+              console.log(`[Portfolio V2]   SHORTs: ${shortsToAdd.map(p => `${p.symbol}(${p.score})`).join(', ')}`)
+              
+            } else {
+              // BTC NEUTRAL: Randomize or balanced allocation
+              console.log(`[Portfolio V2] ⚖️ BTC Neutral - Balanced allocation`)
+              
+              // Random choice: 2L+1S or 1L+2S
+              const favorLongs = Math.random() > 0.5
+              
+              if (favorLongs) {
+                console.log(`[Portfolio V2]   Random: 2 LONGs + 1 SHORT`)
+                selectedPicks = [...sortedLongs.slice(0, 2), ...sortedShorts.slice(0, 1)]
+              } else {
+                console.log(`[Portfolio V2]   Random: 1 LONG + 2 SHORTs`)
+                selectedPicks = [...sortedLongs.slice(0, 1), ...sortedShorts.slice(0, 2)]
               }
-              
-              // Fill remaining 2 slots with highest confidence
+            }
+            
+            // Fallback: if we don't have enough picks in one direction, fill with best available
+            if (selectedPicks.length < 3) {
+              console.log(`[Portfolio V2] ⚠️ Insufficient picks for BTC bias allocation (${selectedPicks.length}/3)`)
+              const used = new Set(selectedPicks.map(p => p.symbol))
               const remaining = allPicks
-                .filter(p => p.symbol !== bestLong?.symbol)
+                .filter(p => !used.has(p.symbol))
                 .sort((a, b) => b.score - a.score)
-                .slice(0, 2)
+                .slice(0, 3 - selectedPicks.length)
               
               selectedPicks = [...selectedPicks, ...remaining]
-            } else {
-              // All longs < 50, just take top 3 by confidence
-              console.log(`[Portfolio V2] ⚠️ All longs have score < 50, using top confidence only`)
-              selectedPicks = allPicks
-                .sort((a, b) => b.score - a.score)
-                .slice(0, 3)
+              console.log(`[Portfolio V2] Added ${remaining.length} fill picks: ${remaining.map(p => `${p.symbol} ${p.side}(${p.score})`).join(', ')}`)
             }
             
             console.log(`[Portfolio V2] Selected ${selectedPicks.length} picks:`, selectedPicks.map(p => `${p.symbol} ${p.side} (${p.score})`))
+            
+            // Update bot message with BTC bias allocation
+            const longsCount = selectedPicks.filter(p => p.side === 'LONG').length
+            const shortsCount = selectedPicks.filter(p => p.side === 'SHORT').length
+            let biasMessage = ''
+            
+            if (btcBias === 'BTC_BULLISH') {
+              biasMessage = `📈 BTC Bullish - Favoring Longs (${longsCount}L/${shortsCount}S)`
+            } else if (btcBias === 'BTC_BEARISH') {
+              biasMessage = `📉 BTC Bearish - Favoring Shorts (${longsCount}L/${shortsCount}S)`
+            } else {
+              biasMessage = `⚖️ BTC Neutral - Balanced (${longsCount}L/${shortsCount}S)`
+            }
+            
+            const picksSummary = selectedPicks.map(p => `${p.symbol} ${p.side}(${p.score})`).join(', ')
+            const botStatusMessage = `Auto Mode: ${biasMessage} | Picks: ${picksSummary}`
+            setBotMessage(botStatusMessage)
+            if (onBotMessageChange) onBotMessageChange(botStatusMessage)
             
             if (selectedPicks.length === 0) {
               console.log('[Portfolio V2] ⚠️ No viable picks (all below score threshold)')

@@ -1009,8 +1009,13 @@ Get complete signal analysis for a specific symbol with updated reasoning. **Ful
       "✅ Strong UPTREND: 4 HH, 3 HL confirmed",
       "✅ Price 1.18% above EMA50 (healthy)",
       "✅ ADX 51.6 (very strong trend)",
-      "🎯 15m confirmation candle triggered - ENTRY READY"
-    ]
+      "🎯 15m confirmation candle triggered - ENTRY READY",
+      "✅ BTC trend: BULLISH (aligned with LONG)"
+    ],
+    "market_bias": "BTC_BULLISH",
+    "bias_alignment": "WITH_TREND",
+    "btc_trend_state": "UPTREND",
+    "btc_score": 75
   }
 }
 ```
@@ -1994,6 +1999,12 @@ interface SwingTrendSignal {
   reasoning: string[];
   warnings: string[];
   
+  // Market Bias (BTC Trend Direction)
+  market_bias: string;            // BTC_BULLISH, BTC_BEARISH, BTC_NEUTRAL
+  bias_alignment: string;         // WITH_TREND, AGAINST_TREND, NEUTRAL
+  btc_trend_state: string;        // UPTREND, DOWNTREND, NEUTRAL (BTC's actual trend)
+  btc_score: number;              // BTC's trend strength score (0-100)
+  
   // Legacy fields (for compatibility)
   spread_quality: string;         // Excellent, Good, Fair, Poor
   liquidity_tier: string;         // Tier1, Tier2, Tier3
@@ -2059,9 +2070,15 @@ interface SwingTrendSignal {
         "✅ Strong UPTREND: 4 HH, 3 HL confirmed",
         "✅ Price 0.15% above EMA50 (healthy)",
         "✅ ADX 28.5 (strong trend)",
-        "🎯 15m confirmation candle triggered - ENTRY READY"
+        "🎯 15m confirmation candle triggered - ENTRY READY",
+        "✅ BTC trend: BULLISH (aligned with LONG)"
       ],
       "warnings": [],
+      
+      "market_bias": "BTC_BULLISH",
+      "bias_alignment": "WITH_TREND",
+      "btc_trend_state": "UPTREND",
+      "btc_score": 75,
       
       "spread_quality": "Excellent",
       "liquidity_tier": "Tier1"
@@ -2089,8 +2106,13 @@ interface SwingTrendSignal {
       "invalidation_price": 148.00,
       "reasoning": [
         "✅ Strong UPTREND: 3 HH, 3 HL confirmed",
-        "⏳ Pullback active - waiting for 15m confirmation"
-      ]
+        "⏳ Pullback active - waiting for 15m confirmation",
+        "✅ BTC trend: BULLISH (aligned with LONG)"
+      ],
+      "market_bias": "BTC_BULLISH",
+      "bias_alignment": "WITH_TREND",
+      "btc_trend_state": "UPTREND",
+      "btc_score": 75
     }
   ],
   
@@ -2137,8 +2159,13 @@ interface SwingTrendSignal {
         "✅ Strong DOWNTREND: 4 LH, 3 LL confirmed",
         "✅ Price 2.34% below EMA50 (healthy)",
         "✅ ADX 32.1 (very strong trend)",
-        "📊 Identified strong trend (score: 85/100)"
-      ]
+        "📊 Identified strong trend (score: 85/100)",
+        "⚠️  BTC trend: BULLISH (counter to SHORT - risky)"
+      ],
+      "market_bias": "BTC_BULLISH",
+      "bias_alignment": "AGAINST_TREND",
+      "btc_trend_state": "UPTREND",
+      "btc_score": 75
     }
   ],
   
@@ -2173,9 +2200,17 @@ ws.onmessage = (event) => {
       console.log(`📈 LONG: ${pick.symbol} | Score: ${pick.score}/100 | State: ${pick.state}`);
       console.log(`   Structure: ${pick.structure.higher_highs} HH, ${pick.structure.higher_lows} HL`);
       console.log(`   Entry: ${pick.entry_conditions.confirmed_entry ? '🎯 READY' : '⏳ WAITING'}`);
+      console.log(`   BTC Bias: ${pick.market_bias} (${pick.bias_alignment})`);
       
       // Only enter on ENTRY_CONFIRMED state (15m confirmation fired)
       if (pick.state === 'ENTRY_CONFIRMED' && pick.score >= 80) {
+        // Check BTC bias alignment (optional - informational)
+        if (pick.bias_alignment === 'AGAINST_TREND') {
+          console.warn(`⚠️  ${pick.symbol} is counter to BTC trend (${pick.btc_trend_state}) - higher risk`);
+          // You could skip counter-trend trades or reduce position size
+          // return; // Uncomment to skip counter-trend trades
+        }
+        
         if (!hasOpenPosition(pick.symbol)) {
           placeLimitOrder({
             symbol: pick.symbol,
@@ -2188,6 +2223,7 @@ ws.onmessage = (event) => {
           console.log(`✅ Entered LONG ${pick.symbol} @ $${pick.entry_conditions.current_price}`);
           console.log(`   SL: $${pick.stop_loss} (below swing low $${pick.structure.last_swing_low})`);
           console.log(`   TP: $${pick.take_profit}`);
+          console.log(`   BTC Alignment: ${pick.bias_alignment === 'WITH_TREND' ? '✅ WITH BTC' : '⚠️ AGAINST BTC'}`);
         }
       }
     });
@@ -2196,8 +2232,16 @@ ws.onmessage = (event) => {
     top_shorts.forEach(pick => {
       console.log(`📉 SHORT: ${pick.symbol} | Score: ${pick.score}/100 | State: ${pick.state}`);
       console.log(`   Structure: ${pick.structure.lower_highs} LH, ${pick.structure.lower_lows} LL`);
+      console.log(`   BTC Bias: ${pick.market_bias} (${pick.bias_alignment})`);
       
       if (pick.state === 'ENTRY_CONFIRMED' && pick.score >= 80) {
+        // Check BTC bias alignment (optional - informational)
+        if (pick.bias_alignment === 'AGAINST_TREND') {
+          console.warn(`⚠️  ${pick.symbol} is counter to BTC trend (${pick.btc_trend_state}) - higher risk`);
+          // You could skip counter-trend trades or reduce position size
+          // return; // Uncomment to skip counter-trend trades
+        }
+        
         if (!hasOpenPosition(pick.symbol)) {
           placeLimitOrder({
             symbol: pick.symbol,
@@ -2206,6 +2250,9 @@ ws.onmessage = (event) => {
             takeProfit: pick.take_profit,
             stopLoss: pick.stop_loss
           });
+          
+          console.log(`✅ Entered SHORT ${pick.symbol} @ $${pick.entry_conditions.current_price}`);
+          console.log(`   BTC Alignment: ${pick.bias_alignment === 'WITH_TREND' ? '✅ WITH BTC' : '⚠️ AGAINST BTC'}`);
         }
       }
     });
@@ -2277,6 +2324,13 @@ setInterval(() => {
 - ✅ **Top 5 longs + Top 5 shorts** - Separated by direction
 - ✅ **No subscription needed** - Automatic broadcast to all authenticated clients
 - ✅ **Structure-based** - Detects HH/HL (uptrends) and LL/LH (downtrends) on 4H candles
+- ✅ **BTC Market Bias** 🆕 - Every signal includes BTC's trend direction:
+  - `market_bias`: BTC_BULLISH, BTC_BEARISH, or BTC_NEUTRAL
+  - `bias_alignment`: WITH_TREND (safer), AGAINST_TREND (riskier), or NEUTRAL
+  - `btc_trend_state`: BTC's actual trend state
+  - `btc_score`: BTC's trend strength (0-100)
+  - Helps clients decide whether to favor longs (BTC bullish) or shorts (BTC bearish)
+  - **Informational only** - does not affect scoring or filtering
 - ✅ **100-point scoring**:
   - Structure count (HH/HL or LL/LH): 40 pts
   - Price vs EMA50: 20 pts

@@ -660,6 +660,27 @@ All settings are stored in localStorage and persist across sessions.
 **Overview:**
 The Portfolio Scanner is an automated multi-pair trading system that monitors 30+ symbols and selects the top 3 opportunities based on order book analysis.
 
+**BTC Market Bias Allocation (NEW - Nov 2025):**
+The Portfolio Scanner now adapts position allocation based on BTC's trend direction:
+
+- **📈 BTC Bullish**: 2 LONGs + 1 SHORT (2/3 long bias)
+  - When BTC is in an uptrend, the system favors long positions
+  - Takes the top 2 strongest long opportunities + top 1 short
+  
+- **📉 BTC Bearish**: 1 LONG + 2 SHORTs (2/3 short bias)
+  - When BTC is in a downtrend, the system favors short positions
+  - Takes the top 1 strongest long opportunity + top 2 shorts
+  
+- **⚖️ BTC Neutral**: Randomized allocation (1L+2S or 2L+1S)
+  - When BTC has no clear direction, randomly picks allocation
+  - Ensures balanced exposure in uncertain markets
+
+**How BTC Bias Works:**
+- Each portfolio pick includes `market_bias` (BTC_BULLISH/BTC_BEARISH/BTC_NEUTRAL)
+- Server analyzes BTC's 4H swing structure to determine market regime
+- Frontend automatically adjusts long/short ratio based on BTC's trend
+- Still respects minimum score thresholds (70+) and exclusion filters
+
 **Position Limit Enforcement:**
 - **Maximum 3 concurrent positions** - Strictly enforced across all signal handlers
 - **Global limit check** - All signal handlers (scalp, momentum, momentum X, order book, range trading) check the total active position count before opening new positions
@@ -667,16 +688,17 @@ The Portfolio Scanner is an automated multi-pair trading system that monitors 30
 - **Console logging** - Clear 🚫 BLOCKED messages when attempting to open position #4+ with list of active positions
 
 **How it works:**
-1. Server broadcasts `portfolio_picks` every 30 seconds with top 3 opportunities
-2. Frontend subscribes to order book trading strategy for each picked symbol
-3. Order book signals manage entry, exit, and position reversals
-4. Each signal handler enforces the 3-position limit before placing orders
-5. Active positions tracked in `orderManager.activePositions` Map
+1. Server broadcasts `portfolio_picks` every 5 minutes with top 5 longs + top 5 shorts
+2. Frontend reads BTC market bias from picks data
+3. Selects 3 positions using BTC-adaptive allocation (2L+1S, 1L+2S, or random)
+4. Subscribes to selected symbols with appropriate strategies
+5. Each signal handler enforces the 3-position limit before placing orders
+6. Active positions tracked in `orderManager.activePositions` Map
 
-**Critical Fix (2025-01-08):**
-- Fixed bug where order book reversals could exceed 3-position limit
-- Added position limit checks to all 5 signal handlers
-- Prevents portfolio scanner from opening more than 3 positions simultaneously
+**Critical Updates:**
+- **Nov 2025**: Added BTC market bias allocation for adaptive long/short ratios
+- **Jan 2025**: Fixed bug where order book reversals could exceed 3-position limit
+- **Jan 2025**: Added position limit checks to all 5 signal handlers
 
 ### Trading Flow
 

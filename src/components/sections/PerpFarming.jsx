@@ -2126,13 +2126,79 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             
             console.log(`[Portfolio V2] 🔍 BTC Market Bias: ${btcBias} (score: ${btcScore})`)
             
+            // SHORT-TERM REVERSAL CHECK: Detect if BTC moved sharply against the 4H bias in the last hour
+            let btcHourlyChange = 0
+            let biasOverride = false
+            
+            try {
+              // Fetch last 2 hourly candles for BTCUSDT to calculate 1h % change
+              const response = await fetch(
+                'https://api.aster.finance/fapi/v1/klines?symbol=BTCUSDT&interval=1h&limit=2'
+              )
+              
+              if (response.ok) {
+                const klines = await response.json()
+                
+                if (klines && klines.length === 2) {
+                  // Kline format: [openTime, open, high, low, close, volume, closeTime, ...]
+                  const prevClose = parseFloat(klines[0][4])  // 1 hour ago close
+                  const currentClose = parseFloat(klines[1][4])  // Current hour close
+                  
+                  btcHourlyChange = ((currentClose - prevClose) / prevClose) * 100
+                  
+                  console.log(`[Portfolio V2] 📊 BTC Hourly Change: ${btcHourlyChange.toFixed(2)}% (${prevClose.toFixed(2)} → ${currentClose.toFixed(2)})`)
+                  
+                  // Check for conflicts between 4H bias and 1H price action
+                  if (btcBias === 'BTC_BULLISH' && btcHourlyChange < -1.0) {
+                    console.warn(`[Portfolio V2] ⚠️ BIAS CONFLICT: 4H bias is BULLISH but BTC dropped ${Math.abs(btcHourlyChange).toFixed(2)}% in last hour!`)
+                    console.warn(`[Portfolio V2] ⚠️ Possible reversal in progress - switching to defensive allocation (1L+2S)`)
+                    biasOverride = true
+                  } else if (btcBias === 'BTC_BEARISH' && btcHourlyChange > 1.0) {
+                    console.warn(`[Portfolio V2] ⚠️ BIAS CONFLICT: 4H bias is BEARISH but BTC pumped ${btcHourlyChange.toFixed(2)}% in last hour!`)
+                    console.warn(`[Portfolio V2] ⚠️ Possible reversal in progress - switching to defensive allocation (2L+1S)`)
+                    biasOverride = true
+                  } else {
+                    console.log(`[Portfolio V2] ✅ BTC 1H price action confirms 4H bias (no conflict)`)
+                  }
+                }
+              }
+            } catch (error) {
+              console.error(`[Portfolio V2] Failed to fetch BTC hourly data:`, error.message)
+              // Continue with original bias if fetch fails
+            }
+            
             // Sort picks by score
             const sortedLongs = allPicks.filter(p => p.side === 'LONG').sort((a, b) => b.score - a.score)
             const sortedShorts = allPicks.filter(p => p.side === 'SHORT').sort((a, b) => b.score - a.score)
             
             let selectedPicks = []
             
-            if (btcBias === 'BTC_BULLISH') {
+            // OVERRIDE LOGIC: If 1H price action conflicts with 4H bias, use defensive allocation
+            if (biasOverride && btcBias === 'BTC_BULLISH') {
+              // 4H says bullish but 1H is dumping → Switch to shorts (1L+2S)
+              console.log(`[Portfolio V2] 🛡️ DEFENSIVE MODE: Switching from 2L+1S to 1L+2S due to hourly drop`)
+              
+              const longsToAdd = sortedLongs.slice(0, 1)
+              const shortsToAdd = sortedShorts.slice(0, 2)
+              
+              selectedPicks = [...longsToAdd, ...shortsToAdd]
+              
+              console.log(`[Portfolio V2]   LONG: ${longsToAdd.map(p => `${p.symbol}(${p.score})`).join(', ')}`)
+              console.log(`[Portfolio V2]   SHORTs: ${shortsToAdd.map(p => `${p.symbol}(${p.score})`).join(', ')}`)
+              
+            } else if (biasOverride && btcBias === 'BTC_BEARISH') {
+              // 4H says bearish but 1H is pumping → Switch to longs (2L+1S)
+              console.log(`[Portfolio V2] 🛡️ DEFENSIVE MODE: Switching from 1L+2S to 2L+1S due to hourly pump`)
+              
+              const longsToAdd = sortedLongs.slice(0, 2)
+              const shortsToAdd = sortedShorts.slice(0, 1)
+              
+              selectedPicks = [...longsToAdd, ...shortsToAdd]
+              
+              console.log(`[Portfolio V2]   LONGs: ${longsToAdd.map(p => `${p.symbol}(${p.score})`).join(', ')}`)
+              console.log(`[Portfolio V2]   SHORT: ${shortsToAdd.map(p => `${p.symbol}(${p.score})`).join(', ')}`)
+              
+            } else if (btcBias === 'BTC_BULLISH') {
               // BTC BULLISH: 2 LONGs + 1 SHORT (2/3 long bias)
               console.log(`[Portfolio V2] 📈 BTC Bullish - Allocating 2 LONGs + 1 SHORT`)
               
@@ -2196,12 +2262,16 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             const shortsCount = selectedPicks.filter(p => p.side === 'SHORT').length
             let biasMessage = ''
             
-            if (btcBias === 'BTC_BULLISH') {
-              biasMessage = `📈 BTC Bullish - Favoring Longs (${longsCount}L/${shortsCount}S)`
+            if (biasOverride && btcBias === 'BTC_BULLISH') {
+              biasMessage = `🛡️ DEFENSIVE (4H Bullish but 1H ${btcHourlyChange.toFixed(2)}%) - Shorts (${longsCount}L/${shortsCount}S)`
+            } else if (biasOverride && btcBias === 'BTC_BEARISH') {
+              biasMessage = `🛡️ DEFENSIVE (4H Bearish but 1H ${btcHourlyChange.toFixed(2)}%) - Longs (${longsCount}L/${shortsCount}S)`
+            } else if (btcBias === 'BTC_BULLISH') {
+              biasMessage = `📈 BTC Bullish (1H ${btcHourlyChange.toFixed(2)}%) - Longs (${longsCount}L/${shortsCount}S)`
             } else if (btcBias === 'BTC_BEARISH') {
-              biasMessage = `📉 BTC Bearish - Favoring Shorts (${longsCount}L/${shortsCount}S)`
+              biasMessage = `📉 BTC Bearish (1H ${btcHourlyChange.toFixed(2)}%) - Shorts (${longsCount}L/${shortsCount}S)`
             } else {
-              biasMessage = `⚖️ BTC Neutral - Balanced (${longsCount}L/${shortsCount}S)`
+              biasMessage = `⚖️ BTC Neutral (1H ${btcHourlyChange.toFixed(2)}%) - Balanced (${longsCount}L/${shortsCount}S)`
             }
             
             const picksSummary = selectedPicks.map(p => `${p.symbol} ${p.side}(${p.score})`).join(', ')

@@ -681,6 +681,19 @@ The Portfolio Scanner now adapts position allocation based on BTC's trend direct
 - Frontend automatically adjusts long/short ratio based on BTC's trend
 - Still respects minimum score thresholds (70+) and exclusion filters
 
+**🛡️ Defensive Mode (Reversal Detection):**
+The system includes a **short-term reversal check** to catch sudden BTC movements that conflict with the 4H bias:
+
+- **Hourly Change Check**: Fetches BTC's last 2 hourly candles to calculate 1H % change
+- **Conflict Detection**:
+  - If 4H bias is BULLISH but BTC dropped >1% in last hour → **Switch to 1L+2S** (defensive shorts)
+  - If 4H bias is BEARISH but BTC pumped >1% in last hour → **Switch to 2L+1S** (defensive longs)
+- **Visual Feedback**: Bot message shows `🛡️ DEFENSIVE` status and 1H change percentage
+- **Example**: `"🛡️ DEFENSIVE (4H Bullish but 1H -1.35%) - Shorts (1L/2S)"`
+- **Purpose**: Prevents blindly following a lagging 4H trend when price action reverses sharply
+
+This dual-timeframe approach combines the stability of 4H structure with the responsiveness of 1H price action.
+
 **Position Limit Enforcement:**
 - **Maximum 3 concurrent positions** - Strictly enforced across all signal handlers
 - **Global limit check** - All signal handlers (scalp, momentum, momentum X, order book, range trading) check the total active position count before opening new positions

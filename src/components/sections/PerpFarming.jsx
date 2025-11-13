@@ -53,6 +53,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
   const [overallPnl, setOverallPnl] = useState(0)
   const [totalTrades, setTotalTrades] = useState(0)
   const [estimatedFees, setEstimatedFees] = useState(0)
+  const [positionPnls, setPositionPnls] = useState([]) // Individual position PnLs: [{ symbol, pnl }, ...]
   const [botMessage, setBotMessage] = useState('Initializing...')
   const [botMessages, setBotMessages] = useState({})
   const lastMessageUpdateRef = useRef({})
@@ -977,6 +978,9 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               return prev
             })
             
+            // Clear individual position PnLs
+            setPositionPnls([])
+            
             // Clear portfolio positions too if in Auto Mode
             if (settings.autoMode) {
               setPortfolioPositions(prev => {
@@ -993,6 +997,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             // Calculate total PNL in dollars from all positions
             let totalPnlDollars = 0
             let totalFees = 0
+            const individualPnls = []
             
             for (const position of status.activePositions) {
               const currentPosition = await orderManager.dexService.getPosition(position.symbol)
@@ -1009,9 +1014,16 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               const exitFee = exitNotional * EXIT_FEE
               const totalPosFees = entryFee + exitFee
               
+              // Calculate individual position net PnL
+              const positionNetPnl = unrealizedProfit - totalPosFees
+              individualPnls.push({ symbol: position.symbol, pnl: positionNetPnl })
+              
               totalPnlDollars += unrealizedProfit
               totalFees += totalPosFees
             }
+            
+            // Update individual position PnLs
+            setPositionPnls(individualPnls)
             
             // Net PNL = Unrealized PNL - Fees
             const netPnl = totalPnlDollars - totalFees
@@ -3181,6 +3193,21 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               {estimatedFees > 0 && (
                 <div className="fees-display">
                   Fees: ${estimatedFees.toFixed(2)}
+                </div>
+              )}
+              {positionPnls.length > 1 && (
+                <div className="individual-pnls">
+                  {positionPnls.map((pos, index) => (
+                    <div 
+                      key={pos.symbol}
+                      className={`position-pnl-badge ${pos.pnl > 0 ? 'positive' : pos.pnl < 0 ? 'negative' : 'neutral'}`}
+                    >
+                      <span className="position-symbol">{pos.symbol.replace('USDT', '')}</span>
+                      <span className="position-pnl-value">
+                        {pos.pnl > 0 ? '+' : ''}{pos.pnl < 0 ? '-' : ''}${Math.abs(pos.pnl).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

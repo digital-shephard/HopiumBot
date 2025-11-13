@@ -193,6 +193,11 @@ npm run preview
   - **Perp Farming Displays**: Equity and PnL displays dynamically reposition on small screens (iPhone SE and smaller)
     - Capital display moves to far left edge with optimized font sizes
     - Net PNL display moves to far right edge with optimized font sizes
+    - **Individual Position PnLs**: When trading multiple positions simultaneously, small rounded badge indicators appear below the net PNL showing each position's individual PnL with color-coded profit/loss
+      - Green badges for profitable positions
+      - Red badges for losing positions
+      - Symbol names displayed (e.g., BTC, ETH)
+      - Responsive sizing for all screen sizes
     - Prevents overlap with circle container on narrow screens
 - **Touch Gestures**: Swipe left/right to navigate between sections on mobile devices
 - **Adaptive Navigation**: 

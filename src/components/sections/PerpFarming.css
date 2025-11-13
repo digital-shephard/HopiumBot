@@ -430,6 +430,59 @@
   gap: 8px;
 }
 
+.individual-pnls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 4px;
+  max-width: 200px;
+}
+
+.position-pnl-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 10px;
+  min-width: 60px;
+  transition: all 0.3s ease;
+}
+
+.position-pnl-badge.positive {
+  background: rgba(0, 255, 0, 0.1);
+  border-color: rgba(0, 255, 0, 0.3);
+  color: #00ff00;
+  text-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
+}
+
+.position-pnl-badge.negative {
+  background: rgba(255, 0, 0, 0.1);
+  border-color: rgba(255, 0, 0, 0.3);
+  color: #ff4444;
+  text-shadow: 0 0 8px rgba(255, 0, 0, 0.5);
+}
+
+.position-pnl-badge.neutral {
+  color: #ffd700;
+}
+
+.position-symbol {
+  font-weight: bold;
+  font-size: 9px;
+  opacity: 0.8;
+  letter-spacing: 0.5px;
+}
+
+.position-pnl-value {
+  font-weight: bold;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
 /* Adjust positioning on short screens */
 @media (max-height: 850px) {
   .pnl-display {
@@ -443,6 +496,24 @@
   .pnl-amount {
     font-size: 22px;
     letter-spacing: 1.5px;
+  }
+  
+  .individual-pnls {
+    max-width: 180px;
+    gap: 5px;
+  }
+  
+  .position-pnl-badge {
+    padding: 3px 6px;
+    min-width: 55px;
+  }
+  
+  .position-symbol {
+    font-size: 8px;
+  }
+  
+  .position-pnl-value {
+    font-size: 10px;
   }
 }
 
@@ -458,6 +529,25 @@
   .pnl-amount {
     font-size: 20px;
     letter-spacing: 1px;
+  }
+  
+  .individual-pnls {
+    max-width: 160px;
+    gap: 4px;
+  }
+  
+  .position-pnl-badge {
+    padding: 2px 5px;
+    min-width: 50px;
+    font-size: 9px;
+  }
+  
+  .position-symbol {
+    font-size: 7px;
+  }
+  
+  .position-pnl-value {
+    font-size: 9px;
   }
 }
 
@@ -485,6 +575,25 @@
     font-size: 16px;
     letter-spacing: 1px;
   }
+  
+  .individual-pnls {
+    max-width: 140px;
+    gap: 4px;
+  }
+  
+  .position-pnl-badge {
+    padding: 2px 5px;
+    min-width: 48px;
+    font-size: 8px;
+  }
+  
+  .position-symbol {
+    font-size: 7px;
+  }
+  
+  .position-pnl-value {
+    font-size: 9px;
+  }
 }
 
 /* Adjust positioning on short narrow screens */
@@ -502,6 +611,25 @@
   .pnl-amount {
     font-size: 16px;
     letter-spacing: 1px;
+  }
+  
+  .individual-pnls {
+    max-width: 140px;
+    gap: 4px;
+  }
+  
+  .position-pnl-badge {
+    padding: 2px 5px;
+    min-width: 48px;
+    font-size: 8px;
+  }
+  
+  .position-symbol {
+    font-size: 7px;
+  }
+  
+  .position-pnl-value {
+    font-size: 9px;
   }
 }
 

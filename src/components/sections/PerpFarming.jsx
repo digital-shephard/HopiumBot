@@ -2136,7 +2136,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             try {
               // Fetch last 3 4H candles to see what BTC is REALLY doing (12 hours of data)
               const response4H = await fetch(
-                'https://api.aster.finance/fapi/v1/klines?symbol=BTCUSDT&interval=4h&limit=3'
+                'https://fapi.asterdex.com/fapi/v1/klines?symbol=BTCUSDT&interval=4h&limit=3'
               )
               
               if (response4H.ok) {
@@ -2187,7 +2187,7 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               
               // Also check 1H for responsiveness (quick moves)
               const response1H = await fetch(
-                'https://api.aster.finance/fapi/v1/klines?symbol=BTCUSDT&interval=1h&limit=4'
+                'https://fapi.asterdex.com/fapi/v1/klines?symbol=BTCUSDT&interval=1h&limit=4'
               )
               
               if (response1H.ok) {

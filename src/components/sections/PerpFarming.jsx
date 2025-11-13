@@ -2196,10 +2196,12 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                   } catch (error) {
                     console.log(`[Portfolio V2] Failed with ${leverage}x leverage: ${error.message}`)
                     
-                    if (error.message.includes('leverage') || 
-                        error.message.includes('notional') || 
-                        error.message.includes('Margin') ||
-                        error.message.includes('balance')) {
+                    // Case-insensitive check for leverage/margin/balance errors
+                    const errorMsg = error.message.toLowerCase()
+                    if (errorMsg.includes('leverage') || 
+                        errorMsg.includes('notional') || 
+                        errorMsg.includes('margin') ||
+                        errorMsg.includes('balance')) {
                       leverage = Math.max(1, Math.floor(leverage / 2))
                       console.log(`[Portfolio V2] Retrying with ${leverage}x leverage...`)
                     } else {
@@ -2213,6 +2215,8 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                 }
                 
                 // Track both orders in orderManager
+                // NOTE: Auto Mode uses 4H swing trades, so orders need longer timeout
+                // The 80% order is meant to catch pullbacks that may take hours/days
                 for (const result of orderResults) {
                   orderManager.activeOrders.set(result.orderId, {
                     orderId: result.orderId,
@@ -2224,9 +2228,10 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                     takeProfit: parseFloat(settings.takeProfit),
                     stopLoss: parseFloat(settings.stopLoss),
                     createdAt: Date.now(),
-                    entryConfidence: 'high'
+                    entryConfidence: 'high',
+                    noTimeout: true  // Don't auto-cancel swing trade orders
                   })
-                  console.log(`[Portfolio V2] Tracking order ${result.orderId} in orderManager`)
+                  console.log(`[Portfolio V2] Tracking order ${result.orderId} (no timeout - swing trade)`)
                 }
                 
                 const newPos = {

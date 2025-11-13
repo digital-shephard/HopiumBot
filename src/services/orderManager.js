@@ -1351,7 +1351,14 @@ export class OrderManager {
             const ageSeconds = Math.floor((now - trackedOrder.createdAt) / 1000)
             const timeoutSeconds = Math.floor(this.orderTimeout / 1000)
             
-            if ((now - trackedOrder.createdAt) > this.orderTimeout) {
+            // Skip timeout check for orders marked noTimeout (e.g., Auto Mode swing trades)
+            if (trackedOrder.noTimeout) {
+              // Log occasionally to show it's being monitored (no timeout)
+              if (ageSeconds % 60 === 0 && ageSeconds > 0) {
+                console.log(`[OrderManager] ⏳ Order ${orderId} waiting: ${ageSeconds}s (no timeout - swing trade)`)
+              }
+            }
+            else if ((now - trackedOrder.createdAt) > this.orderTimeout) {
               console.log(`[OrderManager] ⏱️ Order ${orderId} TIMED OUT: ${ageSeconds}s elapsed (timeout: ${timeoutSeconds}s) - cancelling`)
               try {
                 await this.dexService.cancelOrder(trackedOrder.symbol, orderId)

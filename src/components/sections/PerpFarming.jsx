@@ -2126,39 +2126,61 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             
             console.log(`[Portfolio V2] 🔍 BTC Market Bias: ${btcBias} (score: ${btcScore})`)
             
-            // SHORT-TERM REVERSAL CHECK: Detect if BTC moved sharply against the 4H bias in the last hour
+            // SHORT-TERM REVERSAL CHECK: Detect if BTC moved sharply against the 4H bias in recent hours
             let btcHourlyChange = 0
+            let btc3HourChange = 0
             let biasOverride = false
             
             try {
-              // Fetch last 2 hourly candles for BTCUSDT to calculate 1h % change
+              // Fetch last 4 hourly candles to catch ongoing dumps/pumps (not just last hour)
               const response = await fetch(
-                'https://api.aster.finance/fapi/v1/klines?symbol=BTCUSDT&interval=1h&limit=2'
+                'https://api.aster.finance/fapi/v1/klines?symbol=BTCUSDT&interval=1h&limit=4'
               )
               
               if (response.ok) {
                 const klines = await response.json()
                 
-                if (klines && klines.length === 2) {
+                if (klines && klines.length === 4) {
                   // Kline format: [openTime, open, high, low, close, volume, closeTime, ...]
-                  const prevClose = parseFloat(klines[0][4])  // 1 hour ago close
-                  const currentClose = parseFloat(klines[1][4])  // Current hour close
+                  const price3HoursAgo = parseFloat(klines[0][4])  // 3 hours ago close
+                  const price1HourAgo = parseFloat(klines[2][4])   // 1 hour ago close
+                  const currentPrice = parseFloat(klines[3][4])    // Current hour close
                   
-                  btcHourlyChange = ((currentClose - prevClose) / prevClose) * 100
+                  // Calculate both 1H and 3H changes
+                  btcHourlyChange = ((currentPrice - price1HourAgo) / price1HourAgo) * 100
+                  btc3HourChange = ((currentPrice - price3HoursAgo) / price3HoursAgo) * 100
                   
-                  console.log(`[Portfolio V2] 📊 BTC Hourly Change: ${btcHourlyChange.toFixed(2)}% (${prevClose.toFixed(2)} → ${currentClose.toFixed(2)})`)
+                  console.log(`[Portfolio V2] 📊 BTC Recent Change:`)
+                  console.log(`[Portfolio V2]   1H: ${btcHourlyChange.toFixed(2)}% (${price1HourAgo.toFixed(2)} → ${currentPrice.toFixed(2)})`)
+                  console.log(`[Portfolio V2]   3H: ${btc3HourChange.toFixed(2)}% (${price3HoursAgo.toFixed(2)} → ${currentPrice.toFixed(2)})`)
                   
-                  // Check for conflicts between 4H bias and 1H price action
-                  if (btcBias === 'BTC_BULLISH' && btcHourlyChange < -1.0) {
-                    console.warn(`[Portfolio V2] ⚠️ BIAS CONFLICT: 4H bias is BULLISH but BTC dropped ${Math.abs(btcHourlyChange).toFixed(2)}% in last hour!`)
-                    console.warn(`[Portfolio V2] ⚠️ Possible reversal in progress - switching to defensive allocation (1L+2S)`)
-                    biasOverride = true
-                  } else if (btcBias === 'BTC_BEARISH' && btcHourlyChange > 1.0) {
-                    console.warn(`[Portfolio V2] ⚠️ BIAS CONFLICT: 4H bias is BEARISH but BTC pumped ${btcHourlyChange.toFixed(2)}% in last hour!`)
-                    console.warn(`[Portfolio V2] ⚠️ Possible reversal in progress - switching to defensive allocation (2L+1S)`)
-                    biasOverride = true
-                  } else {
-                    console.log(`[Portfolio V2] ✅ BTC 1H price action confirms 4H bias (no conflict)`)
+                  // Check for conflicts using EITHER 1H or 3H window (catches ongoing dumps)
+                  // More aggressive: Use 3H change to catch sustained moves, or 1H for sharp drops
+                  const useHourlyChange = btcHourlyChange  // Last hour
+                  const use3HourChange = btc3HourChange    // Last 3 hours
+                  
+                  if (btcBias === 'BTC_BULLISH') {
+                    // If 4H says bullish but recent price action is dumping
+                    if (use3HourChange < -1.5 || useHourlyChange < -2.0) {
+                      const trigger = use3HourChange < -1.5 ? '3H' : '1H'
+                      const change = use3HourChange < -1.5 ? use3HourChange : useHourlyChange
+                      console.warn(`[Portfolio V2] ⚠️ BIAS CONFLICT: 4H bias is BULLISH but BTC dropped ${Math.abs(change).toFixed(2)}% in ${trigger}!`)
+                      console.warn(`[Portfolio V2] ⚠️ Ongoing dump detected - switching to defensive allocation (1L+2S)`)
+                      biasOverride = true
+                    }
+                  } else if (btcBias === 'BTC_BEARISH') {
+                    // If 4H says bearish but recent price action is pumping
+                    if (use3HourChange > 1.5 || useHourlyChange > 2.0) {
+                      const trigger = use3HourChange > 1.5 ? '3H' : '1H'
+                      const change = use3HourChange > 1.5 ? use3HourChange : useHourlyChange
+                      console.warn(`[Portfolio V2] ⚠️ BIAS CONFLICT: 4H bias is BEARISH but BTC pumped ${change.toFixed(2)}% in ${trigger}!`)
+                      console.warn(`[Portfolio V2] ⚠️ Ongoing pump detected - switching to defensive allocation (2L+1S)`)
+                      biasOverride = true
+                    }
+                  }
+                  
+                  if (!biasOverride) {
+                    console.log(`[Portfolio V2] ✅ BTC recent price action confirms 4H bias (no conflict)`)
                   }
                 }
               }
@@ -2263,15 +2285,15 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
             let biasMessage = ''
             
             if (biasOverride && btcBias === 'BTC_BULLISH') {
-              biasMessage = `🛡️ DEFENSIVE (4H Bullish but 1H ${btcHourlyChange.toFixed(2)}%) - Shorts (${longsCount}L/${shortsCount}S)`
+              biasMessage = `🛡️ DEFENSIVE (4H Bullish but 3H ${btc3HourChange.toFixed(2)}%, 1H ${btcHourlyChange.toFixed(2)}%) - Shorts (${longsCount}L/${shortsCount}S)`
             } else if (biasOverride && btcBias === 'BTC_BEARISH') {
-              biasMessage = `🛡️ DEFENSIVE (4H Bearish but 1H ${btcHourlyChange.toFixed(2)}%) - Longs (${longsCount}L/${shortsCount}S)`
+              biasMessage = `🛡️ DEFENSIVE (4H Bearish but 3H ${btc3HourChange.toFixed(2)}%, 1H ${btcHourlyChange.toFixed(2)}%) - Longs (${longsCount}L/${shortsCount}S)`
             } else if (btcBias === 'BTC_BULLISH') {
-              biasMessage = `📈 BTC Bullish (1H ${btcHourlyChange.toFixed(2)}%) - Longs (${longsCount}L/${shortsCount}S)`
+              biasMessage = `📈 BTC Bullish (3H ${btc3HourChange.toFixed(2)}%, 1H ${btcHourlyChange.toFixed(2)}%) - Longs (${longsCount}L/${shortsCount}S)`
             } else if (btcBias === 'BTC_BEARISH') {
-              biasMessage = `📉 BTC Bearish (1H ${btcHourlyChange.toFixed(2)}%) - Shorts (${longsCount}L/${shortsCount}S)`
+              biasMessage = `📉 BTC Bearish (3H ${btc3HourChange.toFixed(2)}%, 1H ${btcHourlyChange.toFixed(2)}%) - Shorts (${longsCount}L/${shortsCount}S)`
             } else {
-              biasMessage = `⚖️ BTC Neutral (1H ${btcHourlyChange.toFixed(2)}%) - Balanced (${longsCount}L/${shortsCount}S)`
+              biasMessage = `⚖️ BTC Neutral (3H ${btc3HourChange.toFixed(2)}%, 1H ${btcHourlyChange.toFixed(2)}%) - Balanced (${longsCount}L/${shortsCount}S)`
             }
             
             const picksSummary = selectedPicks.map(p => `${p.symbol} ${p.side}(${p.score})`).join(', ')

@@ -682,17 +682,20 @@ The Portfolio Scanner now adapts position allocation based on BTC's trend direct
 - Still respects minimum score thresholds (70+) and exclusion filters
 
 **🛡️ Defensive Mode (Reversal Detection):**
-The system includes a **short-term reversal check** to catch sudden BTC movements that conflict with the 4H bias:
+The system includes a **multi-hour reversal check** to catch ongoing BTC dumps/pumps that conflict with the 4H bias:
 
-- **Hourly Change Check**: Fetches BTC's last 2 hourly candles to calculate 1H % change
+- **Multi-Hour Window**: Fetches BTC's last 4 hourly candles to track 1H and 3H price changes
+- **Dual Detection System**:
+  - **3H Sustained Moves**: If 3H change >±1.5%, triggers defensive mode (catches ongoing dumps)
+  - **1H Sharp Moves**: If 1H change >±2.0%, triggers defensive mode (catches sudden reversals)
 - **Conflict Detection**:
-  - If 4H bias is BULLISH but BTC dropped >1% in last hour → **Switch to 1L+2S** (defensive shorts)
-  - If 4H bias is BEARISH but BTC pumped >1% in last hour → **Switch to 2L+1S** (defensive longs)
-- **Visual Feedback**: Bot message shows `🛡️ DEFENSIVE` status and 1H change percentage
-- **Example**: `"🛡️ DEFENSIVE (4H Bullish but 1H -1.35%) - Shorts (1L/2S)"`
-- **Purpose**: Prevents blindly following a lagging 4H trend when price action reverses sharply
+  - If 4H bias is BULLISH but BTC dropped >1.5% in 3H (or >2% in 1H) → **Switch to 1L+2S** (defensive shorts)
+  - If 4H bias is BEARISH but BTC pumped >1.5% in 3H (or >2% in 1H) → **Switch to 2L+1S** (defensive longs)
+- **Visual Feedback**: Bot message shows `🛡️ DEFENSIVE` status with both 3H and 1H changes
+- **Example**: `"🛡️ DEFENSIVE (4H Bullish but 3H -2.15%, 1H -0.82%) - Shorts (1L/2S)"`
+- **Purpose**: Catches **ongoing dumps** that started 2-3 hours ago (not just last hour spikes)
 
-This dual-timeframe approach combines the stability of 4H structure with the responsiveness of 1H price action.
+This approach solves the "lagging indicator" problem by checking **recent price action** (1H-3H) against **structural bias** (4H).
 
 **Position Limit Enforcement:**
 - **Maximum 3 concurrent positions** - Strictly enforced across all signal handlers

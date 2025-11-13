@@ -2604,6 +2604,22 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
               if (onBotMessageChange) onBotMessageChange('Auto Mode V2 resumed - waiting for next scanner update')
               
               console.log('[PerpFarming] Successfully resumed Auto Mode V2 with existing positions')
+              
+              // Trigger signal status poll immediately for resumed positions
+              setTimeout(() => {
+                if (wsClient && resumedPositions.length > 0) {
+                  console.log('[PerpFarming] Triggering immediate signal status poll for resumed positions')
+                  resumedPositions.forEach(pos => {
+                    if (!excludedList.includes(pos.symbol)) {
+                      try {
+                        wsClient.getSignalStatus(pos.symbol)
+                      } catch (error) {
+                        console.warn(`[PerpFarming] Failed to request signal status for ${pos.symbol}:`, error.message)
+                      }
+                    }
+                  })
+                }
+              }, 2000) // Wait 2s for WebSocket to stabilize
             } else {
               console.log('[PerpFarming] No existing positions to resume')
             }
@@ -2715,6 +2731,13 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
   // Poll for full signal status every 5 minutes (Auto Mode V2)
   // Gets fresh reasoning + invalidation status + score updates
   useEffect(() => {
+    console.log('[Signal Status Poll] useEffect triggered', {
+      isRunning,
+      autoMode,
+      hasWsClient: !!wsClientRef.current,
+      hasExistingPoll: !!signalStatusPollRef.current
+    })
+    
     if (!isRunning || !autoMode || !wsClientRef.current) {
       // Clean up poll if stopped or Auto Mode disabled
       if (signalStatusPollRef.current) {

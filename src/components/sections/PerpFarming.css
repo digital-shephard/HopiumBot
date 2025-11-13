@@ -450,6 +450,13 @@
   font-size: 10px;
   min-width: 60px;
   transition: all 0.3s ease;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.position-pnl-badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
 }
 
 .position-pnl-badge.positive {
@@ -459,11 +466,23 @@
   text-shadow: 0 0 8px rgba(0, 255, 0, 0.5);
 }
 
+.position-pnl-badge.positive:hover {
+  background: rgba(0, 255, 0, 0.2);
+  border-color: rgba(0, 255, 0, 0.5);
+  box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+}
+
 .position-pnl-badge.negative {
   background: rgba(255, 0, 0, 0.1);
   border-color: rgba(255, 0, 0, 0.3);
   color: #ff4444;
   text-shadow: 0 0 8px rgba(255, 0, 0, 0.5);
+}
+
+.position-pnl-badge.negative:hover {
+  background: rgba(255, 0, 0, 0.2);
+  border-color: rgba(255, 0, 0, 0.5);
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.4);
 }
 
 .position-pnl-badge.neutral {
@@ -2026,4 +2045,122 @@
   color: rgba(255, 255, 255, 0.6);
   font-size: 16px;
   letter-spacing: 0.5px;
+}
+
+/* Close Position Modal */
+.close-position-modal {
+  max-width: 400px;
+}
+
+.close-position-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 0;
+}
+
+.close-position-symbol {
+  font-size: 36px;
+  font-weight: bold;
+  color: #ffd700;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  letter-spacing: 2px;
+}
+
+.close-position-pnl {
+  font-size: 28px;
+  font-weight: bold;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 1px;
+}
+
+.close-position-pnl.positive {
+  color: #00ff00;
+  text-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+}
+
+.close-position-pnl.negative {
+  color: #ff4444;
+  text-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+}
+
+.close-position-pnl.neutral {
+  color: #ffd700;
+  text-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+}
+
+.close-position-message {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.exclude-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  padding: 10px;
+  border-radius: 6px;
+  transition: background 0.3s ease;
+}
+
+.exclude-checkbox-label:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.exclude-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #ffd700;
+}
+
+.close-position-buttons {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.close-position-button {
+  flex: 1;
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  text-transform: uppercase;
+}
+
+.close-position-button.confirm {
+  background: linear-gradient(135deg, #ff4444, #cc0000);
+  color: #ffffff;
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.3);
+}
+
+.close-position-button.confirm:hover {
+  background: linear-gradient(135deg, #ff6666, #ff0000);
+  box-shadow: 0 0 25px rgba(255, 0, 0, 0.5);
+  transform: translateY(-2px);
+}
+
+.close-position-button.cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.close-position-button.cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
 }

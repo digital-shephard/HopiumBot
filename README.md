@@ -197,6 +197,10 @@ npm run preview
       - Green badges for profitable positions
       - Red badges for losing positions
       - Symbol names displayed (e.g., BTC, ETH)
+      - **Clickable badges**: Click any position badge to manually close that specific position
+        - Confirmation modal displays symbol and current PnL
+        - Optional checkbox to add the symbol to your exclusion list
+        - Closes position and updates overall PnL immediately
       - Responsive sizing for all screen sizes
     - Prevents overlap with circle container on narrow screens
 - **Touch Gestures**: Swipe left/right to navigate between sections on mobile devices

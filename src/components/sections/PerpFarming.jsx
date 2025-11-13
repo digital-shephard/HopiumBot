@@ -54,6 +54,9 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
   const [totalTrades, setTotalTrades] = useState(0)
   const [estimatedFees, setEstimatedFees] = useState(0)
   const [positionPnls, setPositionPnls] = useState([]) // Individual position PnLs: [{ symbol, pnl }, ...]
+  const [showClosePositionModal, setShowClosePositionModal] = useState(false)
+  const [selectedPositionToClose, setSelectedPositionToClose] = useState(null)
+  const [addToExcludeList, setAddToExcludeList] = useState(false)
   const [botMessage, setBotMessage] = useState('Initializing...')
   const [botMessages, setBotMessages] = useState({})
   const lastMessageUpdateRef = useRef({})
@@ -574,6 +577,59 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
       }, 1000)
     } catch (error) {
       handleError(`Failed to close position for ${symbol}: ${error.message}`)
+    }
+  }
+
+  // Handle position badge click to open close confirmation modal
+  const handlePositionBadgeClick = (positionData) => {
+    setSelectedPositionToClose(positionData)
+    setAddToExcludeList(false)
+    setShowClosePositionModal(true)
+  }
+
+  // Handle confirmed position close from modal
+  const handleConfirmClosePosition = async () => {
+    if (!selectedPositionToClose || !orderManagerRef.current) {
+      return
+    }
+
+    const { symbol, pnl } = selectedPositionToClose
+    
+    try {
+      console.log(`[Manual Close] Closing ${symbol} with Net PNL: $${pnl.toFixed(2)}`)
+      
+      // Close the position
+      await closePosition(orderManagerRef.current, symbol, pnl)
+      
+      // Remove from portfolio positions if in Auto Mode
+      setPortfolioPositions(prev => prev.filter(p => p.symbol !== symbol))
+      
+      // Add to exclusion list if checkbox was checked
+      if (addToExcludeList) {
+        setExcludedPairs(prev => {
+          if (!prev.includes(symbol)) {
+            const updated = [...prev, symbol]
+            console.log(`[Manual Close] Added ${symbol} to exclusion list`)
+            // Save to localStorage
+            const settings = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+            settings.excludedPairs = updated
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+            return updated
+          }
+          return prev
+        })
+        
+        // Update the ref for polling loop
+        excludedPairsRef.current = [...excludedPairsRef.current, symbol]
+      }
+      
+      // Close modal and reset state
+      setShowClosePositionModal(false)
+      setSelectedPositionToClose(null)
+      setAddToExcludeList(false)
+    } catch (error) {
+      console.error(`[Manual Close] Error closing ${symbol}:`, error)
+      handleError(`Failed to close ${symbol}: ${error.message}`)
     }
   }
 
@@ -3201,6 +3257,8 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                     <div 
                       key={pos.symbol}
                       className={`position-pnl-badge ${pos.pnl > 0 ? 'positive' : pos.pnl < 0 ? 'negative' : 'neutral'}`}
+                      onClick={() => handlePositionBadgeClick(pos)}
+                      title={`Click to close ${pos.symbol.replace('USDT', '')} position`}
                     >
                       <span className="position-symbol">{pos.symbol.replace('USDT', '')}</span>
                       <span className="position-pnl-value">
@@ -3902,6 +3960,52 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
                     }}
                   >
                     Stop Bot
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Close Position Modal */}
+      {showClosePositionModal && selectedPositionToClose && (
+        <div className="risk-modal-overlay" onClick={() => setShowClosePositionModal(false)}>
+          <div className="risk-modal close-position-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="risk-modal-close" onClick={() => setShowClosePositionModal(false)}>×</button>
+            <div className="risk-modal-wrapper">
+              <h2 className="risk-modal-title">Close Position</h2>
+              <div className="close-position-content">
+                <div className="close-position-symbol">
+                  {selectedPositionToClose.symbol.replace('USDT', '')}
+                </div>
+                <div className={`close-position-pnl ${selectedPositionToClose.pnl > 0 ? 'positive' : selectedPositionToClose.pnl < 0 ? 'negative' : 'neutral'}`}>
+                  {selectedPositionToClose.pnl > 0 ? '+' : ''}{selectedPositionToClose.pnl < 0 ? '-' : ''}${Math.abs(selectedPositionToClose.pnl).toFixed(2)}
+                </div>
+                <p className="close-position-message">
+                  Are you sure you want to close this position?
+                </p>
+                <label className="exclude-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={addToExcludeList}
+                    onChange={(e) => setAddToExcludeList(e.target.checked)}
+                    className="exclude-checkbox"
+                  />
+                  <span>Add {selectedPositionToClose.symbol.replace('USDT', '')} to exclusion list</span>
+                </label>
+                <div className="close-position-buttons">
+                  <button 
+                    className="close-position-button confirm"
+                    onClick={handleConfirmClosePosition}
+                  >
+                    Close Position
+                  </button>
+                  <button 
+                    className="close-position-button cancel"
+                    onClick={() => setShowClosePositionModal(false)}
+                  >
+                    Cancel
                   </button>
                 </div>
               </div>

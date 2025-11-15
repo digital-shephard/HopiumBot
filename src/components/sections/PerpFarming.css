@@ -55,6 +55,30 @@
     min-height: 100vh;
     padding: 40px 20px;
   }
+  
+  /* Fix equity and PNL display positioning on ultra-wide screens */
+  .equity-display {
+    margin-left: 0;
+    left: 100px;
+    transform: translateY(-50%);
+  }
+  
+  .pnl-display {
+    margin-right: 0;
+    right: 100px;
+    transform: translateY(-50%);
+  }
+}
+
+/* Extra wide screens (4K and beyond) - increase spacing */
+@media (min-width: 2560px) {
+  .equity-display {
+    left: 200px;
+  }
+  
+  .pnl-display {
+    right: 200px;
+  }
 }
 
 /* Adjust for shorter viewport heights */

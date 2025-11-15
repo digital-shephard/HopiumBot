@@ -248,6 +248,11 @@ npm run preview
         - Closes position and updates overall PnL immediately
       - Responsive sizing for all screen sizes
     - Prevents overlap with circle container on narrow screens
+  - **Ultra-Wide Screen Support (1920px+)**: Fixed positioning for equity and PNL displays on large monitors
+    - Capital display uses fixed left positioning (100px at 1920px, 200px at 2560px+)
+    - PNL display uses fixed right positioning (100px at 1920px, 200px at 2560px+)
+    - Prevents element collapse that occurred with percentage-based positioning on ultra-wide screens
+    - Ensures consistent layout on 4K and ultra-wide monitors
 - **Touch Gestures**: Swipe left/right to navigate between sections on mobile devices
 - **Adaptive Navigation**: 
   - **Desktop/Large Screens**: Bottom carousel indicators for section navigation

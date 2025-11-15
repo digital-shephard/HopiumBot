@@ -83,6 +83,10 @@ const SettingsModal = ({
   excludedPairs,
   setExcludedPairs,
   
+  // Custom Strategies
+  customStrategies,
+  onOpenStrategyBuilder,
+  
   // Actions
   handleStart,
   formatPercentage
@@ -578,6 +582,12 @@ const SettingsModal = ({
               <option value="scalp">Aggressive Reversion Scalping ⚡</option>
               <option value="momentum_x">Momentum X (Psychic Candle Reader) 🔥</option>
               <option value="orderbook_trading">Order Book Trading (Near Real-Time) 🔥⚡</option>
+              {customStrategies && customStrategies.length > 0 && <option disabled>──────────</option>}
+              {customStrategies && customStrategies.map((strategy) => (
+                <option key={strategy.id} value={strategy.id}>
+                  🧱 {strategy.name} (Custom)
+                </option>
+              ))}
             </select>
             <div className="strategy-description">
               {strategy === 'range_trading' 
@@ -588,8 +598,23 @@ const SettingsModal = ({
                 ? '⚡ Ultra-fast 30-second signals, optimized for 75x leverage'
                 : strategy === 'momentum_x'
                 ? '🔮 8-layer whipsaw scalper with delta, orderbook, FVG analysis @ 100x'
+                : strategy === 'orderbook_trading'
+                ? '📊 10-second order flow analysis with CVD, OBI, VWAP. Stays in until reversal!'
+                : customStrategies?.find(s => s.id === strategy)
+                ? `🧱 Custom strategy: ${customStrategies.find(s => s.id === strategy).name}`
                 : '📊 10-second order flow analysis with CVD, OBI, VWAP. Stays in until reversal!'
               }
+            </div>
+            <button 
+              className="create-strategy-button"
+              onClick={onOpenStrategyBuilder}
+              type="button"
+            >
+              <span className="button-icon">🧱</span>
+              Create Custom Strategy
+            </button>
+            <div className="strategy-builder-description">
+              Build your own strategy with visual blocks - no coding required!
             </div>
           </div>
           )}

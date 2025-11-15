@@ -39,8 +39,11 @@ import {
 import ClosePositionModal from './perpFarming/modals/ClosePositionModal'
 import AuthModal from './perpFarming/modals/AuthModal'
 import SettingsModal from './perpFarming/components/SettingsModal'
+import StrategyBuilderModal from '../strategy-builder/StrategyBuilderModal'
+import { StrategyStorage } from '../../services/strategyBuilder/StrategyStorage'
+import { StrategyRunner } from '../../services/strategyBuilder/StrategyRunner'
 
-function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChange }) {
+function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChange, onModalStateChange }) {
   // Get auth context for WebSocket authentication
   const { authService } = useAuth()
   
@@ -91,6 +94,18 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
   const [portfolioPositions, setPortfolioPositions] = useState([]) // Track Auto Mode (Portfolio Scanner V2) positions
   const [excludedPairs, setExcludedPairs] = useState([]) // Pairs to exclude from Auto Mode (manual trading)
   const [showExclusionList, setShowExclusionList] = useState(false) // Toggle for exclusion list modal
+  
+  // Custom Strategy Builder
+  const [showStrategyBuilder, setShowStrategyBuilder] = useState(false)
+  const [customStrategies, setCustomStrategies] = useState([]) // Custom strategies from localStorage
+  const customStrategyRunnersRef = useRef(new Map()) // Map of strategy_id -> StrategyRunner
+  
+  // Notify parent when modal state changes
+  useEffect(() => {
+    if (onModalStateChange) {
+      onModalStateChange(showStrategyBuilder);
+    }
+  }, [showStrategyBuilder, onModalStateChange]);
   
   const orderManagerRef = useRef(null)
   const wsClientRef = useRef(null)
@@ -164,6 +179,13 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
       }
     }
   }, [])
+
+  // Load custom strategies from localStorage
+  useEffect(() => {
+    const strategies = StrategyStorage.getAll()
+    setCustomStrategies(strategies)
+    console.log('[PerpFarming] Loaded custom strategies:', strategies.length)
+  }, [showStrategyBuilder]) // Reload when strategy builder closes
 
   // Fetch available symbols from API
   const fetchAvailableSymbols = async () => {
@@ -1951,6 +1973,17 @@ function PerpFarming({ onBotMessageChange, onBotMessagesChange, onBotStatusChang
           setExcludedPairs={setExcludedPairs}
           handleStart={handleStart}
           formatPercentage={formatPercentage}
+          customStrategies={customStrategies}
+          onOpenStrategyBuilder={() => setShowStrategyBuilder(true)}
+        />
+      )}
+      
+      {/* Strategy Builder Modal */}
+      {showStrategyBuilder && (
+        <StrategyBuilderModal
+          isOpen={showStrategyBuilder}
+          onClose={() => setShowStrategyBuilder(false)}
+          symbol={selectedPairs[0] || 'BTCUSDT'}
         />
       )}
 

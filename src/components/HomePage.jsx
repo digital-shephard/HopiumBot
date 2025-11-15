@@ -17,8 +17,16 @@ function HomePage() {
   const [perpBotMessages, setPerpBotMessages] = useState({})
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isPerpBotRunning, setIsPerpBotRunning] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false) // Track if any fullscreen modal is open
   const touchStartX = useRef(null)
   const touchEndX = useRef(null)
+  
+  // Close menu when modal opens
+  useEffect(() => {
+    if (isModalOpen) {
+      setIsMenuOpen(false);
+    }
+  }, [isModalOpen]);
 
   useEffect(() => {
     const updateSlideDistance = () => {
@@ -37,7 +45,8 @@ function HomePage() {
       key="perp" 
       onBotMessageChange={setPerpBotMessage} 
       onBotMessagesChange={setPerpBotMessages}
-      onBotStatusChange={setIsPerpBotRunning} 
+      onBotStatusChange={setIsPerpBotRunning}
+      onModalStateChange={setIsModalOpen}
     />,
     <HopiumFarming key="hopium" isActive={currentIndex === 1} />,
     <AirdropAlpha key="airdrop" onNavigateToHopium={() => goToIndex(1)} />,
@@ -117,17 +126,21 @@ function HomePage() {
       animate={{ opacity: 1 }}
       transition={{ duration: 1.5, ease: 'easeOut' }}
     >
-      <RobotWidget 
-        message={sections[currentIndex].message} 
-        messages={currentIndex === 0 ? perpBotMessages : {}}
-        sectionId={currentIndex}
-        isPerpBotRunning={isPerpBotRunning}
-      />
-      <ConnectWallet />
+      {!isModalOpen && (
+        <>
+          <RobotWidget 
+            message={sections[currentIndex].message} 
+            messages={currentIndex === 0 ? perpBotMessages : {}}
+            sectionId={currentIndex}
+            isPerpBotRunning={isPerpBotRunning}
+          />
+          <ConnectWallet />
+        </>
+      )}
       
       <div className="carousel-container">
         <button 
-          className="carousel-arrow carousel-arrow-left"
+          className={`carousel-arrow carousel-arrow-left ${isModalOpen ? 'hidden' : ''}`}
           onClick={goToPrevious}
           aria-label="Previous section"
         >
@@ -178,7 +191,7 @@ function HomePage() {
         </div>
 
         <button 
-          className="carousel-arrow carousel-arrow-right"
+          className={`carousel-arrow carousel-arrow-right ${isModalOpen ? 'hidden' : ''}`}
           onClick={goToNext}
           aria-label="Next section"
         >
@@ -196,7 +209,7 @@ function HomePage() {
 
       {/* Hamburger Menu Button - Shows on small screens */}
       <button 
-        className="hamburger-menu-button"
+        className={`hamburger-menu-button ${isModalOpen ? 'hidden' : ''}`}
         onClick={() => setIsMenuOpen(!isMenuOpen)}
         aria-label="Toggle menu"
       >
@@ -231,7 +244,7 @@ function HomePage() {
       )}
 
       {/* Regular Carousel Indicators - Hidden on small screens */}
-      <div className="carousel-indicators">
+      <div className={`carousel-indicators ${isModalOpen ? 'hidden' : ''}`}>
         {sections.map((section, index) => (
           <button
             key={index}

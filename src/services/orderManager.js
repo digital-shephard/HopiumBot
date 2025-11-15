@@ -36,6 +36,10 @@ export class OrderManager {
     
     // Error callback
     this.onError = null
+    
+    // Custom strategy hooks
+    this.onClosePosition = null // Callback for closing positions (used by custom strategies)
+    this.signalService = null // Signal service for fetching server signals
   }
 
   /**
@@ -1470,9 +1474,17 @@ export class OrderManager {
 
   /**
    * Close a position
+   * @param {string} symbol - Trading symbol (can be string or object with symbol property)
+   * @param {Object} position - Position data (optional if symbol is provided)
+   * @param {string} reason - Reason for closing
    */
   async closePosition(symbol, position, reason) {
     try {
+      // Handle case where symbol is the only parameter (called from custom strategies)
+      if (typeof symbol === 'string' && !position) {
+        position = this.activePositions.get(symbol) || { side: 'UNKNOWN' }
+      }
+      
       // Get current position to determine quantity
       const currentPosition = await this.dexService.getPosition(symbol)
       const positionAmtRaw = currentPosition.positionAmt || '0'
@@ -1481,11 +1493,16 @@ export class OrderManager {
       if (positionAmt === 0) {
         // Already closed
         this.activePositions.delete(symbol)
-        return
+        return { success: true, message: 'Position already closed' }
       }
 
-      // Determine opposite side
-      const closeSide = position.side === 'LONG' ? 'SELL' : 'BUY'
+      // Determine opposite side based on position amount
+      let closeSide
+      if (positionAmt > 0) {
+        closeSide = 'SELL' // Close LONG
+      } else {
+        closeSide = 'BUY' // Close SHORT
+      }
       
       // Use absolute value of the RAW string to preserve exact precision
       const quantityStr = positionAmt < 0 ? positionAmtRaw.substring(1) : positionAmtRaw
@@ -1512,6 +1529,8 @@ export class OrderManager {
 
       // Remove from active positions
       this.activePositions.delete(symbol)
+      
+      return { success: true, result }
 
     } catch (error) {
       this.handleError(`Failed to close position ${symbol}`, error)

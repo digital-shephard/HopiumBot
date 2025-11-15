@@ -380,3 +380,13 @@
     display: block;
   }
 }
+
+/* Hide navigation when fullscreen modal is open */
+.carousel-arrow.hidden,
+.hamburger-menu-button.hidden,
+.carousel-indicators.hidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  transition: opacity 0.2s ease-out;
+}

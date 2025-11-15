@@ -46,7 +46,7 @@
 }
 
 /* Center content on ultra-wide screens */
-@media (min-width: 1920px) {
+@media (min-width: 1920px) and (min-height: 900px) {
   .perp-farming .section-content {
     display: flex;
     flex-direction: column;
@@ -58,15 +58,17 @@
   
   /* Fix equity and PNL display positioning on ultra-wide screens */
   .equity-display {
-    margin-left: -180%;
+    margin-left: -180% !important;
+    left: auto !important;
   }
   
   .pnl-display {
-    margin-right: -180%;
+    margin-right: -180% !important;
+    right: auto !important;
   }
   
   .trading-status {
-    width: 600px;
+    width: 600px !important;
   }
 }
 

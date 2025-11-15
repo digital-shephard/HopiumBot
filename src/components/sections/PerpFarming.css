@@ -386,7 +386,7 @@
 /* Extra small screens (iPhone SE) */
 @media (max-width: 375px) {
   .equity-display {
-    margin-left: -30%;
+    margin-left: -55%;
     left: 5px;
   }
   
@@ -670,7 +670,7 @@
 /* Extra small screens (iPhone SE) */
 @media (max-width: 375px) {
   .pnl-display {
-    margin-right: -30%;
+    margin-right: -55%;
     right: 5px;
   }
   
@@ -1853,7 +1853,8 @@
   }
 
   .trading-status {
-    font-size: 18px;
+    font-size: 12px;
+    width: 300px;
     letter-spacing: 1px;
   }
 

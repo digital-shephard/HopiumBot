@@ -58,12 +58,12 @@
   
   /* Fix equity and PNL display positioning on ultra-wide screens */
   .equity-display {
-    margin-left: -180% !important;
+    margin-left: -250% !important;
     left: auto !important;
   }
   
   .pnl-display {
-    margin-right: -180% !important;
+    margin-right: -250% !important;
     right: auto !important;
   }
   

@@ -52,6 +52,20 @@ HopiumBot/
            ├── HopiumFarming.css     # HOPIUM Farming styles
            ├── PerpFarming.jsx        # Perp Farming section (Perps Bot)
            ├── PerpFarming.css       # Perp Farming styles
+           ├── perpFarming/          # Modular PerpFarming components
+           │   ├── constants.js         # Constants and fee structures
+           │   ├── positionHelpers.js   # Position management utilities
+           │   ├── smartMode.js         # Smart Mode exit logic
+           │   ├── REFACTORING_GUIDE.md # Module documentation
+           │   ├── handlers/           # WebSocket message handlers
+           │   │   ├── scalpHandler.js        # Scalping strategy
+           │   │   ├── momentumHandler.js     # Momentum strategy
+           │   │   ├── momentumXHandler.js    # Momentum X strategy
+           │   │   ├── orderbookHandler.js    # Order book trading
+           │   │   └── portfolioHandler.js    # Auto Mode (Portfolio Scanner)
+           │   └── modals/             # Modal components
+           │       ├── ClosePositionModal.jsx
+           │       └── AuthModal.jsx
            ├── AirdropAlpha.jsx      # Airdrop Alpha section (Alpha)
            ├── AirdropAlpha.css      # Airdrop Alpha styles
            ├── FarmingGuideModal.jsx # Farming guide modal component
@@ -213,6 +227,36 @@ npm run preview
     - Prevents content overlap on limited screen space
 - Modern React setup with Vite
 - No-scroll, fullscreen experience
+
+## Code Architecture & Maintainability (Dec 2025)
+
+### PerpFarming Modular Refactoring
+
+The `PerpFarming.jsx` component has been refactored from a monolithic 4000+ line file into a modular, maintainable architecture:
+
+**New Module Structure:**
+- **`constants.js`** - All constants, fees, timing values
+- **`positionHelpers.js`** - Position management utilities (close, calculate PNL, format quantities)
+- **`smartMode.js`** - Intelligent exit logic with 8 exit strategies
+- **`handlers/`** - Strategy-specific WebSocket handlers:
+  - `scalpHandler.js` - Aggressive Reversion Scalping (30s signals)
+  - `momentumHandler.js` - LLM-powered momentum trading
+  - `momentumXHandler.js` - Psychic Candle Reader (8-layer analysis)
+  - `orderbookHandler.js` - Near real-time order flow analysis
+  - `portfolioHandler.js` - Auto Mode portfolio scanner
+- **`modals/`** - Reusable modal components:
+  - `ClosePositionModal.jsx` - Position close confirmation
+  - `AuthModal.jsx` - Re-authentication modal
+
+**Benefits:**
+- ✅ **Maintainability**: Single-responsibility modules
+- ✅ **Readability**: Easy to find and understand specific functionality
+- ✅ **LLM-Friendly**: Smaller files (<500 lines) are easier for AI to analyze
+- ✅ **Testability**: Individual modules can be unit tested
+- ✅ **Reusability**: Helpers can be shared across components
+
+**Module Structure:**
+All PerpFarming functionality is now organized into focused, maintainable modules in `src/components/sections/perpFarming/`.
 
 ## Recent Critical Fixes (Nov 2025)
 

@@ -29,6 +29,12 @@ HopiumBot/
    │   ├── websocket.js      # WebSocket client service (with JWT auth)
    │   ├── orderManager.js   # Order lifecycle management service (includes Smart Mode logic)
    │   ├── airdrop.js        # Airdrop service for fetching opportunities
+   │   ├── strategyBuilder/  # Custom Strategy Builder services
+   │   │   ├── blockDefinitions.js     # Block type definitions (conditions, logic, actions)
+   │   │   ├── StrategyStorage.js      # LocalStorage manager for strategies
+   │   │   ├── BlockValidator.js       # Strategy validation logic
+   │   │   ├── StrategyRunner.js       # Strategy execution engine
+   │   │   └── IndicatorCalculator.js  # Client-side technical indicators (RSI, MACD, EMA)
    │   └── dex/              # DEX service abstraction layer
    │       ├── DexService.js         # Abstract DEX service interface
    │       └── aster/               # Aster Finance implementation
@@ -63,10 +69,19 @@ HopiumBot/
            │   │   ├── momentumXHandler.js    # Momentum X strategy
            │   │   ├── orderbookHandler.js    # Order book trading
            │   │   └── portfolioHandler.js    # Auto Mode (Portfolio Scanner)
-           │   └── modals/             # Modal components
-           │       ├── ClosePositionModal.jsx
-           │       └── AuthModal.jsx
-           ├── AirdropAlpha.jsx      # Airdrop Alpha section (Alpha)
+          │   ├── modals/             # Modal components
+          │   │   ├── ClosePositionModal.jsx
+          │   │   └── AuthModal.jsx
+          │   └── components/
+          │       └── SettingsModal.jsx      # Settings modal with strategy builder integration
+          ├── strategy-builder/       # Visual Strategy Builder (Gold/dark themed)
+          │   ├── StrategyBuilderModal.jsx   # Main modal container
+          │   ├── StrategyBuilderModal.css   # Gold theme with glow effects
+          │   ├── BlockPalette.jsx           # Left sidebar with draggable blocks
+          │   ├── BlockPalette.css           # Gold palette styling
+          │   ├── BlockCanvas.jsx            # Drag-and-drop canvas
+          │   └── BlockCanvas.css            # Gold canvas and block styling
+          ├── AirdropAlpha.jsx      # Airdrop Alpha section (Alpha)
            ├── AirdropAlpha.css      # Airdrop Alpha styles
            ├── FarmingGuideModal.jsx # Farming guide modal component
            ├── FarmingGuideModal.css # Farming guide modal styles
@@ -123,6 +138,22 @@ npm run preview
   - **Perps Bot**: Automated perpetual futures trading
     - **Risk Settings Modal**: Configure Aster API credentials, capital limits, Take Profit, Stop Loss, and Position Size
       - Fixed scrollbar clipping issue with proper container structure and overflow handling
+    - **Custom Strategy Builder** 🧱: Visual block-based strategy builder (no coding required)
+      - **Gold/Dark Theme**: Matches the site's signature gold aesthetic with glowing effects
+      - **Courier New Font**: Consistent monospace typography throughout
+      - **Drag-and-Drop Interface**: Build strategies by connecting condition/action blocks
+      - **Zoom & Pan**: Mouse wheel to zoom (10%-200%), Shift+Drag or Middle-click to pan canvas
+      - **Zoom Controls**: Floating controls with +/− buttons, zoom percentage, and reset view
+      - **Block Categories**:
+        - **Conditions**: Price (above/below/crossovers), Indicators (RSI, MACD, EMA), Server Signals, Position checks
+        - **Logic Gates**: AND, OR, NOT for combining conditions
+        - **Actions**: Open LONG/SHORT, Close Position, Modify TP/SL
+      - **Client-Side Indicators**: Calculates RSI, MACD, EMA locally without server calls
+      - **Real-Time Validation**: Validates connections and block configurations before saving
+      - **Execution Engine**: Runs strategies on configurable intervals (10-3600s) with cooldown protection
+      - **LocalStorage Persistence**: Strategies saved locally and appear in strategy dropdown
+      - **Strategy Controls**: Enable/disable, error handling with auto-disable (max 3 errors)
+      - **Integration**: Strategies execute trades via existing OrderManager
     - **Auto Mode** 🤖 (Hourly Scanner): Fully automated multi-pair trading system
       - **Automatic Operation**: Scans ALL available pairs every hour, selects best 3-5 opportunities
       - **Even Capital Split**: Divides capital equally among selected pairs

@@ -449,6 +449,63 @@
   transform: translateY(0);
 }
 
+/* Create Strategy Button */
+.create-strategy-button {
+  width: 100%;
+  padding: 14px 20px;
+  margin-top: 16px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(200, 150, 0, 0.15));
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 8px;
+  color: #ffd700;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
+}
+
+.create-strategy-button:hover {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.25), rgba(200, 150, 0, 0.25));
+  border-color: rgba(255, 215, 0, 0.7);
+  transform: translateY(-2px);
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+}
+
+.create-strategy-button:active {
+  transform: translateY(0);
+}
+
+.create-strategy-button .button-icon {
+  font-size: 20px;
+  animation: blockFloat 2s ease-in-out infinite;
+}
+
+@keyframes blockFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.strategy-builder-description {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: rgba(255, 215, 0, 0.6);
+  margin-top: 8px;
+  text-align: center;
+  font-style: italic;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .farming-modal {
